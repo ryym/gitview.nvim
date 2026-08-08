@@ -8,6 +8,11 @@ local M = {}
 --- @field side 'old'|'new' which version `text` came from
 --- @field row integer 0-based row of `text` in its version
 
+--- `linematch` is off by default. It is a Neovim-only post-pass that re-pairs
+--- lines inside a hunk and splits the hunk accordingly, which makes the result
+--- disagree with `git diff` on the same input: `a b c d e` -> `a b X Y d e`
+--- becomes "insert X" plus "c -> Y" instead of git's single "c -> X Y".
+---
 --- @param old_lines string[]
 --- @param new_lines string[]
 --- @param opts? {algorithm?:string, linematch?:integer}
@@ -20,7 +25,7 @@ function M.hunks(old_lines, new_lines, opts)
   return vim.diff(text(old_lines), text(new_lines), {
     result_type = 'indices',
     algorithm = opts.algorithm or 'histogram',
-    linematch = opts.linematch or 60,
+    linematch = opts.linematch or 0,
   })
 end
 

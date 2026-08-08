@@ -14,7 +14,12 @@ Requires Neovim 0.12+ and a Tree-sitter parser for the language you are viewing.
 ```
 
 ```lua
-require('unidiff').setup()
+require('unidiff').setup({
+  context = 3,             -- unchanged lines kept around each hunk
+  rev = 'HEAD',            -- default revision to diff against
+  algorithm = 'histogram', -- vim.diff() algorithm
+  linematch = 0,           -- see "Agreement with git diff" below
+})
 require('unidiff').open({ rev = 'main', context = 5 })
 ```
 
@@ -59,6 +64,21 @@ Everything is extmarks, ordered by priority:
 | 100      | replayed syntax highlighting             |
 | 200      | word-level change highlights             |
 
+### Agreement with `git diff`
+
+The diff itself is computed by `vim.diff()`; git is only used to read the old
+blob. Hunk boundaries still match `git diff` because `linematch` is left off.
+
+`linematch` is a Neovim-only pass that re-pairs lines inside a hunk and splits
+the hunk accordingly. Turning it on makes `a b c d e` → `a b X Y d e` render as
+`+X` `-c` `+Y` where git shows `-c` `+X` `+Y`. In exchange it lets word-level
+highlights appear on hunks whose deleted and added blocks differ in size, which
+they otherwise cannot:
+
+```lua
+require('unidiff').setup({ linematch = 60 })
+```
+
 ### Highlight groups
 
 `UnidiffAdd`, `UnidiffDelete`, `UnidiffAddText`, `UnidiffDeleteText`,
@@ -75,7 +95,9 @@ are redefined on `ColorScheme`. Defining any of them yourself takes precedence.
   render `virt_lines_above` on the first buffer line, so that count is reported
   in the winbar instead.
 - **Word-level highlights need equal-sized blocks.** A replacement of 2 lines by
-  3 falls back to line-level backgrounds only.
+  3 falls back to line-level backgrounds only, because deleted and added lines
+  are paired by position. Pairing them by similarity instead would lift this
+  without affecting hunk boundaries.
 - **Everything is computed eagerly** when the diff opens. That is ~50 ms for a
   1500-line file with 80 hunks; very large files would want
   `nvim_set_decoration_provider()` instead.

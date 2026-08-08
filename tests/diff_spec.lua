@@ -137,3 +137,16 @@ end)
 test('trailing newline differences do not produce phantom hunks', function()
   eq({}, dlib.hunks({ 'a', 'b' }, { 'a', 'b' }))
 end)
+
+test('hunks match git diff by default', function()
+  -- `git diff -U0` on this pair reports exactly one hunk, `@@ -3 +3,2 @@`.
+  eq({ { 3, 1, 3, 2 } }, dlib.hunks({ 'a', 'b', 'c', 'd', 'e' }, { 'a', 'b', 'X', 'Y', 'd', 'e' }))
+end)
+
+test('linematch is opt-in because it disagrees with git', function()
+  -- It re-pairs lines inside the hunk and splits it into "insert X" plus
+  -- "c -> Y", which reorders what the unified view shows.
+  local hunks =
+    dlib.hunks({ 'a', 'b', 'c', 'd', 'e' }, { 'a', 'b', 'X', 'Y', 'd', 'e' }, { linematch = 60 })
+  eq({ { 2, 0, 3, 1 }, { 3, 1, 4, 1 } }, hunks)
+end)

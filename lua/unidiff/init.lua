@@ -7,9 +7,13 @@ local M = {}
 --- @class unidiff.Config
 --- @field context integer
 --- @field rev string
+--- @field algorithm string
+--- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.hunks
 local config = {
   context = 3,
   rev = 'HEAD',
+  algorithm = 'histogram',
+  linematch = 0,
 }
 
 --- @param opts? unidiff.Config
@@ -58,7 +62,10 @@ function M.open(opts)
   local lang = vim.treesitter.language.get_lang(vim.bo[src].filetype) or vim.bo[src].filetype
   local ft = vim.bo[src].filetype
 
-  local hunks = dlib.hunks(old_lines, new_lines)
+  local hunks = dlib.hunks(old_lines, new_lines, {
+    algorithm = opts.algorithm or config.algorithm,
+    linematch = opts.linematch or config.linematch,
+  })
   if #hunks == 0 then
     vim.notify('unidiff: no changes', vim.log.levels.INFO)
     return
