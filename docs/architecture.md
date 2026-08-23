@@ -2,14 +2,14 @@
 
 ## Modules
 
-| module | responsibility |
-| --- | --- |
-| `init.lua` | Commands, configuration, assembling views, keymaps |
-| `git.lua` | Every subprocess call, and the parsers for their output |
-| `diff.lua` | `vim.diff` wrapper, unified line list, del/add pairing |
-| `highlight.lua` | Scratch buffers, and collecting highlight segments |
-| `worddiff.lua` | Word-level ranges within a pair of changed lines |
-| `render.lua` | Building the buffer, extmarks, gutter, winbar |
+| module          | responsibility                                          |
+| --------------- | ------------------------------------------------------- |
+| `init.lua`      | Commands, configuration, assembling views, keymaps      |
+| `git.lua`       | Every subprocess call, and the parsers for their output |
+| `diff.lua`      | `vim.diff` wrapper, unified line list, del/add pairing  |
+| `highlight.lua` | Scratch buffers, and collecting highlight segments      |
+| `worddiff.lua`  | Word-level ranges within a pair of changed lines        |
+| `render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 
 The dependency direction is one-way: `init` uses everything, `render` uses
 `highlight`, `worddiff` and `diff`, and the rest depend on nothing but Neovim.
@@ -75,17 +75,17 @@ running offset.
 
 Everything drawn is an extmark, ordered by priority:
 
-| priority | layer |
-| --- | --- |
-| 10 | Added/deleted line background, with `hl_eol` |
-| 100 | Replayed syntax highlighting |
-| 200 | Word-level change highlights |
+| priority | layer                                        |
+| -------- | -------------------------------------------- |
+| 10       | Added/deleted line background, with `hl_eol` |
+| 100      | Replayed syntax highlighting                 |
+| 200      | Word-level change highlights                 |
 
 The ordering is the point: the line background has to sit under the syntax
 colors so they survive, and the word-level highlights have to sit over both so a
 changed word stands out against its own line's background.
 
-Two layers are deliberately *not* extmark-based, because they must not become
+Two layers are deliberately _not_ extmark-based, because they must not become
 buffer text:
 
 - the gutter, drawn with `'statuscolumn'`
@@ -96,15 +96,15 @@ buffer text:
 Each of these is guarded by a test. Breaking one is a regression even if
 everything still looks right.
 
-| invariant | guarded by |
-| --- | --- |
-| Buffer text equals source text, row for row | `render_spec`, `multifile_spec` |
-| Hunk boundaries match `git diff` | `diff_spec` |
-| No line is emitted twice, and line numbers only increase | `diff_spec` |
-| Highlight ranges stay inside their line and on character boundaries | `render_spec`, `worddiff_spec`, `highlight_spec` |
-| Restricting collection to some rows does not change what those rows get | `highlight_spec` |
-| Colors work without `setup()` ever being called | `render_spec` |
-| Word-level pairing never crosses a file boundary | `diff_spec` |
+| invariant                                                               | guarded by                                       |
+| ----------------------------------------------------------------------- | ------------------------------------------------ |
+| Buffer text equals source text, row for row                             | `render_spec`, `multifile_spec`                  |
+| Hunk boundaries match `git diff`                                        | `diff_spec`                                      |
+| No line is emitted twice, and line numbers only increase                | `diff_spec`                                      |
+| Highlight ranges stay inside their line and on character boundaries     | `render_spec`, `worddiff_spec`, `highlight_spec` |
+| Restricting collection to some rows does not change what those rows get | `highlight_spec`                                 |
+| Colors work without `setup()` ever being called                         | `render_spec`                                    |
+| Word-level pairing never crosses a file boundary                        | `diff_spec`                                      |
 
 ## Deliberate omissions
 

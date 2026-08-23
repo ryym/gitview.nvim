@@ -63,24 +63,9 @@ legacy `:syntax` with `synID()`. Either way the result is a set of byte ranges
 and highlight groups, and the rest of the pipeline does not care which produced
 them.
 
-Both are restricted to the rows the diff actually displays. The *parse* still
-covers the whole file, which is what makes a deleted line inside a multi-line
-string come out as a string, but querying the rest of the tree would only
-produce captures for rows nobody sees.
-
 Because the buffer holds only source text and the gutter is drawn through
 `'statuscolumn'`, yanking a selection gives you code — no `+`/`-` markers and no
 line numbers.
-
-### Layering
-
-Everything is extmarks, ordered by priority:
-
-| priority | layer                                    |
-| -------- | ---------------------------------------- |
-| 10       | added/deleted line background (`hl_eol`) |
-| 100      | replayed syntax highlighting             |
-| 200      | word-level change highlights             |
 
 ### Several files in one buffer
 
@@ -114,7 +99,7 @@ require('unidiff').setup({ linematch = 60 })
 ### Highlight groups
 
 `UnidiffAdd`, `UnidiffDelete`, `UnidiffAddText`, `UnidiffDeleteText`,
-`UnidiffOldLnum`, `UnidiffNewLnum`, `UnidiffSeparator`.
+`UnidiffOldLnum`, `UnidiffNewLnum`, `UnidiffSeparator`, `UnidiffFileHeader`.
 
 They default to background-only colors derived from `DiffAdd`/`DiffDelete`, are
 defined the first time a diff is opened, and are redefined on `ColorScheme`.
@@ -146,8 +131,12 @@ carries configuration, and the colors do not depend on it.
   large diff would want per-file lazy collection or
   `nvim_set_decoration_provider()` instead.
 
-## Tests
+## Development
 
 ```sh
 make test
 ```
+
+[`docs/`](docs/) holds the developer documentation: the pipeline and its
+invariants, the Neovim and git behaviours the code depends on, and where the
+time goes.

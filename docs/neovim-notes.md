@@ -16,10 +16,10 @@ skip to the end of a capture, so every byte has to be probed.
 
 Measured on a 1590-line Lua file:
 
-| approach | time |
-| --- | --- |
-| `vim.inspect_pos()` per byte, 300 lines only | 393 ms |
-| `query:iter_captures()` over all 1590 lines | 15.5 ms |
+| approach                                     | time    |
+| -------------------------------------------- | ------- |
+| `vim.inspect_pos()` per byte, 300 lines only | 393 ms  |
+| `query:iter_captures()` over all 1590 lines  | 15.5 ms |
 
 Use `vim.treesitter.query.get(lang, 'highlights')` and iterate. For legacy
 `:syntax`, where no bulk query exists, use `vim.fn.synID()` rather than
@@ -76,7 +76,7 @@ other marks must be able to override has to be a range mark instead:
 ```
 
 `end_row` may be one past the last line. Ending on the same row with
-`end_col = #text` does *not* fill the rest of the screen line, even with
+`end_col = #text` does _not_ fill the rest of the screen line, even with
 `hl_eol`.
 
 ### `virt_lines_above` does not render on the first line
@@ -108,11 +108,11 @@ even an empty one.
 
 ## Diffing
 
-### A zero-count side points at the *preceding* line
+### A zero-count side points at the _preceding_ line
 
 `vim.diff(..., { result_type = 'indices' })` returns
 `{old_start, old_count, new_start, new_count}`. When a count is 0, that side's
-`start` is the line *before* which the change applies, so the first affected line
+`start` is the line _before_ which the change applies, so the first affected line
 is `start + 1`:
 
 ```
@@ -159,7 +159,7 @@ request.
 - `git diff --name-status -z` emits `M<NUL>path`, but renames and copies as
   `R100<NUL>old<NUL>new` — three records, not two.
 - `git diff --numstat -z` emits `added<TAB>deleted<TAB>path`, with `-` for both
-  counts when the file is binary, and leaves the path field *empty* for a rename,
+  counts when the file is binary, and leaves the path field _empty_ for a rename,
   following it with the old and new paths as separate records.
 
 ### An empty blob is not one empty line

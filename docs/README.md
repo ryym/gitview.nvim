@@ -3,12 +3,12 @@
 Notes for working on unidiff.nvim. [The main README](../README.md) covers
 installation, commands and configuration; nothing here is repeated there.
 
-| document | what it covers |
-| --- | --- |
-| [architecture.md](architecture.md) | The pipeline, the modules, the data shapes, and the invariants |
+| document                           | what it covers                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| [architecture.md](architecture.md) | The pipeline, the modules, the data shapes, and the invariants                                |
 | [neovim-notes.md](neovim-notes.md) | Neovim and git behaviours the code depends on, and why the obvious alternatives were rejected |
-| [performance.md](performance.md) | Where the time goes, measured, and how to measure it again |
-| [testing.md](testing.md) | How the suite runs and how to add to it |
+| [performance.md](performance.md)   | Where the time goes, measured, and how to measure it again                                    |
+| [testing.md](testing.md)           | How the suite runs and how to add to it                                                       |
 
 ## Read this first
 

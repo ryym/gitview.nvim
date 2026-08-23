@@ -9,17 +9,17 @@ not.
 
 `:UnidiffAll` over 60 files of ~360 lines each, showing 1440 rows:
 
-| phase | time | share |
-| --- | --- | --- |
-| Enumerate changes (2 subprocesses) | 14.4 ms | 9% |
-| Read old versions (1 batched subprocess) | 11.2 ms | 7% |
-| Read working files | 2.6 ms | 2% |
-| `vim.diff` | 1.2 ms | 1% |
-| Build the line list | 0.4 ms | 0% |
-| Create ghost buffers | 5.2 ms | 3% |
-| Collect highlights and set extmarks | 111.8 ms | 68% |
-| Dispose of ghost buffers | 0.6 ms | 0% |
-| **total** | **163.6 ms** | |
+| phase                                    | time         | share |
+| ---------------------------------------- | ------------ | ----- |
+| Enumerate changes (2 subprocesses)       | 14.4 ms      | 9%    |
+| Read old versions (1 batched subprocess) | 11.2 ms      | 7%    |
+| Read working files                       | 2.6 ms       | 2%    |
+| `vim.diff`                               | 1.2 ms       | 1%    |
+| Build the line list                      | 0.4 ms       | 0%    |
+| Create ghost buffers                     | 5.2 ms       | 3%    |
+| Collect highlights and set extmarks      | 111.8 ms     | 68%   |
+| Dispose of ghost buffers                 | 0.6 ms       | 0%    |
+| **total**                                | **163.6 ms** |       |
 
 `vim.diff` accounts for well under 1% of it. Anyone optimising this should look
 at highlight collection first and subprocesses second.
@@ -29,18 +29,18 @@ at highlight collection first and subprocesses second.
 The same view took 1137 ms before three changes, none of which altered the
 output:
 
-| change | effect |
-| --- | --- |
-| Query only the displayed rows | Rendering 741 ms → 112 ms |
-| Skip `filetype` when Tree-sitter can highlight | Ghost buffers 159 ms → 6 ms |
-| One `git cat-file --batch` instead of `git show` per file | Blob reads 221 ms → 11 ms |
+| change                                                    | effect                      |
+| --------------------------------------------------------- | --------------------------- |
+| Query only the displayed rows                             | Rendering 741 ms → 112 ms   |
+| Skip `filetype` when Tree-sitter can highlight            | Ghost buffers 159 ms → 6 ms |
+| One `git cat-file --batch` instead of `git show` per file | Blob reads 221 ms → 11 ms   |
 
 ### Query only the displayed rows
 
 A diff shows a few lines around each hunk, but the query used to run over the
 whole tree. On a 363-line file a full captures pass costs 4.31 ms and yields 2537
 captures, against 0.27 ms and 150 captures for the three ranges actually
-displayed. The *parse* still covers the whole buffer — that is what preserves
+displayed. The _parse_ still covers the whole buffer — that is what preserves
 context — only the query is narrowed.
 
 ### Skip `filetype` when Tree-sitter can highlight
