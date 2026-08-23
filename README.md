@@ -58,11 +58,15 @@ Instead:
 4. Diff backgrounds, word-level highlights and the line-number gutter are layered
    on top as decoration only.
 
-Step 2 uses Tree-sitter when the language has a parser, reading every capture in
-one pass over the tree. Otherwise it probes legacy `:syntax` with `synID()`,
-limited to the rows the diff actually displays. Either way the result is a set of
-byte ranges and highlight groups, and the rest of the pipeline does not care
-which produced them.
+Step 2 uses Tree-sitter when the language has a parser, otherwise it probes
+legacy `:syntax` with `synID()`. Either way the result is a set of byte ranges
+and highlight groups, and the rest of the pipeline does not care which produced
+them.
+
+Both are restricted to the rows the diff actually displays. The *parse* still
+covers the whole file, which is what makes a deleted line inside a multi-line
+string come out as a string, but querying the rest of the tree would only
+produce captures for rows nobody sees.
 
 Because the buffer holds only source text and the gutter is drawn through
 `'statuscolumn'`, yanking a selection gives you code — no `+`/`-` markers and no
@@ -131,9 +135,13 @@ are redefined on `ColorScheme`. Defining any of them yourself takes precedence.
   3 falls back to line-level backgrounds only, because deleted and added lines
   are paired by position. Pairing them by similarity instead would lift this
   without affecting hunk boundaries.
-- **Everything is computed eagerly** when the diff opens. That is ~50 ms for a
-  1500-line file with 80 hunks, and grows linearly with the number of files:
-  ~150 ms for 20 files, ~600 ms for 50. A very large diff would want
+- **The winbar can be taken over by your config.** The file the cursor is in is
+  reported through `'winbar'`, so a configuration or plugin that sets it for
+  every window may overwrite it and hide the name of the first file. The other
+  files keep their inline headers.
+- **Everything is computed eagerly** when the diff opens, and grows linearly
+  with the number of files: ~165 ms for 60 files of ~360 lines each. A very
+  large diff would want per-file lazy collection or
   `nvim_set_decoration_provider()` instead.
 
 ## Tests
