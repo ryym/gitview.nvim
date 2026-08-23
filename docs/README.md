@@ -10,15 +10,14 @@ installation, commands and configuration; nothing here is repeated there.
 | [performance.md](performance.md)   | Where the time goes, measured, and how to measure it again                                    |
 | [testing.md](testing.md)           | How the suite runs and how to add to it                                                       |
 
-## Read this first
+## Before changing anything
 
-Two things explain most of the design.
+The [main README](../README.md#how-it-works) states the two premises this design
+rests on: a diff buffer is not valid source code, and its text is source and
+nothing else. Both are load bearing.
 
-**The diff buffer is not valid source code.** It interleaves two versions of a
-file, so no parser can highlight it directly. Highlights are collected from
-separate scratch buffers holding each whole version, then replayed as extmarks.
-
-**The buffer text is the source text and nothing else.** Line numbers, `+`/`-`
-markers, file headers and gap separators are all decoration, so a visual
-selection yanks code. Anything that would put non-source characters into the
-buffer breaks a documented promise.
+The first is why highlights are collected from scratch buffers rather than from
+the diff buffer, and why they can only be replayed as extmarks. The second is why
+line numbers, markers, headers and separators are drawn rather than written, and
+why putting non-source characters into the buffer is a regression rather than a
+style choice.

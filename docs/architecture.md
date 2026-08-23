@@ -19,7 +19,8 @@ The dependency direction is one-way: `init` uses everything, `render` uses
 For each file in the diff:
 
 1. **Read both versions.** The old side comes from git, the new side from the
-   file's loaded buffer if it has one and from disk otherwise.
+   file's loaded buffer if it has one and from disk otherwise. git is only ever
+   used to read blobs and to list what changed; the diff itself is `vim.diff`.
 2. **Diff.** `diff.hunks()` returns raw hunk indices; `diff.build()` turns them
    into a flat list of context/deleted/added lines with both line numbers
    attached.
@@ -29,6 +30,9 @@ For each file in the diff:
 Then once for the whole view:
 
 4. **Collect highlights** from the ghost buffers, for the displayed rows only.
+   Tree-sitter is used when the language has a parser and legacy `:syntax`
+   otherwise; both produce byte ranges paired with highlight groups, and nothing
+   downstream knows which ran.
 5. **Render**: write the source text, replay the highlights as extmarks, and
    layer diff backgrounds, word-level highlights, headers and separators on top.
 6. **Discard the ghost buffers.** They exist only for step 4.
@@ -85,11 +89,16 @@ The ordering is the point: the line background has to sit under the syntax
 colors so they survive, and the word-level highlights have to sit over both so a
 changed word stands out against its own line's background.
 
-Two layers are deliberately _not_ extmark-based, because they must not become
-buffer text:
+Three layers are deliberately _not_ buffer text, because putting them there
+would break the promise that a selection yanks source:
 
 - the gutter, drawn with `'statuscolumn'`
 - file headers and gap separators, drawn as `virt_lines`
+- the name of the file the cursor is in, drawn in the `'winbar'`
+
+The winbar is recomputed on redraw rather than set once. That makes it follow the
+cursor through a multi-file view, and it is also the only place the first file's
+name can go, since `virt_lines` above line 1 are not drawn.
 
 ## Invariants
 
@@ -121,3 +130,11 @@ re-attempted by accident:
   reads as noise. Tokens are runs of word characters instead.
 - **`line_hl_group` for the line background.** See [neovim-notes.md](neovim-notes.md).
 - **`vim.inspect_pos()` for collecting highlights.** See the same document.
+
+## Known gaps
+
+`change_pairs()` matches deleted lines to added ones by position, so a block
+replaced by one of a different size gets no word-level highlights at all.
+Matching them by similarity instead would lift that, and unlike enabling
+`linematch` it would not move any hunk boundary: which lines are compared for
+word highlights is independent of how the diff is laid out.
