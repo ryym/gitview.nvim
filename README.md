@@ -13,6 +13,9 @@ works.
 ```vim
 :Unidiff          " diff the current buffer against HEAD
 :Unidiff HEAD~3   " ...or against any revision
+
+:UnidiffAll       " every changed file, in one buffer
+:UnidiffAll main  " ...against any revision
 ```
 
 ```lua
@@ -23,6 +26,7 @@ require('unidiff').setup({
   linematch = 0,           -- see "Agreement with git diff" below
 })
 require('unidiff').open({ rev = 'main', context = 5 })
+require('unidiff').open_all({ rev = 'main' })
 ```
 
 Inside the diff buffer:
@@ -31,6 +35,8 @@ Inside the diff buffer:
 | ------ | ------------------- |
 | `]h`   | next hunk           |
 | `[h`   | previous hunk       |
+| `]f`   | next file           |
+| `[f`   | previous file       |
 | `<CR>` | jump to source line |
 | `q`    | close               |
 
@@ -72,6 +78,20 @@ Everything is extmarks, ordered by priority:
 | 100      | replayed syntax highlighting             |
 | 200      | word-level change highlights             |
 
+### Several files in one buffer
+
+`:UnidiffAll` enumerates changes with `git diff --name-status` and lays every
+file's diff out end to end in a single buffer. Each file is highlighted with its
+own language, and the buffer still holds nothing but source text: file headers
+are virtual lines, and the winbar names whichever file the cursor is in.
+
+- The new side is a **loaded buffer's contents** when the file is open, and the
+  file on disk otherwise, so unsaved edits show up.
+- Added, deleted and renamed files are all handled.
+- Binary files, and changes with no textual difference such as a pure rename,
+  have no lines to show. They are counted in the winbar rather than dropped
+  silently.
+
 ### Agreement with `git diff`
 
 The diff itself is computed by `vim.diff()`; git is only used to read the old
@@ -112,9 +132,9 @@ are redefined on `ColorScheme`. Defining any of them yourself takes precedence.
   are paired by position. Pairing them by similarity instead would lift this
   without affecting hunk boundaries.
 - **Everything is computed eagerly** when the diff opens. That is ~50 ms for a
-  1500-line file with 80 hunks; very large files would want
+  1500-line file with 80 hunks, and grows linearly with the number of files:
+  ~150 ms for 20 files, ~600 ms for 50. A very large diff would want
   `nvim_set_decoration_provider()` instead.
-- Only text diffs. Renames, binary files and mode changes are not shown.
 
 ## Tests
 

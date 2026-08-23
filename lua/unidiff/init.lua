@@ -24,6 +24,21 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd('ColorScheme', { callback = render.setup_highlights })
 end
 
+--- The new side of the diff is whatever the user is looking at: a loaded buffer
+--- with unsaved changes, otherwise the file on disk.
+--- @param path string absolute path
+--- @return string[]
+local function working_lines(path)
+  local buf = vim.fn.bufnr(path)
+  if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
+    return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  end
+  if vim.fn.filereadable(path) == 0 then
+    return {}
+  end
+  return vim.fn.readfile(path)
+end
+
 --- @param path string
 --- @return string filetype
 local function filetype_of(path)
@@ -151,6 +166,68 @@ function M.open(opts)
   end
 
   return open_view(view, ('unidiff://%s @ %s'):format(vim.fs.basename(file), rev))
+end
+
+--- Open one buffer holding the diff of every file that changed against `rev`.
+--- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer}
+--- @return integer? bufnr
+function M.open_all(opts)
+  opts = opts or {}
+  local rev = opts.rev or config.rev
+  local cwd = vim.fn.getcwd()
+  local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
+  local root = git.root(buf_dir ~= '' and buf_dir or cwd) or git.root(cwd)
+  if not root then
+    vim.notify('unidiff: not inside a git repository', vim.log.levels.WARN)
+    return
+  end
+
+  local changes = git.changed(rev, root)
+  if not changes or #changes == 0 then
+    vim.notify(('unidiff: no changes against %s'):format(rev), vim.log.levels.INFO)
+    return
+  end
+
+  local sources, skipped = {}, {}
+  for _, c in ipairs(changes) do
+    if c.binary then
+      skipped[#skipped + 1] = c.path
+    else
+      local path = root .. '/' .. c.path
+      -- An added file has no blob in `rev`; a deleted one has no working copy.
+      local old_lines = c.status == 'A' and {} or git.show(c.old_path, rev, root)
+      sources[#sources + 1] = {
+        path = path,
+        label = c.status == 'R' and ('%s -> %s'):format(c.old_path, c.path) or c.path,
+        old_lines = old_lines or {},
+        new_lines = c.status == 'D' and {} or working_lines(path),
+      }
+    end
+  end
+
+  local view, unchanged = build_view(sources, rev, opts.context or config.context, {
+    algorithm = opts.algorithm or config.algorithm,
+    linematch = opts.linematch or config.linematch,
+  })
+  if not view then
+    vim.notify('unidiff: no textual changes', vim.log.levels.INFO)
+    return
+  end
+
+  -- A pure rename or a mode change produces no hunks and so has no rows to show,
+  -- but dropping it silently would hide a real change.
+  local notes = {}
+  if #skipped > 0 then
+    notes[#notes + 1] = ('%d binary'):format(#skipped)
+  end
+  if #unchanged > 0 then
+    notes[#notes + 1] = ('%d without textual change'):format(#unchanged)
+  end
+  if #notes > 0 then
+    view.note = '(' .. table.concat(notes, ', ') .. ' not shown)'
+  end
+
+  return open_view(view, ('unidiff://all @ %s'):format(rev))
 end
 
 --- @param buf integer
