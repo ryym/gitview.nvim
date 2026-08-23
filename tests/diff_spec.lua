@@ -43,7 +43,8 @@ end)
 
 test('insertion at the very end', function()
   local lines = run({ 'a', 'b' }, { 'a', 'b', 'X' })
-  eq({ '~' .. dlib.gap_label(1) .. '||', ' b|2|2', '+X||3' }, dump(lines))
+  -- 'a' is out of context, but hiding it would cost a separator row anyway
+  eq({ ' a|1|1', ' b|2|2', '+X||3' }, dump(lines))
 end)
 
 test('deletion of the whole file', function()
@@ -126,6 +127,20 @@ test('skipped ranges become gap lines saying how many were dropped', function()
   -- the leading gap is the first line, the trailing one the last
   eq(1, gaps[1].row)
   eq(#lines, gaps[2].row)
+end)
+
+test('a range of one line is shown rather than hidden behind a separator', function()
+  -- the separator takes a row of its own, so folding one line away saves none
+  local old, new = {}, {}
+  for i = 1, 6 do
+    old[i], new[i] = 'line ' .. i, 'line ' .. i
+  end
+  new[5] = 'changed'
+  local lines = dlib.build(dlib.hunks(old, new), old, new, 3)
+  for _, l in ipairs(lines) do
+    eq(nil, l.kind == 'gap' and l.text or nil, 'nothing should be hidden')
+  end
+  eq(7, #lines, 'all six lines, with line 5 shown twice')
 end)
 
 test('change_pairs only pairs equally sized blocks', function()

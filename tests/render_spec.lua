@@ -31,10 +31,11 @@ local NEW = {
   'return M',
 }
 
+--- @param context integer? defaults to 3, which keeps the fixture gap-free
 --- @return integer bufnr, unidiff.View
-local function build()
+local function build(context)
   local hunks = dlib.hunks(OLD, NEW)
-  local lines, hunk_rows = dlib.build(hunks, OLD, NEW, 3)
+  local lines, hunk_rows = dlib.build(hunks, OLD, NEW, context or 3)
   for _, l in ipairs(lines) do
     if dlib.source_kinds[l.kind] then
       l.file = 1
@@ -176,7 +177,7 @@ test('the view is dropped when the buffer goes away', function()
 end)
 
 test('the gutter is numbered for source lines and blank for the rest', function()
-  local buf, view = build()
+  local buf, view = build(1)
   local win = vim.api.nvim_open_win(buf, false, {
     relative = 'editor',
     width = 40,
@@ -187,17 +188,20 @@ test('the gutter is numbered for source lines and blank for the rest', function(
   render.configure_window(win, buf)
   vim.g.statusline_winid = win
 
-  vim.v.lnum = 1
-  local real = render.statuscolumn()
-  assert(real:find('%d'), 'real line should show numbers, got ' .. vim.inspect(real))
-
-  local gap_row
+  local source_row, gap_row
   for i, l in ipairs(view.lines) do
     if l.kind == 'gap' then
       gap_row = i
+    elseif not source_row then
+      source_row = i
     end
   end
   assert(gap_row, 'expected the fixture to skip a range')
+
+  vim.v.lnum = source_row
+  local real = render.statuscolumn()
+  assert(real:find('%d'), 'a source line should show numbers, got ' .. vim.inspect(real))
+
   vim.v.lnum = gap_row
   local gap = render.statuscolumn()
   eq(nil, gap:find('%d'), 'a gap line has no line numbers')
@@ -209,7 +213,7 @@ test('the gutter is numbered for source lines and blank for the rest', function(
 end)
 
 test('separator lines are real lines, not virtual ones', function()
-  local buf, view = build()
+  local buf, view = build(1)
   local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
   local gap_row
   for i, l in ipairs(view.lines) do

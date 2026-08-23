@@ -82,6 +82,10 @@ function M.build(hunks, old_lines, new_lines, context)
   --- Emit an unchanged range, keeping only `head` lines at its start and `tail`
   --- lines at its end. Emitting the whole range eagerly would double up lines
   --- that the next hunk is about to claim as changed.
+  ---
+  --- The separator occupies a row of its own, so hiding a single line behind it
+  --- saves no space and only makes the file harder to read. Such a range is
+  --- kept in full.
   --- @param from integer
   --- @param to integer
   --- @param head integer
@@ -91,7 +95,7 @@ function M.build(hunks, old_lines, new_lines, context)
     if n <= 0 then
       return
     end
-    if n <= head + tail then
+    if n <= head + tail + 1 then
       push_context(from, to)
       return
     end

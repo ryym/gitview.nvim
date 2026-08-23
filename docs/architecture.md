@@ -89,6 +89,9 @@ one of the two versions:
 up in a ghost buffer, prints a gutter, or jumps to the source has to check it
 first, because the other kinds carry no `side`, `row` or `file`.
 
+A `gap` is only emitted for two or more lines. It takes a row of its own, so
+folding a single line away saves nothing and loses the line.
+
 ## Layering
 
 Everything drawn is an extmark, ordered by priority:
