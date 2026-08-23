@@ -1,4 +1,5 @@
 local dlib = require('unidiff.diff')
+local git = require('unidiff.git')
 local hl = require('unidiff.highlight')
 local render = require('unidiff.render')
 
@@ -24,69 +25,88 @@ function M.setup(opts)
 end
 
 --- @param path string
---- @param rev string
---- @return string[]? lines nil when the blob does not exist (new file)
-local function git_show(path, rev, cwd)
-  local out = vim.system({ 'git', 'show', ('%s:./%s'):format(rev, path) }, {
-    text = true,
-    cwd = cwd,
-  }):wait()
-  if out.code ~= 0 then
-    return nil
+--- @return string filetype
+local function filetype_of(path)
+  local buf = vim.fn.bufnr(path)
+  if buf ~= -1 and vim.bo[buf].filetype ~= '' then
+    return vim.bo[buf].filetype
   end
-  local text = out.stdout:gsub('\n$', '')
-  return vim.split(text, '\n', { plain = true })
+  return vim.filetype.match({ filename = path }) or ''
 end
 
---- Open a unified diff of the current buffer against `rev`.
---- @param opts? {rev?:string, context?:integer}
-function M.open(opts)
-  opts = opts or {}
-  local src = vim.api.nvim_get_current_buf()
-  local file = vim.api.nvim_buf_get_name(src)
-  if file == '' then
-    vim.notify('unidiff: buffer has no file', vim.log.levels.WARN)
-    return
+--- @class unidiff.Source
+--- @field path string absolute path
+--- @field label string
+--- @field old_lines string[]
+--- @field new_lines string[]
+
+--- Turn sources into a renderable view, concatenating their diffs.
+--- @param sources unidiff.Source[]
+--- @param rev string
+--- @param context integer
+--- @param diff_opts table
+--- @return unidiff.View? view nil when nothing differs
+--- @return string[] unchanged labels of sources with no textual difference,
+---         such as a pure rename or a mode change
+local function build_view(sources, rev, context, diff_opts)
+  local lines, files, hunk_rows, gaps = {}, {}, {}, {}
+  local unchanged = {}
+
+  for _, src in ipairs(sources) do
+    local hunks = dlib.hunks(src.old_lines, src.new_lines, diff_opts)
+    if #hunks == 0 then
+      unchanged[#unchanged + 1] = src.label
+    else
+      local flines, fhunks, fgaps = dlib.build(hunks, src.old_lines, src.new_lines, context)
+      local offset = #lines
+      local ft = filetype_of(src.path)
+
+      files[#files + 1] = {
+        path = src.path,
+        label = src.label,
+        old_buf = hl.ghost_buffer(src.old_lines, ft),
+        new_buf = hl.ghost_buffer(src.new_lines, ft),
+        lang = vim.treesitter.language.get_lang(ft) or ft,
+        row = offset + 1,
+      }
+      local index = #files
+
+      for _, l in ipairs(flines) do
+        l.file = index
+        lines[#lines + 1] = l
+      end
+      for _, r in ipairs(fhunks) do
+        hunk_rows[#hunk_rows + 1] = r + offset
+      end
+      for _, g in ipairs(fgaps) do
+        gaps[#gaps + 1] = { row = g.row + offset, count = g.count }
+      end
+    end
   end
-  local dir = vim.fs.dirname(file)
-  local rev = opts.rev or config.rev
-  local context = opts.context or config.context
 
-  local old_lines = git_show(vim.fs.basename(file), rev, dir)
-  if not old_lines then
-    vim.notify(('unidiff: %s not found in %s'):format(file, rev), vim.log.levels.WARN)
-    return
+  if #files == 0 then
+    return nil, unchanged
   end
-  local new_lines = vim.api.nvim_buf_get_lines(src, 0, -1, false)
-
-  local lang = vim.treesitter.language.get_lang(vim.bo[src].filetype) or vim.bo[src].filetype
-  local ft = vim.bo[src].filetype
-
-  local hunks = dlib.hunks(old_lines, new_lines, {
-    algorithm = opts.algorithm or config.algorithm,
-    linematch = opts.linematch or config.linematch,
-  })
-  if #hunks == 0 then
-    vim.notify('unidiff: no changes', vim.log.levels.INFO)
-    return
-  end
-  local lines, hunk_rows, gaps = dlib.build(hunks, old_lines, new_lines, context)
-
-  local old_buf = hl.ghost_buffer(old_lines, ft)
-  local new_buf = hl.ghost_buffer(new_lines, ft)
-
-  local view = {
+  return {
     lines = lines,
+    files = files,
     hunk_rows = hunk_rows,
     gaps = gaps,
-    path = file,
     rev = rev,
-  }
-  local buf = render.render(view, old_buf, new_buf, lang)
-  vim.api.nvim_buf_delete(old_buf, { force = true })
-  vim.api.nvim_buf_delete(new_buf, { force = true })
+  }, unchanged
+end
 
-  vim.api.nvim_buf_set_name(buf, ('unidiff://%s @ %s'):format(vim.fs.basename(file), rev))
+--- @param view unidiff.View
+--- @param name string
+--- @return integer bufnr
+local function open_view(view, name)
+  local buf = render.render(view)
+  for _, f in ipairs(view.files) do
+    vim.api.nvim_buf_delete(f.old_buf, { force = true })
+    vim.api.nvim_buf_delete(f.new_buf, { force = true })
+  end
+
+  vim.api.nvim_buf_set_name(buf, name)
   vim.cmd.tabnew()
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
@@ -95,42 +115,85 @@ function M.open(opts)
   return buf
 end
 
+--- Open a unified diff of the current buffer against `rev`.
+--- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer}
+--- @return integer? bufnr
+function M.open(opts)
+  opts = opts or {}
+  local src = vim.api.nvim_get_current_buf()
+  local file = vim.api.nvim_buf_get_name(src)
+  if file == '' then
+    vim.notify('unidiff: buffer has no file', vim.log.levels.WARN)
+    return
+  end
+  local rev = opts.rev or config.rev
+
+  local old_lines = git.show('./' .. vim.fs.basename(file), rev, vim.fs.dirname(file))
+  if not old_lines then
+    vim.notify(('unidiff: %s not found in %s'):format(file, rev), vim.log.levels.WARN)
+    return
+  end
+
+  local view = build_view({
+    {
+      path = file,
+      label = vim.fs.basename(file),
+      old_lines = old_lines,
+      new_lines = vim.api.nvim_buf_get_lines(src, 0, -1, false),
+    },
+  }, rev, opts.context or config.context, {
+    algorithm = opts.algorithm or config.algorithm,
+    linematch = opts.linematch or config.linematch,
+  })
+  if not view then
+    vim.notify('unidiff: no changes', vim.log.levels.INFO)
+    return
+  end
+
+  return open_view(view, ('unidiff://%s @ %s'):format(vim.fs.basename(file), rev))
+end
+
 --- @param buf integer
 function M.set_keymaps(buf)
   local map = function(lhs, fn, desc)
     vim.keymap.set('n', lhs, fn, { buffer = buf, desc = desc })
   end
   map(']h', function()
-    M.jump_hunk(1)
+    M.jump(1, 'hunk_rows')
   end, 'unidiff: next hunk')
   map('[h', function()
-    M.jump_hunk(-1)
+    M.jump(-1, 'hunk_rows')
   end, 'unidiff: previous hunk')
+  map(']f', function()
+    M.jump(1, 'files')
+  end, 'unidiff: next file')
+  map('[f', function()
+    M.jump(-1, 'files')
+  end, 'unidiff: previous file')
   map('q', '<Cmd>quit<CR>', 'unidiff: close')
   map('<CR>', M.goto_source, 'unidiff: jump to source line')
 end
 
 --- @param dir 1|-1
-function M.jump_hunk(dir)
-  local buf = vim.api.nvim_get_current_buf()
-  local view = render.views[buf]
+--- @param field 'hunk_rows'|'files'
+function M.jump(dir, field)
+  local view = render.views[vim.api.nvim_get_current_buf()]
   if not view then
     return
   end
+  local rows = {}
+  for _, entry in ipairs(view[field]) do
+    rows[#rows + 1] = type(entry) == 'table' and entry.row or entry
+  end
+
   local cur = vim.api.nvim_win_get_cursor(0)[1]
   local target
-  if dir > 0 then
-    for _, r in ipairs(view.hunk_rows) do
-      if r > cur then
-        target = r
-        break
-      end
-    end
-  else
-    for _, r in ipairs(view.hunk_rows) do
-      if r < cur then
-        target = r
-      end
+  for _, r in ipairs(rows) do
+    if dir > 0 and r > cur then
+      target = r
+      break
+    elseif dir < 0 and r < cur then
+      target = r
     end
   end
   if target then
@@ -148,9 +211,10 @@ function M.goto_source()
   if not l then
     return
   end
+  local path = view.files[l.file].path
   local lnum = l.new_lnum or l.old_lnum
   vim.cmd.tabclose()
-  vim.cmd.edit(vim.fn.fnameescape(view.path))
+  vim.cmd.edit(vim.fn.fnameescape(path))
   pcall(vim.api.nvim_win_set_cursor, 0, { lnum, 0 })
 end
 

@@ -35,11 +35,28 @@ local NEW = {
 local function build()
   local hunks = dlib.hunks(OLD, NEW)
   local lines, hunk_rows, gaps = dlib.build(hunks, OLD, NEW, 3)
-  local view =
-    { lines = lines, hunk_rows = hunk_rows, gaps = gaps, path = '/tmp/x.lua', rev = 'HEAD' }
+  for _, l in ipairs(lines) do
+    l.file = 1
+  end
   local old_buf = hl.ghost_buffer(OLD, 'lua')
   local new_buf = hl.ghost_buffer(NEW, 'lua')
-  local buf = render.render(view, old_buf, new_buf, 'lua')
+  local view = {
+    lines = lines,
+    hunk_rows = hunk_rows,
+    gaps = gaps,
+    rev = 'HEAD',
+    files = {
+      {
+        path = '/tmp/x.lua',
+        label = 'x.lua',
+        old_buf = old_buf,
+        new_buf = new_buf,
+        lang = 'lua',
+        row = 1,
+      },
+    },
+  }
+  local buf = render.render(view)
   vim.api.nvim_buf_delete(old_buf, { force = true })
   vim.api.nvim_buf_delete(new_buf, { force = true })
   return buf, view

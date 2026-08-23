@@ -10,11 +10,21 @@ local ns_diff = vim.api.nvim_create_namespace('unidiff.diff')
 --- @type table<integer, unidiff.View>
 M.views = {}
 
+--- @class unidiff.File
+--- @field path string absolute path in the working tree
+--- @field label string what the header shows
+--- @field old_buf integer ghost buffer holding the old version
+--- @field new_buf integer ghost buffer holding the new version
+--- @field lang string language for highlight collection
+--- @field row integer 1-based row of this file's first line
+
 --- @class unidiff.View
 --- @field lines unidiff.Line[]
+--- @field files unidiff.File[]
 --- @field hunk_rows integer[]
---- @field path string
+--- @field gaps {row:integer, count:integer}[]
 --- @field rev string
+--- @field note string? extra text for the winbar, e.g. skipped files
 
 function M.setup_highlights()
   local set = function(name, val)
@@ -59,6 +69,7 @@ function M.setup_highlights()
   set('UnidiffOldLnum', { link = 'LineNr' })
   set('UnidiffNewLnum', { link = 'LineNr' })
   set('UnidiffSeparator', { link = 'Folded' })
+  set('UnidiffFileHeader', { link = 'Title' })
 end
 
 local SIGN = { add = '+', del = '-', context = ' ' }
@@ -66,11 +77,8 @@ local LINE_HL = { add = 'UnidiffAdd', del = 'UnidiffDelete' }
 local TEXT_HL = { add = 'UnidiffAddText', del = 'UnidiffDeleteText' }
 
 --- @param view unidiff.View
---- @param old_buf integer
---- @param new_buf integer
---- @param lang string
 --- @return integer bufnr
-function M.render(view, old_buf, new_buf, lang)
+function M.render(view)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].swapfile = false
@@ -85,20 +93,26 @@ function M.render(view, old_buf, new_buf, lang)
   -- Only a fraction of each version ends up on screen. The legacy syntax path
   -- probes byte by byte, so telling it which rows matter keeps that bounded by
   -- the size of the diff rather than the size of the file.
-  local want = { old = {}, new = {} }
+  local want = {}
+  for i = 1, #view.files do
+    want[i] = { old = {}, new = {} }
+  end
   for _, l in ipairs(view.lines) do
-    want[l.side][l.row] = true
+    want[l.file][l.side][l.row] = true
   end
 
-  local segs = {
-    old = hl.collect(old_buf, lang, want.old),
-    new = hl.collect(new_buf, lang, want.new),
-  }
+  local segs = {}
+  for i, f in ipairs(view.files) do
+    segs[i] = {
+      old = hl.collect(f.old_buf, f.lang, want[i].old),
+      new = hl.collect(f.new_buf, f.lang, want[i].new),
+    }
+  end
 
   -- 1. syntax, replayed from the ghost buffers
   for row0, l in ipairs(view.lines) do
     local row = row0 - 1
-    for _, s in ipairs(segs[l.side][l.row] or {}) do
+    for _, s in ipairs(segs[l.file][l.side][l.row] or {}) do
       -- `end_col == -1` marks a capture that continues past this row
       local end_col = s.end_col < 0 and #l.text or math.min(s.end_col, #l.text)
       if s.start_col < end_col then
@@ -169,6 +183,20 @@ function M.render(view, old_buf, new_buf, lang)
     end
   end
 
+  -- 5. file headers, also virtual. The first file has no row to hang above, so
+  --    the winbar names whichever file the cursor is in instead.
+  for i, f in ipairs(view.files) do
+    if i > 1 and f.row > 1 then
+      vim.api.nvim_buf_set_extmark(buf, ns_diff, f.row - 1, 0, {
+        virt_lines = {
+          { { '', 'UnidiffSeparator' } },
+          { { ' ' .. f.label .. ' ', 'UnidiffFileHeader' } },
+        },
+        virt_lines_above = true,
+      })
+    end
+  end
+
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
   M.views[buf] = view
@@ -217,17 +245,44 @@ function M.gap_label(count)
   return ('%s %d unchanged line%s %s'):format(dots, count, count == 1 and '' or 's', dots)
 end
 
+--- Names the file the cursor is in. Recomputed on every redraw, so it doubles
+--- as the header for the first file, which cannot carry a virtual line above it.
+--- @return string
+function M.winbar()
+  local win = vim.g.statusline_winid
+  local view = M.views[vim.api.nvim_win_get_buf(win)]
+  if not view then
+    return ''
+  end
+  local row = vim.api.nvim_win_get_cursor(win)[1]
+  local file = view.files[1]
+  for _, f in ipairs(view.files) do
+    if f.row <= row then
+      file = f
+    end
+  end
+  if not file then
+    return ''
+  end
+
+  local text = (' %s @ %s'):format(file.label, view.rev)
+  if #view.files > 1 then
+    text = text .. ('   [%d files]'):format(#view.files)
+  end
+  if view.note then
+    text = text .. '   ' .. view.note
+  end
+  local lead = view.gaps[1]
+  if lead and lead.row == 1 and row <= (view.files[2] and view.files[2].row or math.huge) then
+    text = text .. '   ' .. M.gap_label(lead.count) .. ' above'
+  end
+  return '%#UnidiffFileHeader#' .. text:gsub('%%', '%%%%')
+end
+
 --- @param win integer
 --- @param buf integer
 function M.configure_window(win, buf)
-  local view = M.views[buf]
-  local header = ('%s @ %s'):format(vim.fs.basename(view.path), view.rev)
-  local lead = view.gaps[1]
-  if lead and lead.row == 1 then
-    header = header .. '   ' .. M.gap_label(lead.count) .. ' above'
-  end
-  vim.wo[win].winbar = '%#UnidiffSeparator# ' .. header:gsub('%%', '%%%%')
-
+  vim.wo[win].winbar = '%!v:lua.require("unidiff.render").winbar()'
   vim.wo[win].statuscolumn = '%!v:lua.require("unidiff.render").statuscolumn()'
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
