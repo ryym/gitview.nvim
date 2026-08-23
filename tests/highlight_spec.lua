@@ -97,3 +97,55 @@ test('both paths report the same priority layer', function()
   local syn = hl.collect(hl.ghost_buffer(PERL, 'perl'), 'perl')[0][1]
   eq(ts.priority, syn.priority)
 end)
+
+--- A file with a long string, so multi-row captures are in play.
+local LUA_DOC = { 'local a = 1', 'local doc = [[' }
+for i = 1, 30 do
+  LUA_DOC[#LUA_DOC + 1] = 'prose line ' .. i
+end
+LUA_DOC[#LUA_DOC + 1] = ']]'
+LUA_DOC[#LUA_DOC + 1] = 'return a'
+
+test('treesitter path honours the requested rows', function()
+  local buf = hl.ghost_buffer(LUA_DOC, 'lua')
+  local segs = hl.collect(buf, 'lua', { [0] = true, [33] = true })
+  eq({ 0, 33 }, vim.fn.sort(vim.tbl_keys(segs), function(a, b)
+    return a - b
+  end))
+end)
+
+test('restricting rows does not change what those rows get', function()
+  -- The parse still covers the whole buffer, so a row deep inside the string
+  -- must come out identical whether or not its neighbours were requested.
+  local buf = hl.ghost_buffer(LUA_DOC, 'lua')
+  local full = hl.collect(buf, 'lua')
+  for _, row in ipairs({ 0, 1, 20, 32, 33 }) do
+    eq(full[row], hl.collect(buf, 'lua', { [row] = true })[row], 'row ' .. row)
+  end
+end)
+
+test('a row inside a multi-line string keeps its string capture', function()
+  local buf = hl.ghost_buffer(LUA_DOC, 'lua')
+  local segs = hl.collect(buf, 'lua', { [20] = true })
+  eq('prose line 19', LUA_DOC[21])
+  local found = false
+  for _, s in ipairs(segs[20] or {}) do
+    found = found or s.hl_group == '@string.lua'
+  end
+  assert(found, 'expected @string.lua, got ' .. vim.inspect(segs[20]))
+end)
+
+test('a capture spanning two requested ranges is not duplicated', function()
+  local buf = hl.ghost_buffer(LUA_DOC, 'lua')
+  -- two disjoint ranges, both inside the same multi-row string capture
+  local segs = hl.collect(buf, 'lua', { [10] = true, [20] = true })
+  for _, row in ipairs({ 10, 20 }) do
+    local strings = 0
+    for _, s in ipairs(segs[row] or {}) do
+      if s.hl_group == '@string.lua' then
+        strings = strings + 1
+      end
+    end
+    eq(1, strings, 'row ' .. row .. ' should carry one string segment')
+  end
+end)

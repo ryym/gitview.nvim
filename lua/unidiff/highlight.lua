@@ -23,19 +23,49 @@ function M.ghost_buffer(lines, filetype)
   return buf
 end
 
+--- Turn a set of rows into the contiguous `[start, stop)` ranges that the
+--- Tree-sitter query API takes. The ranges are disjoint, so a capture spanning
+--- several of them is never emitted twice for the same row.
+--- @param rows table<integer, true>
+--- @return integer[][]
+local function row_ranges(rows)
+  local sorted = vim.tbl_keys(rows)
+  table.sort(sorted)
+  local ranges = {}
+  for _, r in ipairs(sorted) do
+    local last = ranges[#ranges]
+    if last and last[2] == r then
+      last[2] = r + 1
+    else
+      ranges[#ranges + 1] = { r, r + 1 }
+    end
+  end
+  return ranges
+end
+
 --- Collect segments from Tree-sitter by iterating the `highlights` query.
 ---
 --- Probing positions with `vim.inspect_pos()` would be the obvious alternative,
 --- but it is ~25x slower and its result carries no end column, so there is no
 --- way to advance past a capture without re-probing every single byte.
 ---
+--- The whole buffer is parsed, because that is what makes a line deleted from
+--- the middle of a multi-line string come out as a string. Only the query is
+--- restricted to the rows the diff shows: a captures pass over a whole file
+--- costs ~16x a pass over the handful of rows around its hunks, and the
+--- captures it collects for invisible rows would only be thrown away.
+--- Restricting the query is safe because a capture that starts before the range
+--- is still reported inside it.
+---
 --- @param buf integer
 --- @param parser vim.treesitter.LanguageTree
+--- @param rows table<integer, true>? rows of interest; nil means all
 --- @return table<integer, unidiff.Seg[]>
-local function collect_treesitter(buf, parser)
+local function collect_treesitter(buf, parser, rows)
   local by_row = {}
   -- Headless/unrendered buffers are never parsed implicitly, so force it here.
   parser:parse(true)
+  local ranges = rows and row_ranges(rows) or { { 0, -1 } }
 
   parser:for_each_tree(function(tree, ltree)
     local ltlang = ltree:lang()
@@ -43,26 +73,31 @@ local function collect_treesitter(buf, parser)
     if not query then
       return
     end
-    for id, node, metadata in query:iter_captures(tree:root(), buf, 0, -1) do
-      local capture = query.captures[id]
-      if capture:sub(1, 1) ~= '_' then
-        local sr, sc, er, ec = node:range()
-        local prio = tonumber(metadata.priority or metadata[id] and metadata[id].priority)
-          or TS_PRIORITY
-        local hl = '@' .. capture .. '.' .. ltlang
-        -- Split multi-row captures so each row can be replayed independently.
-        for row = sr, er do
-          local s = row == sr and sc or 0
-          local e = row == er and ec or -1
-          if not (row == er and ec == 0 and er > sr) then
-            by_row[row] = by_row[row] or {}
-            table.insert(by_row[row], {
-              row = row,
-              start_col = s,
-              end_col = e,
-              hl_group = hl,
-              priority = prio,
-            })
+    for _, range in ipairs(ranges) do
+      for id, node, metadata in query:iter_captures(tree:root(), buf, range[1], range[2]) do
+        local capture = query.captures[id]
+        if capture:sub(1, 1) ~= '_' then
+          local sr, sc, er, ec = node:range()
+          local prio = tonumber(metadata.priority or metadata[id] and metadata[id].priority)
+            or TS_PRIORITY
+          local hl = '@' .. capture .. '.' .. ltlang
+          -- Split multi-row captures so each row can be replayed independently,
+          -- clipped to this range so overlapping captures are not duplicated.
+          local from = math.max(sr, range[1])
+          local to = range[2] < 0 and er or math.min(er, range[2] - 1)
+          for row = from, to do
+            local s = row == sr and sc or 0
+            local e = row == er and ec or -1
+            if not (row == er and ec == 0 and er > sr) then
+              by_row[row] = by_row[row] or {}
+              table.insert(by_row[row], {
+                row = row,
+                start_col = s,
+                end_col = e,
+                hl_group = hl,
+                priority = prio,
+              })
+            end
           end
         end
       end
@@ -153,13 +188,12 @@ end
 ---
 --- @param buf integer
 --- @param lang string
---- @param rows table<integer, true>? 0-based rows of interest. Only the legacy
----        path honours this; the Tree-sitter pass reads the whole tree anyway.
+--- @param rows table<integer, true>? 0-based rows of interest; nil means all
 --- @return table<integer, unidiff.Seg[]> segments keyed by 0-based row
 function M.collect(buf, lang, rows)
   local ok, parser = pcall(vim.treesitter.get_parser, buf, lang)
   if ok and parser then
-    return collect_treesitter(buf, parser)
+    return collect_treesitter(buf, parser, rows)
   end
   return collect_syntax(buf, rows)
 end
