@@ -45,9 +45,9 @@ Inside the diff buffer:
 A diff buffer interleaves two versions of a file, so its text is not valid
 source in any language and no parser can highlight it directly. Highlights are
 instead collected from separate scratch buffers holding each whole version, then
-replayed onto the diff buffer as extmarks. Line numbers, `+`/`-` markers, file
-headers and separators are all decoration rather than text, so yanking a
-selection gives you code.
+replayed onto the diff buffer as extmarks. Line numbers and `+`/`-` markers are
+decoration rather than text, so yanking a selection gives you code and not a
+gutter.
 
 [docs/architecture.md](docs/architecture.md) describes the pipeline in full.
 
@@ -94,14 +94,11 @@ carries configuration, and the colors do not depend on it.
 - **Languages without a Tree-sitter parser need `:syntax` enabled.** They fall
   back to it, and a Tree-sitter-only setup gets no colors there. Highlighting
   them is also slower.
-- **A skipped range at the very top has no separator line.** That count is
-  reported in the winbar instead.
 - **Word-level highlights need equal-sized blocks.** A replacement of 2 lines by
   3 falls back to line-level backgrounds only.
 - **The winbar can be taken over by your config.** The file the cursor is in is
   reported through `'winbar'`, so a configuration or plugin that sets it for
-  every window may hide the name of the first file. The other files keep their
-  inline headers.
+  every window hides it. Every file still has its own header line in the buffer.
 - **Everything is computed eagerly** when the diff opens, and grows linearly
   with the number of files. See [docs/performance.md](docs/performance.md) for
   the numbers.

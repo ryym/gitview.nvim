@@ -81,14 +81,15 @@ other marks must be able to override has to be a range mark instead:
 
 ### `virt_lines_above` does not render on the first line
 
-Virtual lines placed above buffer line 1 are simply not drawn. Anything that
-belongs above the top of the buffer — the first file's header, a leading gap
-count — has to go somewhere else. Here it goes in the winbar.
+Virtual lines placed above buffer line 1 are simply not drawn, so nothing can be
+shown above the top of the buffer that way. This is one reason separators and
+file headers here are ordinary buffer lines: a leading gap count and the first
+file's header have nowhere to hang otherwise.
 
-### `'statuscolumn'` is evaluated for virtual and wrapped lines
+### `'statuscolumn'` is evaluated for every screen line
 
-Return blanks when `vim.v.virtnum ~= 0`, or every virtual line repeats the line
-numbers of the real line it hangs off.
+Return blanks when `vim.v.virtnum ~= 0`, or a wrapped line repeats the numbers of
+the buffer line it continues.
 
 ### Colorscheme diff groups carry a foreground
 

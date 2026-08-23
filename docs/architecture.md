@@ -65,15 +65,29 @@ Everything one diff buffer needs, stored in `render.views[bufnr]` and dropped on
 
 - `lines` — the `unidiff.Line[]`, one per buffer row
 - `files` — `unidiff.File[]`, each with its ghost buffers, language, label, and
-  the 1-based row where it starts
+  the 1-based row of its header line
 - `hunk_rows` — 1-based rows to jump between with `]h` / `[h`
-- `gaps` — skipped unchanged ranges: the row a separator belongs above, and how
-  many lines were skipped
 - `rev`, `note` — shown in the winbar
 
-Rows in `hunk_rows` and `gaps` are absolute in the combined buffer. Assembling
+Rows in `hunk_rows` and `files` are absolute in the combined buffer. Assembling
 several files means concatenating each file's lines and shifting its rows by the
 running offset.
+
+### Line kinds
+
+Every buffer row has a `unidiff.Line`, but only some of them stand for a line of
+one of the two versions:
+
+| kind                     | text                       | has line numbers |
+| ------------------------ | -------------------------- | ---------------- |
+| `context`, `add`, `del`  | source text                | yes              |
+| `gap`                    | `···· N unchanged lines ····` | no            |
+| `file`                   | the file's label           | no               |
+| `blank`                  | empty, separates two files | no               |
+
+`dlib.source_kinds` is the test for the first group. Anything that looks a line
+up in a ghost buffer, prints a gutter, or jumps to the source has to check it
+first, because the other kinds carry no `side`, `row` or `file`.
 
 ## Layering
 
@@ -89,16 +103,20 @@ The ordering is the point: the line background has to sit under the syntax
 colors so they survive, and the word-level highlights have to sit over both so a
 changed word stands out against its own line's background.
 
-Three layers are deliberately _not_ buffer text, because putting them there
-would break the promise that a selection yanks source:
+Separators and file headers are ordinary buffer lines, highlighted by the same
+whole-line range marks as the diff colors. They were virtual lines once; making
+them real means they can be searched, jumped to by row, and copied along with the
+lines around them, and it removes the special cases that `virt_lines` above line
+1 forced (see `neovim-notes.md`).
 
-- the gutter, drawn with `'statuscolumn'`
-- file headers and gap separators, drawn as `virt_lines`
+Two things are still deliberately _not_ buffer text:
+
+- the gutter, drawn with `'statuscolumn'`, so line numbers stay out of a yank
 - the name of the file the cursor is in, drawn in the `'winbar'`
 
-The winbar is recomputed on redraw rather than set once. That makes it follow the
-cursor through a multi-file view, and it is also the only place the first file's
-name can go, since `virt_lines` above line 1 are not drawn.
+The winbar is recomputed on redraw rather than set once, so it follows the cursor
+through a multi-file view and keeps naming the file after its header line has
+scrolled off.
 
 ## Invariants
 
