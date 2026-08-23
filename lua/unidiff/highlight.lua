@@ -10,16 +10,39 @@ local M = {}
 -- Treesitter's own default; captures later in the query win ties.
 local TS_PRIORITY = 100
 
+--- Whether Tree-sitter can highlight `lang`, and so whether the ghost buffer
+--- needs a filetype at all.
+--- @param lang string
+--- @return boolean
+function M.has_parser(lang)
+  if lang == '' then
+    return false
+  end
+  -- `language.add` returns `true`, or `nil` plus a message when there is no
+  -- parser; anything other than `true` means the legacy path has to take over.
+  local ok, added = pcall(vim.treesitter.language.add, lang)
+  return ok and added == true
+end
+
 --- Load a whole file version into a scratch buffer so the highlighter sees full
 --- context (multi-line strings, injections, ...) instead of a hunk fragment.
+---
+--- Setting 'filetype' fires FileType, which loads the ftplugin and the syntax
+--- file for every ghost buffer. That is only worth paying for when the legacy
+--- `:syntax` path will actually be used: `vim.treesitter.get_parser()` takes the
+--- language explicitly and does not care what the buffer's filetype is.
+---
 --- @param lines string[]
 --- @param filetype string
+--- @param lang string? language Tree-sitter would use, when it has a parser
 --- @return integer bufnr
-function M.ghost_buffer(lines, filetype)
+function M.ghost_buffer(lines, filetype, lang)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].bufhidden = 'hide'
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].filetype = filetype
+  if not (lang and M.has_parser(lang)) then
+    vim.bo[buf].filetype = filetype
+  end
   return buf
 end
 

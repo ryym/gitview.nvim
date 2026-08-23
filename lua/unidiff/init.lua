@@ -75,13 +75,14 @@ local function build_view(sources, rev, context, diff_opts)
       local flines, fhunks, fgaps = dlib.build(hunks, src.old_lines, src.new_lines, context)
       local offset = #lines
       local ft = filetype_of(src.path)
+      local lang = vim.treesitter.language.get_lang(ft) or ft
 
       files[#files + 1] = {
         path = src.path,
         label = src.label,
-        old_buf = hl.ghost_buffer(src.old_lines, ft),
-        new_buf = hl.ghost_buffer(src.new_lines, ft),
-        lang = vim.treesitter.language.get_lang(ft) or ft,
+        old_buf = hl.ghost_buffer(src.old_lines, ft, lang),
+        new_buf = hl.ghost_buffer(src.new_lines, ft, lang),
+        lang = lang,
         row = offset + 1,
       }
       local index = #files

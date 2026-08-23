@@ -149,3 +149,24 @@ test('a capture spanning two requested ranges is not duplicated', function()
     eq(1, strings, 'row ' .. row .. ' should carry one string segment')
   end
 end)
+
+test('has_parser tells the two highlight paths apart', function()
+  eq(true, hl.has_parser('lua'))
+  -- `vim.treesitter.language.add` reports failure as nil, not false
+  eq(false, hl.has_parser('perl'))
+  eq(false, hl.has_parser('nosuchlanguage'))
+  eq(false, hl.has_parser(''))
+end)
+
+test('a ghost buffer skips filetype when treesitter can highlight it', function()
+  -- Setting it would load an ftplugin and a syntax file for nothing.
+  local buf = hl.ghost_buffer({ 'local x = 1' }, 'lua', 'lua')
+  eq('', vim.bo[buf].filetype)
+  assert(hl.collect(buf, 'lua')[0], 'highlights should still be collected')
+end)
+
+test('a ghost buffer sets filetype when the legacy path is needed', function()
+  local buf = hl.ghost_buffer(PERL, 'perl', 'perl')
+  eq('perl', vim.bo[buf].filetype)
+  assert(next(hl.collect(buf, 'perl')), 'legacy highlights should still work')
+end)
