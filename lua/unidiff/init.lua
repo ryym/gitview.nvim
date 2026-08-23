@@ -189,21 +189,39 @@ function M.open_all(opts)
     return
   end
 
-  local sources, skipped = {}, {}
+  local wanted, skipped = {}, {}
   for _, c in ipairs(changes) do
     if c.binary then
       skipped[#skipped + 1] = c.path
     else
-      local path = root .. '/' .. c.path
-      -- An added file has no blob in `rev`; a deleted one has no working copy.
-      local old_lines = c.status == 'A' and {} or git.show(c.old_path, rev, root)
-      sources[#sources + 1] = {
-        path = path,
-        label = c.status == 'R' and ('%s -> %s'):format(c.old_path, c.path) or c.path,
-        old_lines = old_lines or {},
-        new_lines = c.status == 'D' and {} or working_lines(path),
-      }
+      wanted[#wanted + 1] = c
     end
+  end
+
+  -- One `git cat-file` for every old version: a process per file is what makes
+  -- a large diff slow, not the diffing itself. Added files have no blob in
+  -- `rev`, so they are left out of the request rather than asked for under a
+  -- spec that would resolve to the root tree.
+  local specs, spec_of = {}, {}
+  for i, c in ipairs(wanted) do
+    if c.status ~= 'A' then
+      specs[#specs + 1] = ('%s:%s'):format(rev, c.old_path)
+      spec_of[i] = #specs
+    end
+  end
+  local blobs = git.batch_show(specs, root)
+
+  local sources = {}
+  for i, c in ipairs(wanted) do
+    local path = root .. '/' .. c.path
+    local old_lines = spec_of[i] and blobs[spec_of[i]]
+    sources[#sources + 1] = {
+      path = path,
+      label = c.status == 'R' and ('%s -> %s'):format(c.old_path, c.path) or c.path,
+      old_lines = old_lines or {},
+      -- a deleted file has no working copy
+      new_lines = c.status == 'D' and {} or working_lines(path),
+    }
   end
 
   local view, unchanged = build_view(sources, rev, opts.context or config.context, {

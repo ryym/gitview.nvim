@@ -47,3 +47,38 @@ test('marks a binary rename by its new path', function()
   local out = z('-\t-\t', 'old.bin', 'new.bin')
   eq({ ['new.bin'] = true }, git.parse_binary(out))
 end)
+
+test('parses a cat-file batch stream', function()
+  -- `<sha> <type> <size>` then exactly size bytes, then a newline.
+  local out = table.concat({
+    ('a'):rep(40) .. ' blob 7\nfoo\nbar\n',
+    ('b'):rep(40) .. ' blob 4\nbaz\n\n',
+  })
+  eq({ { 'foo', 'bar' }, { 'baz' } }, git.parse_batch(out))
+end)
+
+test('reports missing objects in place', function()
+  local out = table.concat({
+    'HEAD:gone.txt missing\n',
+    ('a'):rep(40) .. ' blob 4\nhey\n\n',
+  })
+  eq({ false, { 'hey' } }, git.parse_batch(out))
+end)
+
+test('a header line inside the content is not mistaken for a header', function()
+  -- Content that looks like a batch header must be consumed by its size, not
+  -- rescanned; only positional order links a result back to its request.
+  local fake = ('c'):rep(40) .. ' blob 99'
+  local body = fake .. '\ntail'
+  local out = ('a'):rep(40) .. (' blob %d\n'):format(#body) .. body .. '\n'
+  eq({ { fake, 'tail' } }, git.parse_batch(out))
+end)
+
+test('parses an empty batch', function()
+  eq({}, git.parse_batch(''))
+end)
+
+test('keeps an empty blob distinct from a missing one', function()
+  local out = ('a'):rep(40) .. ' blob 0\n\n'
+  eq({ {} }, git.parse_batch(out))
+end)

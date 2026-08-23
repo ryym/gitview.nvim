@@ -6,6 +6,18 @@ local M = {}
 --- @field old_path string repo-relative path in the revision (differs on rename)
 --- @field binary boolean
 
+--- Split blob contents into lines. An empty blob is an empty file, so it has no
+--- lines at all; `vim.split` would otherwise report a single empty one and the
+--- diff would show a phantom line.
+--- @param text string
+--- @return string[]
+local function blob_lines(text)
+  if text == '' then
+    return {}
+  end
+  return vim.split((text:gsub('\n$', '')), '\n', { plain = true })
+end
+
 --- @param cmd string[]
 --- @param cwd string
 --- @return string? stdout nil when the command failed
@@ -35,7 +47,62 @@ function M.show(path, rev, cwd)
   if not out then
     return nil
   end
-  return vim.split((out:gsub('\n$', '')), '\n', { plain = true })
+  return blob_lines(out)
+end
+
+--- Parse the stream `git cat-file --batch` writes.
+---
+--- Each object is a header line `<sha> <type> <size>` followed by exactly
+--- `size` bytes and a newline; a spec that resolves to nothing yields
+--- `<spec> missing` instead. Objects come back in the order they were asked
+--- for, so results are matched by position rather than by parsing the spec back
+--- out of the header.
+---
+--- @param out string raw stdout, which must not have been newline-converted
+--- @return (string[]|false)[]
+function M.parse_batch(out)
+  local results = {}
+  local pos = 1
+  while pos <= #out do
+    local nl = out:find('\n', pos, true)
+    if not nl then
+      break
+    end
+    local header = out:sub(pos, nl - 1)
+    local size = header:match('^%x+ %w+ (%d+)$')
+    if size then
+      local body = out:sub(nl + 1, nl + tonumber(size))
+      results[#results + 1] = blob_lines(body)
+      pos = nl + 1 + tonumber(size) + 1 -- content, then its trailing newline
+    else
+      -- `<spec> missing`, or anything else we cannot make sense of
+      results[#results + 1] = false
+      pos = nl + 1
+    end
+  end
+  return results
+end
+
+--- Read many blobs with one `git cat-file` rather than one `git show` each.
+--- Spawning a process per file dominates the cost of a large diff.
+---
+--- @param specs string[] revision specs, e.g. `HEAD:src/init.lua`
+--- @param cwd string
+--- @return (string[]|false)[] contents per spec, `false` when it does not exist
+function M.batch_show(specs, cwd)
+  if #specs == 0 then
+    return {}
+  end
+  -- `text = true` would rewrite CRLF and desynchronise the byte counts in the
+  -- headers, so the stream is read raw.
+  local out = vim.system({ 'git', 'cat-file', '--batch' }, {
+    cwd = cwd,
+    stdin = table.concat(specs, '\n') .. '\n',
+  }):wait()
+  if out.code ~= 0 then
+    return {}
+  end
+  return M.parse_batch(out.stdout)
 end
 
 --- Parse `git diff --name-status -z`.
