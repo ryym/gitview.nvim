@@ -26,6 +26,11 @@ M.views = {}
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
 
+--- Highlight groups are defined on first use rather than from `setup()`, so a
+--- diff opened without any configuration still gets its colors. Doing it lazily
+--- also means the colorscheme is loaded by the time `DiffAdd` is read.
+local highlights_ready = false
+
 function M.setup_highlights()
   local set = function(name, val)
     vim.api.nvim_set_hl(0, name, vim.tbl_extend('keep', val, { default = true }))
@@ -70,6 +75,28 @@ function M.setup_highlights()
   set('UnidiffNewLnum', { link = 'LineNr' })
   set('UnidiffSeparator', { link = 'Folded' })
   set('UnidiffFileHeader', { link = 'Title' })
+
+  if not highlights_ready then
+    highlights_ready = true
+    -- `:colorscheme` clears every group, so they have to be put back afterwards.
+    vim.api.nvim_create_autocmd('ColorScheme', {
+      group = vim.api.nvim_create_augroup('unidiff.highlights', { clear = true }),
+      callback = function()
+        M.setup_highlights()
+      end,
+    })
+  end
+end
+
+function M.ensure_highlights()
+  if not highlights_ready then
+    M.setup_highlights()
+  end
+end
+
+--- Testing hook: forget that the groups were ever defined.
+function M.ensure_highlights_reset()
+  highlights_ready = false
 end
 
 local SIGN = { add = '+', del = '-', context = ' ' }
@@ -79,6 +106,7 @@ local TEXT_HL = { add = 'UnidiffAddText', del = 'UnidiffDeleteText' }
 --- @param view unidiff.View
 --- @return integer bufnr
 function M.render(view)
+  M.ensure_highlights()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].swapfile = false

@@ -193,3 +193,55 @@ test('statuscolumn renders blanks for virtual lines', function()
   vim.api.nvim_win_close(win, true)
   eq(#view.lines, #vim.api.nvim_buf_get_lines(buf, 0, -1, false))
 end)
+
+-- The groups whose colors we compute; the rest are plain `default link`s, which
+-- survive a colorscheme change on their own.
+local COLOR_GROUPS =
+  { 'UnidiffAdd', 'UnidiffDelete', 'UnidiffAddText', 'UnidiffDeleteText' }
+
+test('colors are defined by rendering, not by setup()', function()
+  -- Reproduce a session where setup() was never called: drop the ColorScheme
+  -- hook, then load a colorscheme, which clears every highlight group. Only
+  -- opening a diff should be needed to get the colors back.
+  vim.api.nvim_create_augroup('unidiff.highlights', { clear = true })
+  render.ensure_highlights_reset()
+  vim.cmd.colorscheme('default')
+  for _, name in ipairs(COLOR_GROUPS) do
+    eq({}, vim.api.nvim_get_hl(0, { name = name }), name .. ' should start undefined')
+  end
+
+  build()
+
+  for _, name in ipairs(COLOR_GROUPS) do
+    local h = vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false })
+    assert(h.bg, name .. ' should carry a background color')
+  end
+  for _, name in ipairs({ 'UnidiffSeparator', 'UnidiffFileHeader' }) do
+    assert(next(vim.api.nvim_get_hl(0, { name = name })), name .. ' should be defined')
+  end
+end)
+
+test('add and delete backgrounds differ, and each differs from its word color', function()
+  render.setup_highlights()
+  local function bg(name)
+    return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false }).bg
+  end
+  assert(bg('UnidiffAdd') ~= bg('UnidiffDelete'), 'add and delete must be distinguishable')
+  assert(bg('UnidiffAdd') ~= bg('UnidiffAddText'), 'word highlight must stand out')
+  assert(bg('UnidiffDelete') ~= bg('UnidiffDeleteText'), 'word highlight must stand out')
+end)
+
+test('a colorscheme change puts the groups back', function()
+  render.setup_highlights()
+  vim.cmd.colorscheme('default')
+  local after = vim.api.nvim_get_hl(0, {
+    id = vim.api.nvim_get_hl_id_by_name('UnidiffAdd'),
+    link = false,
+  })
+  assert(after.bg, 'UnidiffAdd should be redefined after :colorscheme')
+  eq(
+    vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name('DiffAdd'), link = false }).bg,
+    after.bg,
+    'and should follow the new DiffAdd'
+  )
+end)

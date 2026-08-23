@@ -116,8 +116,10 @@ require('unidiff').setup({ linematch = 60 })
 `UnidiffAdd`, `UnidiffDelete`, `UnidiffAddText`, `UnidiffDeleteText`,
 `UnidiffOldLnum`, `UnidiffNewLnum`, `UnidiffSeparator`.
 
-They default to background-only colors derived from `DiffAdd`/`DiffDelete`, and
-are redefined on `ColorScheme`. Defining any of them yourself takes precedence.
+They default to background-only colors derived from `DiffAdd`/`DiffDelete`, are
+defined the first time a diff is opened, and are redefined on `ColorScheme`.
+Defining any of them yourself takes precedence. `setup()` is optional: it only
+carries configuration, and the colors do not depend on it.
 
 ## Known limitations
 

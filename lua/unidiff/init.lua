@@ -20,8 +20,8 @@ local config = {
 --- @param opts? unidiff.Config
 function M.setup(opts)
   config = vim.tbl_extend('force', config, opts or {})
+  -- Colors do not need this: they are defined on first render either way.
   render.setup_highlights()
-  vim.api.nvim_create_autocmd('ColorScheme', { callback = render.setup_highlights })
 end
 
 --- The new side of the diff is whatever the user is looking at: a loaded buffer
