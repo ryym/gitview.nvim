@@ -23,22 +23,17 @@ function M.ghost_buffer(lines, filetype)
   return buf
 end
 
---- Collect per-line highlight segments for a whole buffer.
+--- Collect segments from Tree-sitter by iterating the `highlights` query.
 ---
---- We iterate the `highlights` query directly rather than probing positions with
---- `vim.inspect_pos()`: probing is ~25x slower and its result carries no end
---- column, so there is no way to advance past a capture without re-probing every
---- single byte.
+--- Probing positions with `vim.inspect_pos()` would be the obvious alternative,
+--- but it is ~25x slower and its result carries no end column, so there is no
+--- way to advance past a capture without re-probing every single byte.
 ---
 --- @param buf integer
---- @param lang string
---- @return table<integer, unidiff.Seg[]> segments keyed by 0-based row
-function M.collect(buf, lang)
+--- @param parser vim.treesitter.LanguageTree
+--- @return table<integer, unidiff.Seg[]>
+local function collect_treesitter(buf, parser)
   local by_row = {}
-  local ok, parser = pcall(vim.treesitter.get_parser, buf, lang)
-  if not ok or not parser then
-    return by_row
-  end
   -- Headless/unrendered buffers are never parsed implicitly, so force it here.
   parser:parse(true)
 
@@ -75,6 +70,98 @@ function M.collect(buf, lang)
   end)
 
   return by_row
+end
+
+--- Collect segments from legacy `:syntax` highlighting.
+---
+--- There is no bulk query for it, so positions have to be probed one byte at a
+--- time. `vim.fn.synID()` is the cheap way to do that: `vim.inspect_pos()` also
+--- reports Tree-sitter, semantic tokens and extmarks, and building those tables
+--- per byte costs more than an order of magnitude more.
+---
+--- `synID()` only reads the current buffer, hence `nvim_buf_call`. Vim keeps its
+--- own syntax state for the buffer and computes it from the preceding lines on
+--- demand, so probing a subset of rows still yields context-correct results.
+---
+--- @param buf integer
+--- @param rows table<integer, true>? 0-based rows to collect; nil means all
+--- @return table<integer, unidiff.Seg[]>
+local function collect_syntax(buf, rows)
+  local by_row = {}
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+
+  --- The syntax item's own name is used rather than `synIDtrans()`'s resolved
+  --- group: a syntax group is a highlight group, and extmarks follow `:hi link`
+  --- chains when they are drawn, so the link stays live if the colorscheme
+  --- changes while the diff is open. Both resolve to the same colors.
+  --- @type table<integer, string|false>
+  local names = {}
+  local function name_of(id)
+    local name = names[id]
+    if name == nil then
+      name = vim.fn.synIDattr(id, 'name')
+      if name == '' then
+        name = false
+      end
+      names[id] = name
+    end
+    return name
+  end
+
+  vim.api.nvim_buf_call(buf, function()
+    if vim.bo.syntax == '' or vim.bo.syntax == 'OFF' then
+      return
+    end
+    local synID = vim.fn.synID
+
+    for row = 0, #lines - 1 do
+      local text = lines[row + 1]
+      if #text > 0 and (rows == nil or rows[row]) then
+        local segs = {}
+        local start, prev = 0, synID(row + 1, 1, 1)
+        for byte = 1, #text do
+          -- -1 at the end of the line forces the last run to be flushed
+          local id = byte < #text and synID(row + 1, byte + 1, 1) or -1
+          if id ~= prev then
+            local name = prev ~= 0 and name_of(prev) or false
+            if name then
+              segs[#segs + 1] = {
+                row = row,
+                start_col = start,
+                end_col = byte,
+                hl_group = name,
+                -- same layer as Tree-sitter: above the diff background,
+                -- below the word-level highlights
+                priority = TS_PRIORITY,
+              }
+            end
+            start, prev = byte, id
+          end
+        end
+        if #segs > 0 then
+          by_row[row] = segs
+        end
+      end
+    end
+  end)
+
+  return by_row
+end
+
+--- Collect per-line highlight segments for a buffer, preferring Tree-sitter and
+--- falling back to legacy `:syntax` for languages that have no parser.
+---
+--- @param buf integer
+--- @param lang string
+--- @param rows table<integer, true>? 0-based rows of interest. Only the legacy
+---        path honours this; the Tree-sitter pass reads the whole tree anyway.
+--- @return table<integer, unidiff.Seg[]> segments keyed by 0-based row
+function M.collect(buf, lang, rows)
+  local ok, parser = pcall(vim.treesitter.get_parser, buf, lang)
+  if ok and parser then
+    return collect_treesitter(buf, parser)
+  end
+  return collect_syntax(buf, rows)
 end
 
 return M

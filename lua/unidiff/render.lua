@@ -82,9 +82,17 @@ function M.render(view, old_buf, new_buf, lang)
   end
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
 
+  -- Only a fraction of each version ends up on screen. The legacy syntax path
+  -- probes byte by byte, so telling it which rows matter keeps that bounded by
+  -- the size of the diff rather than the size of the file.
+  local want = { old = {}, new = {} }
+  for _, l in ipairs(view.lines) do
+    want[l.side][l.row] = true
+  end
+
   local segs = {
-    old = hl.collect(old_buf, lang),
-    new = hl.collect(new_buf, lang),
+    old = hl.collect(old_buf, lang, want.old),
+    new = hl.collect(new_buf, lang, want.new),
   }
 
   -- 1. syntax, replayed from the ghost buffers

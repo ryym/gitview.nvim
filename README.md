@@ -4,7 +4,9 @@ A GitHub-style unified diff view for Neovim: deleted and added lines in one
 column, both syntax highlighted, and the buffer is still just text you can
 select, yank and search.
 
-Requires Neovim 0.12+ and a Tree-sitter parser for the language you are viewing.
+Requires Neovim 0.12+. Highlighting uses Tree-sitter where a parser exists and
+falls back to legacy `:syntax` otherwise, so any language Neovim can colorize
+works.
 
 ## Usage
 
@@ -50,6 +52,12 @@ Instead:
 4. Diff backgrounds, word-level highlights and the line-number gutter are layered
    on top as decoration only.
 
+Step 2 uses Tree-sitter when the language has a parser, reading every capture in
+one pass over the tree. Otherwise it probes legacy `:syntax` with `synID()`,
+limited to the rows the diff actually displays. Either way the result is a set of
+byte ranges and highlight groups, and the rest of the pipeline does not care
+which produced them.
+
 Because the buffer holds only source text and the gutter is drawn through
 `'statuscolumn'`, yanking a selection gives you code — no `+`/`-` markers and no
 line numbers.
@@ -91,6 +99,11 @@ are redefined on `ColorScheme`. Defining any of them yourself takes precedence.
 
 - **No LSP semantic tokens.** The scratch buffers have no language server
   attached, so highlighting is purely syntactic.
+- **Languages without a Tree-sitter parser cost more.** The legacy `:syntax`
+  fallback has no bulk query and has to probe byte by byte, so it runs roughly
+  4x slower than the Tree-sitter pass. Only the lines the diff actually shows
+  are probed, which keeps it proportional to the size of the diff. It also needs
+  `:syntax` to be enabled; a Tree-sitter-only setup gets no colors there.
 - **A skipped range at the very top has no separator line.** Neovim does not
   render `virt_lines_above` on the first buffer line, so that count is reported
   in the winbar instead.
