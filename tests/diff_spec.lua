@@ -150,3 +150,23 @@ test('linematch is opt-in because it disagrees with git', function()
     dlib.hunks({ 'a', 'b', 'c', 'd', 'e' }, { 'a', 'b', 'X', 'Y', 'd', 'e' }, { linematch = 60 })
   eq({ { 2, 0, 3, 1 }, { 3, 1, 4, 1 } }, hunks)
 end)
+
+test('change_pairs does not pair across a file boundary', function()
+  -- One file's trailing deletions sit directly above the next file's additions.
+  local lines = {
+    { kind = 'del', file = 1 },
+    { kind = 'add', file = 2 },
+    { kind = 'add', file = 2 },
+  }
+  eq({}, dlib.change_pairs(lines))
+end)
+
+test('change_pairs still pairs within one file', function()
+  local lines = {
+    { kind = 'del', file = 1 },
+    { kind = 'add', file = 1 },
+    { kind = 'del', file = 2 },
+    { kind = 'add', file = 2 },
+  }
+  eq({ { 1, 2 }, { 3, 4 } }, dlib.change_pairs(lines))
+end)

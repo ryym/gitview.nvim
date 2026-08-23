@@ -7,6 +7,7 @@ local M = {}
 --- @field new_lnum integer? 1-based line number in the new version
 --- @field side 'old'|'new' which version `text` came from
 --- @field row integer 0-based row of `text` in its version
+--- @field file integer index into `unidiff.View.files`
 
 --- `linematch` is off by default. It is a Neovim-only post-pass that re-pairs
 --- lines inside a hunk and splits the hunk accordingly, which makes the result
@@ -112,6 +113,11 @@ function M.build(hunks, old_lines, new_lines, context)
 end
 
 --- Pair up del/add blocks that can be shown as line-to-line changes.
+---
+--- In a multi-file view one file's trailing deletions sit directly above the
+--- next file's leading additions, so blocks are only paired when they belong to
+--- the same file.
+---
 --- @param lines unidiff.Line[]
 --- @return [integer, integer][] pairs of 1-based rows {del_row, add_row}
 function M.change_pairs(lines)
@@ -119,13 +125,14 @@ function M.change_pairs(lines)
   local i = 1
   while i <= #lines do
     if lines[i].kind == 'del' then
+      local file = lines[i].file
       local del_start = i
-      while lines[i] and lines[i].kind == 'del' do
+      while lines[i] and lines[i].kind == 'del' and lines[i].file == file do
         i = i + 1
       end
       local del_end = i - 1
       local add_start = i
-      while lines[i] and lines[i].kind == 'add' do
+      while lines[i] and lines[i].kind == 'add' and lines[i].file == file do
         i = i + 1
       end
       local add_end = i - 1
