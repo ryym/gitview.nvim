@@ -34,16 +34,17 @@ local NEW = {
 --- @return integer bufnr, unidiff.View
 local function build()
   local hunks = dlib.hunks(OLD, NEW)
-  local lines, hunk_rows, gaps = dlib.build(hunks, OLD, NEW, 3)
+  local lines, hunk_rows = dlib.build(hunks, OLD, NEW, 3)
   for _, l in ipairs(lines) do
-    l.file = 1
+    if dlib.source_kinds[l.kind] then
+      l.file = 1
+    end
   end
   local old_buf = hl.ghost_buffer(OLD, 'lua')
   local new_buf = hl.ghost_buffer(NEW, 'lua')
   local view = {
     lines = lines,
     hunk_rows = hunk_rows,
-    gaps = gaps,
     rev = 'HEAD',
     files = {
       {
@@ -67,7 +68,7 @@ local function marks(buf, ns_name, row)
   return vim.api.nvim_buf_get_extmarks(buf, ns, { row, 0 }, { row, -1 }, { details = true })
 end
 
-test('buffer text is exactly the source text, so yanking stays clean', function()
+test('every line of the view is written into the buffer verbatim', function()
   local buf, view = build()
   local text = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   eq(#view.lines, #text)
@@ -174,7 +175,7 @@ test('the view is dropped when the buffer goes away', function()
   eq(nil, render.views[buf])
 end)
 
-test('statuscolumn renders blanks for virtual lines', function()
+test('the gutter is numbered for source lines and blank for the rest', function()
   local buf, view = build()
   local win = vim.api.nvim_open_win(buf, false, {
     relative = 'editor',
@@ -190,8 +191,47 @@ test('statuscolumn renders blanks for virtual lines', function()
   local real = render.statuscolumn()
   assert(real:find('%d'), 'real line should show numbers, got ' .. vim.inspect(real))
 
+  local gap_row
+  for i, l in ipairs(view.lines) do
+    if l.kind == 'gap' then
+      gap_row = i
+    end
+  end
+  assert(gap_row, 'expected the fixture to skip a range')
+  vim.v.lnum = gap_row
+  local gap = render.statuscolumn()
+  eq(nil, gap:find('%d'), 'a gap line has no line numbers')
+  -- the highlight-group markers take no width on screen
+  eq(#(real:gsub('%%#%S-#', '')), #gap, 'and keeps the gutter the same width')
+
   vim.api.nvim_win_close(win, true)
   eq(#view.lines, #vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+end)
+
+test('separator lines are real lines, not virtual ones', function()
+  local buf, view = build()
+  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
+  local gap_row
+  for i, l in ipairs(view.lines) do
+    if l.kind == 'gap' then
+      gap_row = i
+    end
+  end
+  assert(gap_row, 'expected the fixture to skip a range')
+  eq(
+    { view.lines[gap_row].text },
+    vim.api.nvim_buf_get_lines(buf, gap_row - 1, gap_row, false)
+  )
+
+  local found
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    eq(nil, m[4].virt_lines, 'no virtual lines are left')
+    if m[2] == gap_row - 1 and m[4].hl_group == 'UnidiffSeparator' then
+      found = m[4]
+    end
+  end
+  assert(found, 'the gap line should carry the separator highlight')
+  eq(true, found.hl_eol)
 end)
 
 -- The groups whose colors we compute; the rest are plain `default link`s, which

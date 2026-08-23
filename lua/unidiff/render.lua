@@ -16,13 +16,12 @@ M.views = {}
 --- @field old_buf integer ghost buffer holding the old version
 --- @field new_buf integer ghost buffer holding the new version
 --- @field lang string language for highlight collection
---- @field row integer 1-based row of this file's first line
+--- @field row integer 1-based row of this file's header line
 
 --- @class unidiff.View
 --- @field lines unidiff.Line[]
 --- @field files unidiff.File[]
 --- @field hunk_rows integer[]
---- @field gaps {row:integer, count:integer}[]
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
 
@@ -100,7 +99,12 @@ function M.ensure_highlights_reset()
 end
 
 local SIGN = { add = '+', del = '-', context = ' ' }
-local LINE_HL = { add = 'UnidiffAdd', del = 'UnidiffDelete' }
+local LINE_HL = {
+  add = 'UnidiffAdd',
+  del = 'UnidiffDelete',
+  gap = 'UnidiffSeparator',
+  file = 'UnidiffFileHeader',
+}
 local TEXT_HL = { add = 'UnidiffAddText', del = 'UnidiffDeleteText' }
 
 --- @param view unidiff.View
@@ -126,7 +130,9 @@ function M.render(view)
     want[i] = { old = {}, new = {} }
   end
   for _, l in ipairs(view.lines) do
-    want[l.file][l.side][l.row] = true
+    if dlib.source_kinds[l.kind] then
+      want[l.file][l.side][l.row] = true
+    end
   end
 
   local segs = {}
@@ -140,7 +146,7 @@ function M.render(view)
   -- 1. syntax, replayed from the ghost buffers
   for row0, l in ipairs(view.lines) do
     local row = row0 - 1
-    for _, s in ipairs(segs[l.file][l.side][l.row] or {}) do
+    for _, s in ipairs(dlib.source_kinds[l.kind] and segs[l.file][l.side][l.row] or {}) do
       -- `end_col == -1` marks a capture that continues past this row
       local end_col = s.end_col < 0 and #l.text or math.min(s.end_col, #l.text)
       if s.start_col < end_col then
@@ -153,7 +159,9 @@ function M.render(view)
     end
   end
 
-  -- 2. diff line backgrounds.
+  -- 2. full-line backgrounds: the diff colors, and the separator and file
+  --    header lines, which are ordinary buffer lines so that a selection across
+  --    them yanks what is on screen.
   --    `line_hl_group` would be simpler, but it is painted outside the extmark
   --    priority order, so the word-level highlights below would never show
   --    through. A range mark ending on the next row with `hl_eol` fills the rest
@@ -197,34 +205,6 @@ function M.render(view)
     end
   end
 
-  -- 4. separators for the ranges we skipped, as virtual lines so that yanking
-  --    the buffer still yields nothing but source text
-  for _, gap in ipairs(view.gaps or {}) do
-    -- Neovim does not render `virt_lines_above` on the first line, so a gap that
-    -- would sit there is reported in the winbar instead (see configure_window).
-    if gap.row > 1 then
-      local above = gap.row <= #view.lines
-      vim.api.nvim_buf_set_extmark(buf, ns_diff, above and gap.row - 1 or #view.lines - 1, 0, {
-        virt_lines = { { { M.gap_label(gap.count), 'UnidiffSeparator' } } },
-        virt_lines_above = above,
-      })
-    end
-  end
-
-  -- 5. file headers, also virtual. The first file has no row to hang above, so
-  --    the winbar names whichever file the cursor is in instead.
-  for i, f in ipairs(view.files) do
-    if i > 1 and f.row > 1 then
-      vim.api.nvim_buf_set_extmark(buf, ns_diff, f.row - 1, 0, {
-        virt_lines = {
-          { { '', 'UnidiffSeparator' } },
-          { { ' ' .. f.label .. ' ', 'UnidiffFileHeader' } },
-        },
-        virt_lines_above = true,
-      })
-    end
-  end
-
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
   M.views[buf] = view
@@ -239,21 +219,27 @@ function M.render(view)
   return buf
 end
 
+--- Width of the gutter: two four-digit line numbers and a sign, each followed
+--- by a space.
+local BLANK_GUTTER = (' '):rep(12)
+
 --- Gutter is drawn through 'statuscolumn' rather than written into the buffer so
---- that visual selection and yank return the source text alone.
+--- that the line numbers stay out of a yank.
 --- @return string
 function M.statuscolumn()
-  -- 'statuscolumn' is evaluated for virtual and wrapped lines too; those must
-  -- not repeat the line numbers of the real line they hang off.
+  -- 'statuscolumn' is evaluated for every screen line, so a wrapped line must
+  -- not repeat the numbers of the buffer line it continues.
   if vim.v.virtnum ~= 0 then
-    return '           '
+    return BLANK_GUTTER
   end
   local win = vim.g.statusline_winid
   local buf = vim.api.nvim_win_get_buf(win)
   local view = M.views[buf]
   local l = view and view.lines[vim.v.lnum]
-  if not l then
-    return '     '
+  -- separators, file headers and the blanks between files stand for no source
+  -- line and so have no numbers to show
+  if not l or not dlib.source_kinds[l.kind] then
+    return BLANK_GUTTER
   end
   local function num(n)
     return n and string.format('%4d', n) or '    '
@@ -266,15 +252,8 @@ function M.statuscolumn()
   )
 end
 
---- @param count integer
---- @return string
-function M.gap_label(count)
-  local dots = ('\u{00b7}'):rep(4)
-  return ('%s %d unchanged line%s %s'):format(dots, count, count == 1 and '' or 's', dots)
-end
-
---- Names the file the cursor is in. Recomputed on every redraw, so it doubles
---- as the header for the first file, which cannot carry a virtual line above it.
+--- Names the file the cursor is in. Recomputed on every redraw, so it keeps the
+--- file identifiable once its header line has scrolled off.
 --- @return string
 function M.winbar()
   local win = vim.g.statusline_winid
@@ -299,10 +278,6 @@ function M.winbar()
   end
   if view.note then
     text = text .. '   ' .. view.note
-  end
-  local lead = view.gaps[1]
-  if lead and lead.row == 1 and row <= (view.files[2] and view.files[2].row or math.huge) then
-    text = text .. '   ' .. M.gap_label(lead.count) .. ' above'
   end
   return '%#UnidiffFileHeader#' .. text:gsub('%%', '%%%%')
 end

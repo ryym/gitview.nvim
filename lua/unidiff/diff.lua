@@ -1,13 +1,30 @@
 local M = {}
 
+--- A line of the rendered buffer. `context`, `add` and `del` carry source text
+--- and are the only kinds with a place in one of the two versions; `gap`, `file`
+--- and `blank` are structural lines the view inserts, and carry neither line
+--- numbers nor a `side`/`row`/`file` to look their syntax up by.
+---
 --- @class unidiff.Line
 --- @field text string source text without any gutter
---- @field kind 'context'|'add'|'del'
+--- @field kind 'context'|'add'|'del'|'gap'|'file'|'blank'
 --- @field old_lnum integer? 1-based line number in the old version
 --- @field new_lnum integer? 1-based line number in the new version
---- @field side 'old'|'new' which version `text` came from
---- @field row integer 0-based row of `text` in its version
---- @field file integer index into `unidiff.View.files`
+--- @field side 'old'|'new'? which version `text` came from
+--- @field row integer? 0-based row of `text` in its version
+--- @field file integer? index into `unidiff.View.files`
+
+--- Kinds that stand for a line of one of the two versions.
+--- @type table<string, true>
+M.source_kinds = { context = true, add = true, del = true }
+
+--- The label of a `gap` line, naming how many lines it stands for.
+--- @param count integer
+--- @return string
+function M.gap_label(count)
+  local dots = ('\u{00b7}'):rep(4)
+  return ('%s %d unchanged line%s %s'):format(dots, count, count == 1 and '' or 's', dots)
+end
 
 --- `linematch` is off by default. It is a Neovim-only post-pass that re-pairs
 --- lines inside a hunk and splits the hunk accordingly, which makes the result
@@ -42,11 +59,9 @@ end
 --- @param context integer number of unchanged lines kept around each hunk
 --- @return unidiff.Line[] lines
 --- @return integer[] hunk_rows 1-based row of the first changed line of each hunk
---- @return {row:integer, count:integer}[] gaps skipped ranges, `row` is the
----         1-based row the separator belongs above (may be #lines + 1)
 function M.build(hunks, old_lines, new_lines, context)
   local out = {} --- @type unidiff.Line[]
-  local hunk_rows, gaps = {}, {}
+  local hunk_rows = {}
   local offset = 0 -- new_lnum - old_lnum for unchanged lines at this point
 
   --- @param from integer
@@ -81,7 +96,7 @@ function M.build(hunks, old_lines, new_lines, context)
       return
     end
     push_context(from, from + head - 1)
-    gaps[#gaps + 1] = { row = #out + 1, count = n - head - tail }
+    out[#out + 1] = { text = M.gap_label(n - head - tail), kind = 'gap' }
     push_context(to - tail + 1, to)
   end
 
@@ -109,7 +124,7 @@ function M.build(hunks, old_lines, new_lines, context)
 
   push_gap(prev_end + 1, #old_lines, context, 0)
 
-  return out, hunk_rows, gaps
+  return out, hunk_rows
 end
 
 --- Pair up del/add blocks that can be shown as line-to-line changes.

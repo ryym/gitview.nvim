@@ -64,7 +64,7 @@ end
 --- @return string[] unchanged labels of sources with no textual difference,
 ---         such as a pure rename or a mode change
 local function build_view(sources, rev, context, diff_opts)
-  local lines, files, hunk_rows, gaps = {}, {}, {}, {}
+  local lines, files, hunk_rows = {}, {}, {}
   local unchanged = {}
 
   for _, src in ipairs(sources) do
@@ -72,10 +72,16 @@ local function build_view(sources, rev, context, diff_opts)
     if #hunks == 0 then
       unchanged[#unchanged + 1] = src.label
     else
-      local flines, fhunks, fgaps = dlib.build(hunks, src.old_lines, src.new_lines, context)
-      local offset = #lines
+      local flines, fhunks = dlib.build(hunks, src.old_lines, src.new_lines, context)
       local ft = filetype_of(src.path)
       local lang = vim.treesitter.language.get_lang(ft) or ft
+
+      -- A blank line keeps the header off the previous file's last diff line.
+      if #lines > 0 then
+        lines[#lines + 1] = { text = '', kind = 'blank' }
+      end
+      lines[#lines + 1] = { text = src.label, kind = 'file' }
+      local offset = #lines
 
       files[#files + 1] = {
         path = src.path,
@@ -83,7 +89,7 @@ local function build_view(sources, rev, context, diff_opts)
         old_buf = hl.ghost_buffer(src.old_lines, ft, lang),
         new_buf = hl.ghost_buffer(src.new_lines, ft, lang),
         lang = lang,
-        row = offset + 1,
+        row = offset,
       }
       local index = #files
 
@@ -93,9 +99,6 @@ local function build_view(sources, rev, context, diff_opts)
       end
       for _, r in ipairs(fhunks) do
         hunk_rows[#hunk_rows + 1] = r + offset
-      end
-      for _, g in ipairs(fgaps) do
-        gaps[#gaps + 1] = { row = g.row + offset, count = g.count }
       end
     end
   end
@@ -107,7 +110,6 @@ local function build_view(sources, rev, context, diff_opts)
     lines = lines,
     files = files,
     hunk_rows = hunk_rows,
-    gaps = gaps,
     rev = rev,
   }, unchanged
 end
@@ -304,7 +306,8 @@ function M.goto_source()
     return
   end
   local l = view.lines[vim.api.nvim_win_get_cursor(0)[1]]
-  if not l then
+  -- separators and file headers point at no single source line
+  if not l or not dlib.source_kinds[l.kind] then
     return
   end
   local path = view.files[l.file].path

@@ -9,7 +9,7 @@ local function dump(lines)
   local out = {}
   for i, l in ipairs(lines) do
     out[i] = ('%s%s|%s|%s'):format(
-      ({ add = '+', del = '-', context = ' ' })[l.kind],
+      ({ add = '+', del = '-', context = ' ', gap = '~' })[l.kind],
       l.text,
       l.old_lnum or '',
       l.new_lnum or ''
@@ -43,7 +43,7 @@ end)
 
 test('insertion at the very end', function()
   local lines = run({ 'a', 'b' }, { 'a', 'b', 'X' })
-  eq({ ' b|2|2', '+X||3' }, dump(lines))
+  eq({ '~' .. dlib.gap_label(1) .. '||', ' b|2|2', '+X||3' }, dump(lines))
 end)
 
 test('deletion of the whole file', function()
@@ -105,19 +105,27 @@ test('context lines carry the text of the matching new line', function()
   end
 end)
 
-test('gaps report how many lines were skipped', function()
+test('skipped ranges become gap lines saying how many were dropped', function()
   local old, new = {}, {}
   for i = 1, 30 do
     old[i], new[i] = 'line ' .. i, 'line ' .. i
   end
   new[15] = 'changed'
-  local lines, hunk_rows, gaps = dlib.build(dlib.hunks(old, new), old, new, 3)
+  local lines, hunk_rows = dlib.build(dlib.hunks(old, new), old, new, 3)
   eq(1, #hunk_rows)
+  local gaps = {}
+  for i, l in ipairs(lines) do
+    if l.kind == 'gap' then
+      gaps[#gaps + 1] = { row = i, text = l.text }
+    end
+  end
   eq(2, #gaps)
   -- 11 lines before the leading context, 12 after the trailing one
-  eq(11, gaps[1].count)
-  eq(12, gaps[2].count)
-  eq(#lines + 1, gaps[2].row)
+  eq(dlib.gap_label(11), gaps[1].text)
+  eq(dlib.gap_label(12), gaps[2].text)
+  -- the leading gap is the first line, the trailing one the last
+  eq(1, gaps[1].row)
+  eq(#lines, gaps[2].row)
 end)
 
 test('change_pairs only pairs equally sized blocks', function()

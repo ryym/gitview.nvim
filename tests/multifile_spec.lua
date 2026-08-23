@@ -9,10 +9,14 @@ local test, eq = _G.test, _G.eq
 --- @param sources {label:string, lang:string, old:string[], new:string[]}[]
 --- @return integer bufnr, unidiff.View
 local function build(sources)
-  local lines, files, hunk_rows, gaps = {}, {}, {}, {}
+  local lines, files, hunk_rows = {}, {}, {}
   for _, src in ipairs(sources) do
     local hunks = dlib.hunks(src.old, src.new)
-    local flines, fhunks, fgaps = dlib.build(hunks, src.old, src.new, 3)
+    local flines, fhunks = dlib.build(hunks, src.old, src.new, 3)
+    if #lines > 0 then
+      lines[#lines + 1] = { text = '', kind = 'blank' }
+    end
+    lines[#lines + 1] = { text = src.label, kind = 'file' }
     local offset = #lines
     files[#files + 1] = {
       path = '/tmp/' .. src.label,
@@ -20,7 +24,7 @@ local function build(sources)
       old_buf = hl.ghost_buffer(src.old, src.lang),
       new_buf = hl.ghost_buffer(src.new, src.lang),
       lang = src.lang,
-      row = offset + 1,
+      row = offset,
     }
     for _, l in ipairs(flines) do
       l.file = #files
@@ -29,12 +33,8 @@ local function build(sources)
     for _, r in ipairs(fhunks) do
       hunk_rows[#hunk_rows + 1] = r + offset
     end
-    for _, g in ipairs(fgaps) do
-      gaps[#gaps + 1] = { row = g.row + offset, count = g.count }
-    end
   end
-  local view =
-    { lines = lines, files = files, hunk_rows = hunk_rows, gaps = gaps, rev = 'HEAD' }
+  local view = { lines = lines, files = files, hunk_rows = hunk_rows, rev = 'HEAD' }
   local buf = render.render(view)
   for _, f in ipairs(files) do
     vim.api.nvim_buf_delete(f.old_buf, { force = true })
@@ -59,13 +59,15 @@ local PERL = {
 test('files are laid out one after another', function()
   local buf, view = build({ LUA, PERL })
   eq(2, #view.files)
+  -- header, del, add, context, then a blank and the second header
   eq(1, view.files[1].row)
-  eq(4, view.files[2].row)
-  eq(view.lines[view.files[2].row].file, 2)
+  eq(6, view.files[2].row)
+  eq('file', view.lines[view.files[2].row].kind)
+  eq(2, view.lines[view.files[2].row + 1].file)
   eq(#view.lines, #vim.api.nvim_buf_get_lines(buf, 0, -1, false))
 end)
 
-test('every line still holds only source text', function()
+test('every line is written into the buffer verbatim', function()
   local buf, view = build({ LUA, PERL })
   local text = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   for i, l in ipairs(view.lines) do
@@ -97,28 +99,41 @@ end)
 
 test('hunk rows are offset into the combined buffer', function()
   local _, view = build({ LUA, PERL })
-  -- a.lua renders as del, add and one context line before b.pl starts
-  eq({ 1, 4 }, view.hunk_rows)
+  -- a.lua renders as del, add and one context line under its header
+  eq({ 2, 7 }, view.hunk_rows)
 end)
 
-test('file headers are virtual lines, and the first file has none', function()
+test('file headers are ordinary lines, one per file', function()
   local buf, view = build({ LUA, PERL })
-  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
   local headers = {}
-  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    if m[4].virt_lines then
-      for _, vline in ipairs(m[4].virt_lines) do
-        for _, chunk in ipairs(vline) do
-          if chunk[2] == 'UnidiffFileHeader' then
-            headers[#headers + 1] = { row = m[2], text = chunk[1] }
-          end
-        end
-      end
+  for i, l in ipairs(view.lines) do
+    if l.kind == 'file' then
+      headers[#headers + 1] = { row = i, text = l.text }
     end
   end
-  eq(1, #headers, 'only the second file gets a virtual header')
-  eq(view.files[2].row - 1, headers[1].row)
-  assert(headers[1].text:find('b.pl', 1, true), 'header should name the file')
+  eq(2, #headers, 'every file gets a header, the first one included')
+  eq(view.files[1].row, headers[1].row)
+  eq(view.files[2].row, headers[2].row)
+  eq('b.pl', headers[2].text)
+
+  -- and the header text is what the buffer holds on that row
+  local text = vim.api.nvim_buf_get_lines(buf, headers[2].row - 1, headers[2].row, false)
+  eq({ 'b.pl' }, text)
+end)
+
+test('headers and gaps are highlighted as whole lines', function()
+  local buf, view = build({ LUA, PERL })
+  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
+  local groups = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    eq(nil, m[4].virt_lines, 'no virtual lines are left')
+    groups[m[2] + 1] = groups[m[2] + 1] or m[4].hl_group
+  end
+  for i, l in ipairs(view.lines) do
+    if l.kind == 'file' then
+      eq('UnidiffFileHeader', groups[i], 'row ' .. i)
+    end
+  end
 end)
 
 test('the winbar names the file the cursor is in', function()
@@ -141,14 +156,8 @@ test('the winbar names the file the cursor is in', function()
   vim.api.nvim_win_close(win, true)
 end)
 
-test('a single-file view carries no virtual header', function()
-  local buf = build({ LUA })
-  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
-  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    for _, vline in ipairs(m[4].virt_lines or {}) do
-      for _, chunk in ipairs(vline) do
-        eq(nil, chunk[2] == 'UnidiffFileHeader' and 'header' or nil)
-      end
-    end
-  end
+test('a single-file view still gets its header', function()
+  local _, view = build({ LUA })
+  eq('file', view.lines[1].kind)
+  eq('a.lua', view.lines[1].text)
 end)
