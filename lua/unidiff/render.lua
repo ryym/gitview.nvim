@@ -68,7 +68,10 @@ function M.setup_highlights()
       local v = math.max(0, math.min(255, math.floor(b + (c - b) * 1.4)))
       out = out + bit.lshift(v, shift)
     end
-    return { bg = out }
+    -- `ctermbg` is a palette index, so it cannot be scaled the same way. Reusing
+    -- the line color at least keeps a background in 256-color terminals, where
+    -- dropping it left the word ranges with no highlight at all.
+    return { bg = out, ctermbg = spec.ctermbg }
   end
 
   local add = bg_only('DiffAdd', '#20301e')
