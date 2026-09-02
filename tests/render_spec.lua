@@ -275,6 +275,31 @@ test('add and delete backgrounds differ, and each differs from its word color', 
   assert(bg('UnidiffDelete') ~= bg('UnidiffDeleteText'), 'word highlight must stand out')
 end)
 
+-- A colorscheme that leaves the terminal background showing through defines no
+-- `Normal` bg at all. The word colors used to be derived from it and fell back
+-- to the line color when it was missing, so they rendered invisibly.
+test('word colors stand out even when Normal has no background', function()
+  local normal = vim.api.nvim_get_hl(0, { name = 'Normal', link = false })
+  vim.api.nvim_set_hl(0, 'Normal', { fg = normal.fg })
+  local ok, err = pcall(function()
+    -- The groups are defined with `default`, so an earlier test's values would
+    -- survive `setup_highlights()` and hide what this one is measuring.
+    vim.cmd('hi clear UnidiffAddText')
+    vim.cmd('hi clear UnidiffDeleteText')
+    render.setup_highlights()
+    local function bg(name)
+      return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false }).bg
+    end
+    assert(bg('UnidiffAdd') ~= bg('UnidiffAddText'), 'word highlight must stand out')
+    assert(bg('UnidiffDelete') ~= bg('UnidiffDeleteText'), 'word highlight must stand out')
+  end)
+  vim.api.nvim_set_hl(0, 'Normal', normal)
+  vim.cmd('hi clear UnidiffAddText')
+  vim.cmd('hi clear UnidiffDeleteText')
+  render.setup_highlights()
+  assert(ok, err)
+end)
+
 test('a colorscheme change puts the groups back', function()
   render.setup_highlights()
   vim.cmd.colorscheme('default')

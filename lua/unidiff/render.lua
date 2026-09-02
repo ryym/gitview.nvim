@@ -48,17 +48,24 @@ function M.setup_highlights()
   --- Word-level highlights must stay recognisably "the add color" / "the delete
   --- color", so they are the same hue pushed further away from the normal
   --- background rather than a third, unrelated color.
+  ---
+  --- `Normal` carries no background of its own when the colorscheme lets the
+  --- terminal's background show through, and that color cannot be read back, so
+  --- 'background' picks which end of the range to push away from. Falling back
+  --- to `spec` instead made the word highlight identical to the line highlight,
+  --- which is to say invisible.
   --- @param spec table result of bg_only
   local function intensify(spec)
-    local base = vim.api.nvim_get_hl(0, { name = 'Normal', link = false }).bg
-    if not spec.bg or not base then
+    if not spec.bg then
       return spec
     end
+    local base = vim.api.nvim_get_hl(0, { name = 'Normal', link = false }).bg
+      or (vim.o.background == 'light' and 0xffffff or 0x000000)
     local out = 0
     for _, shift in ipairs({ 16, 8, 0 }) do
       local b = bit.band(bit.rshift(base, shift), 0xff)
       local c = bit.band(bit.rshift(spec.bg, shift), 0xff)
-      local v = math.max(0, math.min(255, math.floor(b + (c - b) * 2.2)))
+      local v = math.max(0, math.min(255, math.floor(b + (c - b) * 1.4)))
       out = out + bit.lshift(v, shift)
     end
     return { bg = out }
