@@ -176,18 +176,20 @@ function M.parse_binary(out)
   return binary
 end
 
---- List everything that differs between `rev` and the working tree.
---- @param rev string
+--- @param args string[] what to compare, as passed to `git diff`
 --- @param cwd string
 --- @return unidiff.Change[]?
-function M.changed(rev, cwd)
-  local status = run({ 'git', 'diff', '--name-status', '-z', '--find-renames', rev }, cwd)
+local function diff_changes(args, cwd)
+  local function git_diff(format)
+    return run(vim.list_extend({ 'git', 'diff', format, '-z', '--find-renames' }, args), cwd)
+  end
+  local status = git_diff('--name-status')
   if not status then
     return nil
   end
   local changes = M.parse_name_status(status)
 
-  local numstat = run({ 'git', 'diff', '--numstat', '-z', '--find-renames', rev }, cwd)
+  local numstat = git_diff('--numstat')
   if numstat then
     local binary = M.parse_binary(numstat)
     for _, c in ipairs(changes) do
@@ -195,6 +197,28 @@ function M.changed(rev, cwd)
     end
   end
   return changes
+end
+
+--- List everything that differs between `rev` and the working tree.
+--- @param rev string
+--- @param cwd string
+--- @return unidiff.Change[]?
+function M.changed(rev, cwd)
+  return diff_changes({ rev }, cwd)
+end
+
+--- List everything that differs between HEAD and the index.
+--- @param cwd string
+--- @return unidiff.Change[]?
+function M.changed_staged(cwd)
+  return diff_changes({ '--cached' }, cwd)
+end
+
+--- List everything that differs between the index and the working tree.
+--- @param cwd string
+--- @return unidiff.Change[]?
+function M.changed_unstaged(cwd)
+  return diff_changes({}, cwd)
 end
 
 return M
