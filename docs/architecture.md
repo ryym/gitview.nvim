@@ -7,12 +7,14 @@
 | `init.lua`      | Commands, configuration, assembling views, keymaps      |
 | `git.lua`       | Every subprocess call, and the parsers for their output |
 | `diff.lua`      | `vim.diff` wrapper, unified line list, del/add pairing  |
+| `mixed.lua`     | Merging HEAD, index and working tree into one line list |
 | `highlight.lua` | Scratch buffers, and collecting highlight segments      |
 | `worddiff.lua`  | Word-level ranges within a pair of changed lines        |
 | `render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 
 The dependency direction is one-way: `init` uses everything, `render` uses
-`highlight`, `worddiff` and `diff`, and the rest depend on nothing but Neovim.
+`highlight`, `worddiff` and `diff`, `mixed` uses `diff`, and the rest depend on
+nothing but Neovim.
 
 ## Pipeline
 
@@ -121,6 +123,63 @@ The winbar is recomputed on redraw rather than set once, so it follows the curso
 through a multi-file view and keeps naming the file after its header line has
 scrolled off.
 
+## Mixed view
+
+`:UnidiffMixed` (`init.open_mixed`) replaces step 2 of the pipeline with
+`mixed.build`, which takes three versions of each file instead of two. The rest
+of the pipeline is unchanged apart from a third ghost buffer for the index.
+
+### Aligning on the index
+
+`mixed.merge` diffs HEAD -> index (the staged changes) and index -> working tree
+(the unstaged ones). Both diffs share the index as one of their sides, so every
+index line is placed by both at once. Each row then falls into one case:
+
+| HEAD | index | work | `kind`    | `stage`    |
+| ---- | ----- | ---- | --------- | ---------- |
+| yes  | yes   | yes  | `context` | —          |
+| yes  | —     | —    | `del`     | `staged`   |
+| —    | yes   | yes  | `add`     | `staged`   |
+| yes  | yes   | —    | `del`     | `unstaged` |
+| —    | —     | yes  | `add`     | `unstaged` |
+| —    | yes   | —    | `del`     | `index`    |
+
+- `old_lnum` is the HEAD line number and `new_lnum` the working-tree one, as in
+  an ordinary view. An `index` row has neither.
+- A line in HEAD and the working tree but not the index is not a case of its
+  own. It comes out as a staged deletion plus an unstaged addition.
+- Rows are read from the index ghost buffer (`side = 'index'`) whenever the
+  index has the line, and from HEAD or the working tree otherwise.
+
+### Ordering between index lines
+
+Between two index lines there can be HEAD lines the index dropped and
+working-tree lines the index lacks. They are normally emitted deletions first.
+The exception is when the index line above was itself removed from the working
+tree. The additions then replace that line, so they come first. Otherwise a
+partially staged hunk interleaves the two layers:
+
+```
+- a      (unstaged)      - a      (unstaged)
+- b  S                   + A      (unstaged)
++ A      (unstaged)      - b  S
++ B  S                   + B  S
+  wrong                    right
+```
+
+### Pairing
+
+`change_pairs()` only pairs a deletion and an addition of the same `stage`.
+Across stages they are two separate changes, and a word diff between them
+would compare HEAD with the working tree past the index.
+
+### File list
+
+A file appears when `git diff --cached` or `git diff` lists it, joined on the
+index path. A file with only staged changes has a working tree equal to its
+index, and one with only unstaged changes has a HEAD equal to its index, so
+neither is read twice.
+
 ## Invariants
 
 Each of these is guarded by a test. Breaking one is a regression even if
@@ -135,6 +194,7 @@ everything still looks right.
 | Restricting collection to some rows does not change what those rows get | `highlight_spec`                                 |
 | Colors work without `setup()` ever being called                         | `render_spec`                                    |
 | Word-level pairing never crosses a file boundary                        | `diff_spec`                                      |
+| Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
 
 ## Deliberate omissions
 

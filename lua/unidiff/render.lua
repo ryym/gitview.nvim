@@ -15,6 +15,7 @@ M.views = {}
 --- @field label string what the header shows
 --- @field old_buf integer ghost buffer holding the old version
 --- @field new_buf integer ghost buffer holding the new version
+--- @field index_buf integer? ghost buffer holding the index version, mixed views only
 --- @field lang string language for highlight collection
 --- @field row integer 1-based row of this file's header line
 
@@ -24,6 +25,7 @@ M.views = {}
 --- @field hunk_rows integer[]
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
+--- @field mixed boolean? staged and unstaged changes in one view; see unidiff.mixed
 
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
@@ -45,9 +47,8 @@ function M.setup_highlights()
     return { bg = h.bg or tonumber(fallback:sub(2), 16), ctermbg = h.ctermbg }
   end
 
-  --- Word-level highlights must stay recognisably "the add color" / "the delete
-  --- color", so they are the same hue pushed further away from the normal
-  --- background rather than a third, unrelated color.
+  --- Move a color away from (`factor` > 1) or towards (`factor` < 1) the
+  --- normal background.
   ---
   --- `Normal` carries no background of its own when the colorscheme lets the
   --- terminal's background show through, and that color cannot be read back, so
@@ -55,7 +56,8 @@ function M.setup_highlights()
   --- to `spec` instead made the word highlight identical to the line highlight,
   --- which is to say invisible.
   --- @param spec table result of bg_only
-  local function intensify(spec)
+  --- @param factor number
+  local function scale(spec, factor)
     if not spec.bg then
       return spec
     end
@@ -65,7 +67,7 @@ function M.setup_highlights()
     for _, shift in ipairs({ 16, 8, 0 }) do
       local b = bit.band(bit.rshift(base, shift), 0xff)
       local c = bit.band(bit.rshift(spec.bg, shift), 0xff)
-      local v = math.max(0, math.min(255, math.floor(b + (c - b) * 1.4)))
+      local v = math.max(0, math.min(255, math.floor(b + (c - b) * factor)))
       out = out + bit.lshift(v, shift)
     end
     -- `ctermbg` is a palette index, so it cannot be scaled the same way. Reusing
@@ -74,12 +76,23 @@ function M.setup_highlights()
     return { bg = out, ctermbg = spec.ctermbg }
   end
 
+  -- Word-level highlights must stay recognisably "the add color" / "the delete
+  -- color", so they are the same hue pushed further away from the background
+  -- rather than a third, unrelated color.
   local add = bg_only('DiffAdd', '#20301e')
   local del = bg_only('DiffDelete', '#3a1f1c')
   set('UnidiffAdd', add)
   set('UnidiffDelete', del)
-  set('UnidiffAddText', intensify(add))
-  set('UnidiffDeleteText', intensify(del))
+  set('UnidiffAddText', scale(add, 1.4))
+  set('UnidiffDeleteText', scale(del, 1.4))
+  -- Staged changes in a mixed view are the same hues, faded: they are settled,
+  -- and what is still unstaged is what needs attention. The gutter marks them
+  -- too, since 256-color terminals get no fading.
+  set('UnidiffStagedAdd', scale(add, 0.5))
+  set('UnidiffStagedDelete', scale(del, 0.5))
+  set('UnidiffStagedAddText', scale(add, 0.9))
+  set('UnidiffStagedDeleteText', scale(del, 0.9))
+  set('UnidiffStagedSign', { link = 'Special' })
   set('UnidiffOldLnum', { link = 'LineNr' })
   set('UnidiffNewLnum', { link = 'LineNr' })
   set('UnidiffSeparator', { link = 'Folded' })
@@ -116,6 +129,20 @@ local LINE_HL = {
   file = 'UnidiffFileHeader',
 }
 local TEXT_HL = { add = 'UnidiffAddText', del = 'UnidiffDeleteText' }
+local STAGED_LINE_HL = { add = 'UnidiffStagedAdd', del = 'UnidiffStagedDelete' }
+local STAGED_TEXT_HL = { add = 'UnidiffStagedAddText', del = 'UnidiffStagedDeleteText' }
+
+--- @param l unidiff.Line
+--- @return string?
+local function line_hl_of(l)
+  return l.stage == 'staged' and STAGED_LINE_HL[l.kind] or LINE_HL[l.kind]
+end
+
+--- @param l unidiff.Line
+--- @return string
+local function text_hl_of(l)
+  return l.stage == 'staged' and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
+end
 
 --- @param view unidiff.View
 --- @return integer bufnr
@@ -137,7 +164,7 @@ function M.render(view)
   -- the size of the diff rather than the size of the file.
   local want = {}
   for i = 1, #view.files do
-    want[i] = { old = {}, new = {} }
+    want[i] = { old = {}, new = {}, index = {} }
   end
   for _, l in ipairs(view.lines) do
     if dlib.source_kinds[l.kind] then
@@ -150,6 +177,7 @@ function M.render(view)
     segs[i] = {
       old = hl.collect(f.old_buf, f.lang, want[i].old),
       new = hl.collect(f.new_buf, f.lang, want[i].new),
+      index = f.index_buf and hl.collect(f.index_buf, f.lang, want[i].index),
     }
   end
 
@@ -177,7 +205,7 @@ function M.render(view)
   --    through. A range mark ending on the next row with `hl_eol` fills the rest
   --    of the screen line just as well and does obey priorities.
   for row0, l in ipairs(view.lines) do
-    local line_hl = LINE_HL[l.kind]
+    local line_hl = line_hl_of(l)
     if line_hl then
       vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, 0, {
         end_row = row0,
@@ -193,13 +221,14 @@ function M.render(view)
   -- 3. word-level highlights on paired change lines
   for _, pair in ipairs(dlib.change_pairs(view.lines)) do
     local del_row, add_row = pair[1], pair[2]
-    local old_text, new_text = view.lines[del_row].text, view.lines[add_row].text
+    local del_l, add_l = view.lines[del_row], view.lines[add_row]
+    local old_text, new_text = del_l.text, add_l.text
     local or_, nr_ = worddiff.ranges(old_text, new_text)
     if worddiff.useful(old_text, new_text, or_, nr_) then
       for _, r in ipairs(or_) do
         vim.api.nvim_buf_set_extmark(buf, ns_diff, del_row - 1, r.start_col, {
           end_col = r.end_col,
-          hl_group = TEXT_HL.del,
+          hl_group = text_hl_of(del_l),
           hl_mode = 'combine',
           priority = 200,
         })
@@ -207,7 +236,7 @@ function M.render(view)
       for _, r in ipairs(nr_) do
         vim.api.nvim_buf_set_extmark(buf, ns_diff, add_row - 1, r.start_col, {
           end_col = r.end_col,
-          hl_group = TEXT_HL.add,
+          hl_group = text_hl_of(add_l),
           hl_mode = 'combine',
           priority = 200,
         })
@@ -230,34 +259,43 @@ function M.render(view)
 end
 
 --- Width of the gutter: two four-digit line numbers and a sign, each followed
---- by a space.
+--- by a space. A mixed view puts a stage marker in front of the sign.
 local BLANK_GUTTER = (' '):rep(12)
+local BLANK_MIXED_GUTTER = (' '):rep(13)
+
+--- `S` for a staged change, `I` for a line that only the index has.
+local STAGE_MARK = { staged = 'S', index = 'I' }
 
 --- Gutter is drawn through 'statuscolumn' rather than written into the buffer so
 --- that the line numbers stay out of a yank.
 --- @return string
 function M.statuscolumn()
+  local win = vim.g.statusline_winid
+  local view = M.views[vim.api.nvim_win_get_buf(win)]
+  local blank = view and view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER
   -- 'statuscolumn' is evaluated for every screen line, so a wrapped line must
   -- not repeat the numbers of the buffer line it continues.
   if vim.v.virtnum ~= 0 then
-    return BLANK_GUTTER
+    return blank
   end
-  local win = vim.g.statusline_winid
-  local buf = vim.api.nvim_win_get_buf(win)
-  local view = M.views[buf]
   local l = view and view.lines[vim.v.lnum]
   -- separators, file headers and the blanks between files stand for no source
   -- line and so have no numbers to show
   if not l or not dlib.source_kinds[l.kind] then
-    return BLANK_GUTTER
+    return blank
   end
   local function num(n)
     return n and string.format('%4d', n) or '    '
   end
+  local mark = ''
+  if view.mixed then
+    mark = '%#UnidiffStagedSign#' .. (STAGE_MARK[l.stage] or ' ') .. '%#UnidiffNewLnum#'
+  end
   return string.format(
-    '%%#UnidiffOldLnum#%s %%#UnidiffNewLnum#%s %s ',
+    '%%#UnidiffOldLnum#%s %%#UnidiffNewLnum#%s %s%s ',
     num(l.old_lnum),
     num(l.new_lnum),
+    mark,
     SIGN[l.kind]
   )
 end

@@ -16,6 +16,8 @@ works.
 
 :UnidiffAll       " every changed file, in one buffer
 :UnidiffAll main  " ...against any revision
+
+:UnidiffMixed     " experimental: staged and unstaged changes in one view
 ```
 
 ```lua
@@ -63,6 +65,41 @@ file highlighted with its own language.
   have no lines to show. They are counted in the winbar rather than dropped
   silently.
 
+### Staged and unstaged in one view (experimental)
+
+`:UnidiffMixed` shows every uncommitted change as one diff from HEAD to the
+working tree, with each changed line marked by whether it is staged. It is
+read-only; nothing is staged or unstaged from the view.
+
+The gutter reads `HEAD lnum | working-tree lnum | mark | sign`. Line numbers
+are those of HEAD and the working tree, so a line in neither has none.
+
+| gutter | line exists in   | meaning                                    |
+| ------ | ---------------- | ------------------------------------------ |
+| `S-`   | HEAD             | deletion, staged                           |
+| `S+`   | index, work tree | addition, staged                           |
+| ` -`   | HEAD, index      | deletion, not staged                       |
+| ` +`   | work tree        | addition, not staged                       |
+| `I-`   | index            | staged addition, removed from work tree    |
+
+- **`S`** lines have faded colors: they are what a commit would record now.
+- **Unmarked** lines look as they do in `:UnidiffAll`: they are what a commit
+  would still leave out.
+- **`I-`** is the one to watch for. The line would be committed, yet the
+  working tree no longer has it. It appears when a staged line is edited again
+  or reverted without re-staging.
+
+Two situations show changes even though HEAD and the working tree are equal,
+because the index differs from both:
+
+- A staged change reverted in the working tree: `S-` (HEAD), `I-` (index),
+  then `+` (working tree).
+- A staged deletion restored in the working tree: `S-` then `+` with the same
+  text. The index has no row for the line, so it cannot show as unchanged.
+
+How the three versions are merged is described in
+[docs/architecture.md](docs/architecture.md#mixed-view).
+
 ### Agreement with `git diff`
 
 Hunk boundaries match `git diff`, because Neovim's `linematch` pass — which
@@ -81,6 +118,9 @@ Both sides of the trade-off are measured in
 
 `UnidiffAdd`, `UnidiffDelete`, `UnidiffAddText`, `UnidiffDeleteText`,
 `UnidiffOldLnum`, `UnidiffNewLnum`, `UnidiffSeparator`, `UnidiffFileHeader`.
+
+The mixed view adds `UnidiffStagedAdd`, `UnidiffStagedDelete`,
+`UnidiffStagedAddText`, `UnidiffStagedDeleteText` and `UnidiffStagedSign`.
 
 They default to background-only colors derived from `DiffAdd`/`DiffDelete`, are
 defined the first time a diff is opened, and are redefined on `ColorScheme`.

@@ -10,9 +10,12 @@ local M = {}
 --- @field kind 'context'|'add'|'del'|'gap'|'file'|'blank'
 --- @field old_lnum integer? 1-based line number in the old version
 --- @field new_lnum integer? 1-based line number in the new version
---- @field side 'old'|'new'? which version `text` came from
+--- @field side 'old'|'new'|'index'? which version `text` came from; `index`
+---       only in a mixed view
 --- @field row integer? 0-based row of `text` in its version
 --- @field file integer? index into `unidiff.View.files`
+--- @field stage 'staged'|'unstaged'|'index'? which layer a change belongs to, in
+---       a mixed view only; see unidiff.mixed
 
 --- Kinds that stand for a line of one of the two versions.
 --- @type table<string, true>
@@ -135,7 +138,8 @@ end
 ---
 --- In a multi-file view one file's trailing deletions sit directly above the
 --- next file's leading additions, so blocks are only paired when they belong to
---- the same file.
+--- the same file. In a mixed view they must also belong to the same stage: a
+--- staged deletion followed by an unstaged addition is two separate changes.
 ---
 --- @param lines unidiff.Line[]
 --- @return [integer, integer][] pairs of 1-based rows {del_row, add_row}
@@ -144,14 +148,17 @@ function M.change_pairs(lines)
   local i = 1
   while i <= #lines do
     if lines[i].kind == 'del' then
-      local file = lines[i].file
+      local file, stage = lines[i].file, lines[i].stage
+      local function same(l, kind)
+        return l and l.kind == kind and l.file == file and l.stage == stage
+      end
       local del_start = i
-      while lines[i] and lines[i].kind == 'del' and lines[i].file == file do
+      while same(lines[i], 'del') do
         i = i + 1
       end
       local del_end = i - 1
       local add_start = i
-      while lines[i] and lines[i].kind == 'add' and lines[i].file == file do
+      while same(lines[i], 'add') do
         i = i + 1
       end
       local add_end = i - 1

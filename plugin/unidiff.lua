@@ -22,3 +22,9 @@ end, {
   complete = revs,
   desc = 'Open a unified diff of every changed file against a revision',
 })
+
+vim.api.nvim_create_user_command('UnidiffMixed', function()
+  require('unidiff').open_mixed()
+end, {
+  desc = 'Experimental: every uncommitted change, with staged lines marked',
+})

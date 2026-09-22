@@ -1,6 +1,7 @@
 local dlib = require('unidiff.diff')
 local git = require('unidiff.git')
 local hl = require('unidiff.highlight')
+local mixed = require('unidiff.mixed')
 local render = require('unidiff.render')
 
 local M = {}
@@ -54,6 +55,7 @@ end
 --- @field label string
 --- @field old_lines string[]
 --- @field new_lines string[]
+--- @field index_lines string[]? given only for a mixed view; see unidiff.mixed
 
 --- Turn sources into a renderable view, concatenating their diffs.
 --- @param sources unidiff.Source[]
@@ -68,11 +70,19 @@ local function build_view(sources, rev, context, diff_opts)
   local unchanged = {}
 
   for _, src in ipairs(sources) do
-    local hunks = dlib.hunks(src.old_lines, src.new_lines, diff_opts)
-    if #hunks == 0 then
+    local flines, fhunks
+    if src.index_lines then
+      flines, fhunks =
+        mixed.build(src.old_lines, src.index_lines, src.new_lines, context, diff_opts)
+    else
+      local hunks = dlib.hunks(src.old_lines, src.new_lines, diff_opts)
+      if #hunks > 0 then
+        flines, fhunks = dlib.build(hunks, src.old_lines, src.new_lines, context)
+      end
+    end
+    if not flines then
       unchanged[#unchanged + 1] = src.label
     else
-      local flines, fhunks = dlib.build(hunks, src.old_lines, src.new_lines, context)
       local ft = filetype_of(src.path)
       local lang = vim.treesitter.language.get_lang(ft) or ft
 
@@ -88,6 +98,7 @@ local function build_view(sources, rev, context, diff_opts)
         label = src.label,
         old_buf = hl.ghost_buffer(src.old_lines, ft, lang),
         new_buf = hl.ghost_buffer(src.new_lines, ft, lang),
+        index_buf = src.index_lines and hl.ghost_buffer(src.index_lines, ft, lang),
         lang = lang,
         row = offset,
       }
@@ -122,6 +133,9 @@ local function open_view(view, name)
   for _, f in ipairs(view.files) do
     vim.api.nvim_buf_delete(f.old_buf, { force = true })
     vim.api.nvim_buf_delete(f.new_buf, { force = true })
+    if f.index_buf then
+      vim.api.nvim_buf_delete(f.index_buf, { force = true })
+    end
   end
 
   vim.api.nvim_buf_set_name(buf, name)
@@ -131,6 +145,24 @@ local function open_view(view, name)
   render.configure_window(win, buf)
   M.set_keymaps(buf)
   return buf
+end
+
+--- A pure rename or a mode change produces no hunks and so has no rows to show,
+--- but dropping it silently would hide a real change.
+--- @param binary integer
+--- @param unchanged integer
+--- @return string?
+local function skipped_note(binary, unchanged)
+  local notes = {}
+  if binary > 0 then
+    notes[#notes + 1] = ('%d binary'):format(binary)
+  end
+  if unchanged > 0 then
+    notes[#notes + 1] = ('%d without textual change'):format(unchanged)
+  end
+  if #notes > 0 then
+    return '(' .. table.concat(notes, ', ') .. ' not shown)'
+  end
 end
 
 --- Open a unified diff of the current buffer against `rev`.
@@ -171,17 +203,26 @@ function M.open(opts)
   return open_view(view, ('unidiff://%s @ %s'):format(vim.fs.basename(file), rev))
 end
 
+--- The repository of the current buffer, falling back to that of the cwd.
+--- @return string? root
+local function repo_root()
+  local cwd = vim.fn.getcwd()
+  local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
+  local root = git.root(buf_dir ~= '' and buf_dir or cwd) or git.root(cwd)
+  if not root then
+    vim.notify('unidiff: not inside a git repository', vim.log.levels.WARN)
+  end
+  return root
+end
+
 --- Open one buffer holding the diff of every file that changed against `rev`.
 --- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer}
 --- @return integer? bufnr
 function M.open_all(opts)
   opts = opts or {}
   local rev = opts.rev or config.rev
-  local cwd = vim.fn.getcwd()
-  local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
-  local root = git.root(buf_dir ~= '' and buf_dir or cwd) or git.root(cwd)
+  local root = repo_root()
   if not root then
-    vim.notify('unidiff: not inside a git repository', vim.log.levels.WARN)
     return
   end
 
@@ -235,20 +276,121 @@ function M.open_all(opts)
     return
   end
 
-  -- A pure rename or a mode change produces no hunks and so has no rows to show,
-  -- but dropping it silently would hide a real change.
-  local notes = {}
-  if #skipped > 0 then
-    notes[#notes + 1] = ('%d binary'):format(#skipped)
+  view.note = skipped_note(#skipped, #unchanged)
+  return open_view(view, ('unidiff://all @ %s'):format(rev))
+end
+
+--- Experimental: every uncommitted change in one buffer, as HEAD -> working
+--- tree, with each changed line marked staged or unstaged.
+--- @param opts? {context?:integer, algorithm?:string, linematch?:integer}
+--- @return integer? bufnr
+function M.open_mixed(opts)
+  opts = opts or {}
+  local root = repo_root()
+  if not root then
+    return
   end
-  if #unchanged > 0 then
-    notes[#notes + 1] = ('%d without textual change'):format(#unchanged)
-  end
-  if #notes > 0 then
-    view.note = '(' .. table.concat(notes, ', ') .. ' not shown)'
+  local staged, unstaged = git.changed_staged(root), git.changed_unstaged(root)
+  if not staged or not unstaged then
+    vim.notify('unidiff: git diff failed', vim.log.levels.WARN)
+    return
   end
 
-  return open_view(view, ('unidiff://all @ %s'):format(rev))
+  --- @class unidiff.MixedEntry
+  --- @field path string repo-relative, in the index and the working tree
+  --- @field head_path string? repo-relative in HEAD; nil when added
+  --- @field label string
+  --- @field in_index boolean
+  --- @field unstaged unidiff.Change? set when the working tree differs
+  --- @field binary boolean
+
+  -- A file can have staged changes, unstaged ones, or both. Index -> working
+  -- tree compares paths as the index has them, so that is the key to join on.
+  local entries, by_path = {}, {} --- @type unidiff.MixedEntry[], table<string, unidiff.MixedEntry>
+  for _, c in ipairs(staged) do
+    local e = {
+      path = c.path,
+      head_path = c.status ~= 'A' and c.old_path or nil,
+      label = c.status == 'R' and ('%s -> %s'):format(c.old_path, c.path) or c.path,
+      in_index = c.status ~= 'D',
+      binary = c.binary,
+    }
+    entries[#entries + 1], by_path[c.path] = e, e
+  end
+  for _, c in ipairs(unstaged) do
+    local e = by_path[c.old_path]
+    if not e then
+      -- no staged change: HEAD and the index agree on this path
+      e = {
+        path = c.old_path,
+        head_path = c.old_path,
+        label = c.old_path,
+        in_index = true,
+        binary = false,
+      }
+      entries[#entries + 1], by_path[c.old_path] = e, e
+    end
+    e.unstaged = c
+    e.binary = e.binary or c.binary
+  end
+  -- files with only unstaged changes were appended after the staged ones
+  table.sort(entries, function(a, b)
+    return a.path < b.path
+  end)
+
+  local wanted, skipped = {}, {}
+  for _, e in ipairs(entries) do
+    if e.binary then
+      skipped[#skipped + 1] = e.path
+    else
+      wanted[#wanted + 1] = e
+    end
+  end
+
+  -- `:path` is the index's copy of a path. As in open_all, a version that does
+  -- not exist is left out of the request.
+  local specs, head_spec, index_spec = {}, {}, {}
+  for i, e in ipairs(wanted) do
+    if e.head_path then
+      specs[#specs + 1] = 'HEAD:' .. e.head_path
+      head_spec[i] = #specs
+    end
+    if e.in_index then
+      specs[#specs + 1] = ':' .. e.path
+      index_spec[i] = #specs
+    end
+  end
+  local blobs = git.batch_show(specs, root)
+
+  local sources = {}
+  for i, e in ipairs(wanted) do
+    local path = root .. '/' .. e.path
+    local index_lines = index_spec[i] and blobs[index_spec[i]] or {}
+    local work_lines = index_lines
+    if e.unstaged then
+      work_lines = e.unstaged.status == 'D' and {} or working_lines(path)
+    end
+    sources[#sources + 1] = {
+      path = path,
+      label = e.label,
+      old_lines = head_spec[i] and blobs[head_spec[i]] or {},
+      index_lines = index_lines,
+      new_lines = work_lines,
+    }
+  end
+
+  local view, unchanged = build_view(sources, 'HEAD', opts.context or config.context, {
+    algorithm = opts.algorithm or config.algorithm,
+    linematch = opts.linematch or config.linematch,
+  })
+  if not view then
+    vim.notify('unidiff: no uncommitted textual changes', vim.log.levels.INFO)
+    return
+  end
+  view.mixed = true
+  view.rev = 'HEAD, staged + unstaged'
+  view.note = skipped_note(#skipped, #unchanged)
+  return open_view(view, 'unidiff://mixed')
 end
 
 --- @param buf integer
