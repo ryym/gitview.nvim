@@ -4,6 +4,7 @@ local git = require('unidiff.git')
 local hl = require('unidiff.highlight')
 local mixed = require('unidiff.mixed')
 local render = require('unidiff.render')
+local util = require('unidiff.util')
 
 local M = {}
 
@@ -162,14 +163,14 @@ function M.open(opts)
   local src = vim.api.nvim_get_current_buf()
   local file = vim.api.nvim_buf_get_name(src)
   if file == '' then
-    vim.notify('unidiff: buffer has no file', vim.log.levels.WARN)
+    util.warn('buffer has no file')
     return
   end
   local rev = opts.rev
 
   local old_lines = git.show('./' .. vim.fs.basename(file), rev, vim.fs.dirname(file))
   if not old_lines then
-    vim.notify(('unidiff: %s not found in %s'):format(file, rev), vim.log.levels.WARN)
+    util.warn(('%s not found in %s'):format(file, rev))
     return
   end
 
@@ -182,7 +183,7 @@ function M.open(opts)
     },
   }, rev, opts.context, config.diff_opts(opts))
   if not view then
-    vim.notify('unidiff: no changes', vim.log.levels.INFO)
+    util.info('no changes')
     return
   end
 
@@ -196,7 +197,7 @@ local function repo_root()
   local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
   local root = git.root(buf_dir ~= '' and buf_dir or cwd) or git.root(cwd)
   if not root then
-    vim.notify('unidiff: not inside a git repository', vim.log.levels.WARN)
+    util.warn('not inside a git repository')
   end
   return root
 end
@@ -212,9 +213,13 @@ function M.open_all(opts)
     return
   end
 
-  local changes = git.changed(rev, root)
-  if not changes or #changes == 0 then
-    vim.notify(('unidiff: no changes against %s'):format(rev), vim.log.levels.INFO)
+  local changes, err = git.changed(rev, root)
+  if not changes then
+    util.git_error('git diff ' .. rev, err)
+    return
+  end
+  if #changes == 0 then
+    util.info(('no changes against %s'):format(rev))
     return
   end
 
@@ -255,7 +260,7 @@ function M.open_all(opts)
 
   local view, unchanged = build_view(sources, rev, opts.context, config.diff_opts(opts))
   if not view then
-    vim.notify('unidiff: no textual changes', vim.log.levels.INFO)
+    util.info('no textual changes')
     return
   end
 
@@ -273,9 +278,14 @@ function M.open_mixed(opts)
   if not root then
     return
   end
-  local staged, unstaged = git.changed_staged(root), git.changed_unstaged(root)
-  if not staged or not unstaged then
-    vim.notify('unidiff: git diff failed', vim.log.levels.WARN)
+  local staged, staged_err = git.changed_staged(root)
+  if not staged then
+    util.git_error('git diff --cached', staged_err)
+    return
+  end
+  local unstaged, unstaged_err = git.changed_unstaged(root)
+  if not unstaged then
+    util.git_error('git diff', unstaged_err)
     return
   end
 
@@ -364,7 +374,7 @@ function M.open_mixed(opts)
 
   local view, unchanged = build_view(sources, 'HEAD', opts.context, config.diff_opts(opts))
   if not view then
-    vim.notify('unidiff: no uncommitted textual changes', vim.log.levels.INFO)
+    util.info('no uncommitted textual changes')
     return
   end
   view.mixed = true
