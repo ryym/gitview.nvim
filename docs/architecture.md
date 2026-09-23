@@ -11,15 +11,21 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `config.lua`         | Defaults, and resolving a call's options against them   |
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `util.lua`           | Messages shown to the user                              |
+| `diff/source.lua`    | Reading the versions to compare, and their filetype     |
+| `diff/view.lua`      | Assembling sources into a view, and freeing it           |
 | `diff/lines.lua`     | `vim.diff` wrapper, unified line list, del/add pairing  |
 | `diff/mixed.lua`     | Merging HEAD, index and working tree into one line list |
 | `diff/highlight.lua` | Scratch buffers, and collecting highlight segments      |
 | `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
+| `diff/keymap.lua`    | What the keys do inside a diff buffer                   |
 
-The dependency direction is one-way: `init` uses everything, `render` uses
-`highlight`, `worddiff` and `lines`, `mixed` uses `lines`, and `config`, `util`
-and `git` depend on nothing but Neovim.
+The dependency direction is one-way: `init` uses everything, `view` uses
+`lines`, `mixed` and `highlight`, `render` uses `highlight`, `worddiff` and
+`lines`, and `config`, `util` and `git` depend on nothing but Neovim.
+
+`source` is the only part that reads git and the editor. It hands `view` plain
+data, so assembling a view looks nothing up for itself.
 
 ## Pipeline
 

@@ -18,13 +18,16 @@ end
 --- write hundreds; the first few say what went wrong.
 local STDERR_LINES = 5
 
+--- @class unidiff.GitError
+--- @field what string the command, as the user would recognise it
+--- @field stderr string what it said, possibly empty
+
 --- Report a git command that failed, quoting what it said.
---- @param what string the command, as the user would recognise it
---- @param err string? stderr, as returned by the `git` module
-function M.git_error(what, err)
-  local msg = PREFIX .. what .. ' failed'
-  if err and err ~= '' then
-    local lines = vim.split(err, '\n', { plain = true })
+--- @param err unidiff.GitError
+function M.git_error(err)
+  local msg = PREFIX .. err.what .. ' failed'
+  if err.stderr ~= '' then
+    local lines = vim.split(err.stderr, '\n', { plain = true })
     local total = #lines
     if total > STDERR_LINES then
       lines = vim.list_slice(lines, 1, STDERR_LINES)
