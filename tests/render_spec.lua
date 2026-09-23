@@ -315,3 +315,45 @@ test('a colorscheme change puts the groups back', function()
   )
 end)
 
+--- A view of a single-line file, small enough that redrawing into a buffer that
+--- held a bigger one leaves visibly fewer rows.
+--- @param text string
+--- @return unidiff.View
+local function tiny_view(text)
+  local old_buf = hl.ghost_buffer({}, 'lua')
+  local new_buf = hl.ghost_buffer({ text }, 'lua')
+  local view = {
+    lines = { { text = text, kind = 'add', new_lnum = 1, side = 'new', row = 0, file = 1 } },
+    hunk_rows = { 1 },
+    rev = 'HEAD',
+    files = {
+      { path = '/tmp/y.lua', label = 'y.lua', old_buf = old_buf, new_buf = new_buf, lang = 'lua', row = 1 },
+    },
+  }
+  return view, old_buf, new_buf
+end
+
+-- The file-list UI keeps one diff buffer and draws each selected file into it,
+-- so a redraw has to leave nothing of the view before it.
+test('draw replaces the previous view entirely', function()
+  local buf = build()
+  local before = vim.api.nvim_buf_line_count(buf)
+  assert(before > 1, 'fixture should be several rows')
+
+  local view, old_buf, new_buf = tiny_view('local z = 1')
+  render.draw(buf, view)
+  vim.api.nvim_buf_delete(old_buf, { force = true })
+  vim.api.nvim_buf_delete(new_buf, { force = true })
+
+  eq({ 'local z = 1' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  eq(view, render.views[buf])
+  -- Marks of the discarded view would sit on rows that no longer exist.
+  for _, ns in ipairs({ 'unidiff.syntax', 'unidiff.diff' }) do
+    local id = vim.api.nvim_get_namespaces()[ns]
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, id, 0, -1, {})) do
+      assert(m[2] == 0, ns .. ' kept a mark on row ' .. m[2])
+    end
+  end
+  eq(false, vim.bo[buf].modifiable)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)

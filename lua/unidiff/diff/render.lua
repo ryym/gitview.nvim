@@ -144,14 +144,37 @@ local function text_hl_of(l)
   return l.stage == 'staged' and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
 end
 
---- @param view unidiff.View
+--- A buffer to draw diffs in. It is made once and drawn into repeatedly: a view
+--- that showed one file can be replaced by one showing another without swapping
+--- the buffer out of its window, which would fire the Buf* autocommands on every
+--- keystroke of a file list.
 --- @return integer bufnr
-function M.render(view)
-  M.ensure_highlights()
+function M.create_buffer()
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype = 'nofile'
   vim.bo[buf].swapfile = false
   vim.bo[buf].filetype = 'unidiff'
+  -- Registered here rather than in `draw`, where it would stack up one
+  -- subscription per redraw.
+  vim.api.nvim_create_autocmd('BufWipeout', {
+    buffer = buf,
+    callback = function()
+      M.views[buf] = nil
+    end,
+  })
+  return buf
+end
+
+--- Replace whatever `buf` holds with `view`.
+--- @param buf integer from `create_buffer`
+--- @param view unidiff.View
+function M.draw(buf, view)
+  M.ensure_highlights()
+  vim.bo[buf].modifiable = true
+  -- Both namespaces have to go: leaving either behind keeps marks from the
+  -- previous view on rows the new one is shorter than.
+  vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
 
   local texts = {}
   for i, l in ipairs(view.lines) do
@@ -247,14 +270,15 @@ function M.render(view)
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
   M.views[buf] = view
+end
 
-  vim.api.nvim_create_autocmd('BufWipeout', {
-    buffer = buf,
-    callback = function()
-      M.views[buf] = nil
-    end,
-  })
-
+--- Make a buffer and draw a view in it. Callers that keep a buffer of their own
+--- use `create_buffer` and `draw` apart.
+--- @param view unidiff.View
+--- @return integer bufnr
+function M.render(view)
+  local buf = M.create_buffer()
+  M.draw(buf, view)
   return buf
 end
 
