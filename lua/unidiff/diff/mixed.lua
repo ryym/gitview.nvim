@@ -18,7 +18,7 @@
 --- A line in HEAD and the working tree but not in the index cannot appear as
 --- one row: the index has nowhere to put it, so it shows up as a staged
 --- deletion and an unstaged addition of the same text.
-local dlib = require('unidiff.diff')
+local dlib = require('unidiff.diff.lines')
 
 local M = {}
 
@@ -51,7 +51,7 @@ function M.align(hunks, n_old)
 
   for _, h in ipairs(hunks) do
     local os_, oc, ns_, nc = h[1], h[2], h[3], h[4]
-    -- a zero-count side points at the line before the change; see diff.build
+    -- a zero-count side points at the line before the change; see diff.lines.build
     local old_first = oc > 0 and os_ or os_ + 1
     local new_first = nc > 0 and ns_ or ns_ + 1
     keep_until(old_first)
@@ -147,9 +147,9 @@ function M.merge(head, index, work, opts)
   return out
 end
 
---- Collapse unchanged runs the way diff.build does: `context` lines are kept on
---- each side of a change, nothing before the first or after the last, and a run
---- only one line longer than what is kept is shown whole.
+--- Collapse unchanged runs the way diff.lines.build does: `context` lines are
+--- kept on each side of a change, nothing before the first or after the last,
+--- and a run only one line longer than what is kept is shown whole.
 --- @param lines unidiff.Line[]
 --- @param context integer
 --- @return unidiff.Line[] lines

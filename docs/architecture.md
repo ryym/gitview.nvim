@@ -2,19 +2,24 @@
 
 ## Modules
 
-| module          | responsibility                                          |
-| --------------- | ------------------------------------------------------- |
-| `init.lua`      | Commands, configuration, assembling views, keymaps      |
-| `git.lua`       | Every subprocess call, and the parsers for their output |
-| `diff.lua`      | `vim.diff` wrapper, unified line list, del/add pairing  |
-| `mixed.lua`     | Merging HEAD, index and working tree into one line list |
-| `highlight.lua` | Scratch buffers, and collecting highlight segments      |
-| `worddiff.lua`  | Word-level ranges within a pair of changed lines        |
-| `render.lua`    | Building the buffer, extmarks, gutter, winbar           |
+The unified diff is one part of the plugin rather than the whole of it, so its
+pipeline lives under `diff/` and the modules every part needs sit above it.
+
+| module               | responsibility                                          |
+| -------------------- | ------------------------------------------------------- |
+| `init.lua`           | Commands and the public API                             |
+| `config.lua`         | Defaults, and resolving a call's options against them   |
+| `git.lua`            | Every subprocess call, and the parsers for their output |
+| `util.lua`           | Messages shown to the user                              |
+| `diff/lines.lua`     | `vim.diff` wrapper, unified line list, del/add pairing  |
+| `diff/mixed.lua`     | Merging HEAD, index and working tree into one line list |
+| `diff/highlight.lua` | Scratch buffers, and collecting highlight segments      |
+| `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
+| `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 
 The dependency direction is one-way: `init` uses everything, `render` uses
-`highlight`, `worddiff` and `diff`, `mixed` uses `diff`, and the rest depend on
-nothing but Neovim.
+`highlight`, `worddiff` and `lines`, `mixed` uses `lines`, and `config`, `util`
+and `git` depend on nothing but Neovim.
 
 ## Pipeline
 
@@ -23,7 +28,7 @@ For each file in the diff:
 1. **Read both versions.** The old side comes from git, the new side from the
    file's loaded buffer if it has one and from disk otherwise. git is only ever
    used to read blobs and to list what changed; the diff itself is `vim.diff`.
-2. **Diff.** `diff.hunks()` returns raw hunk indices; `diff.build()` turns them
+2. **Diff.** `lines.hunks()` returns raw hunk indices; `lines.build()` turns them
    into a flat list of context/deleted/added lines with both line numbers
    attached.
 3. **Load ghost buffers.** Each whole version goes into its own scratch buffer,

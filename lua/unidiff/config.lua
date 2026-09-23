@@ -6,7 +6,7 @@ local M = {}
 --- @field context integer unchanged lines kept around each hunk
 --- @field rev string default revision to diff against
 --- @field algorithm string vim.diff() algorithm
---- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.hunks
+--- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
 
 --- @type unidiff.Config
 M.values = {

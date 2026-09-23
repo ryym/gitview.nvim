@@ -1,4 +1,4 @@
-local hl = require('unidiff.highlight')
+local hl = require('unidiff.diff.highlight')
 
 local test, eq = _G.test, _G.eq
 

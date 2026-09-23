@@ -1,4 +1,4 @@
-local mixed = require('unidiff.mixed')
+local mixed = require('unidiff.diff.mixed')
 
 local test, eq = _G.test, _G.eq
 
@@ -84,7 +84,7 @@ test('mixed: build returns nil when nothing differs', function()
 end)
 
 test('mixed: word-level pairing does not cross a stage boundary', function()
-  local dlib = require('unidiff.diff')
+  local dlib = require('unidiff.diff.lines')
   -- a staged deletion followed by an unstaged addition is two changes
   eq({}, dlib.change_pairs(mixed.merge({ 'x' }, {}, { 'y' })))
   -- each layer of a partially staged hunk pairs on its own

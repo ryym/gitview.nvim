@@ -15,7 +15,7 @@ local M = {}
 --- @field row integer? 0-based row of `text` in its version
 --- @field file integer? index into `unidiff.View.files`
 --- @field stage 'staged'|'unstaged'|'index'? which layer a change belongs to, in
----       a mixed view only; see unidiff.mixed
+---       a mixed view only; see unidiff.diff.mixed
 --- @field index_pos integer? where the row sits in the index, in a mixed view
 ---       only: its own line number when the index has the row, and the line it
 ---       sits in front of otherwise. Staging a single line needs a patch stated

@@ -1,6 +1,6 @@
-local dlib = require('unidiff.diff')
-local hl = require('unidiff.highlight')
-local render = require('unidiff.render')
+local dlib = require('unidiff.diff.lines')
+local hl = require('unidiff.diff.highlight')
+local render = require('unidiff.diff.render')
 
 local test, eq = _G.test, _G.eq
 

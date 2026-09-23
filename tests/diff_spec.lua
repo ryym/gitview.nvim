@@ -1,4 +1,4 @@
-local dlib = require('unidiff.diff')
+local dlib = require('unidiff.diff.lines')
 
 local test, eq = _G.test, _G.eq
 

@@ -1,6 +1,6 @@
-local hl = require('unidiff.highlight')
-local worddiff = require('unidiff.worddiff')
-local dlib = require('unidiff.diff')
+local hl = require('unidiff.diff.highlight')
+local worddiff = require('unidiff.diff.worddiff')
+local dlib = require('unidiff.diff.lines')
 
 local M = {}
 
@@ -25,7 +25,7 @@ M.views = {}
 --- @field hunk_rows integer[]
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
---- @field mixed boolean? staged and unstaged changes in one view; see unidiff.mixed
+--- @field mixed boolean? staged and unstaged changes in one view; see unidiff.diff.mixed
 
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
@@ -333,8 +333,8 @@ end
 --- @param win integer
 --- @param buf integer
 function M.configure_window(win, buf)
-  vim.wo[win].winbar = '%!v:lua.require("unidiff.render").winbar()'
-  vim.wo[win].statuscolumn = '%!v:lua.require("unidiff.render").statuscolumn()'
+  vim.wo[win].winbar = '%!v:lua.require("unidiff.diff.render").winbar()'
+  vim.wo[win].statuscolumn = '%!v:lua.require("unidiff.diff.render").statuscolumn()'
   vim.wo[win].number = false
   vim.wo[win].relativenumber = false
   vim.wo[win].signcolumn = 'no'

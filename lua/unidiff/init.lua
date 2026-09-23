@@ -1,9 +1,9 @@
 local config = require('unidiff.config')
-local dlib = require('unidiff.diff')
+local dlib = require('unidiff.diff.lines')
 local git = require('unidiff.git')
-local hl = require('unidiff.highlight')
-local mixed = require('unidiff.mixed')
-local render = require('unidiff.render')
+local hl = require('unidiff.diff.highlight')
+local mixed = require('unidiff.diff.mixed')
+local render = require('unidiff.diff.render')
 local util = require('unidiff.util')
 
 local M = {}
@@ -45,7 +45,7 @@ end
 --- @field label string
 --- @field old_lines string[]
 --- @field new_lines string[]
---- @field index_lines string[]? given only for a mixed view; see unidiff.mixed
+--- @field index_lines string[]? given only for a mixed view; see unidiff.diff.mixed
 
 --- Turn sources into a renderable view, concatenating their diffs.
 --- @param sources unidiff.Source[]
