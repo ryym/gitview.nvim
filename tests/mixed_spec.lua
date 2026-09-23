@@ -90,3 +90,38 @@ test('mixed: word-level pairing does not cross a stage boundary', function()
   -- each layer of a partially staged hunk pairs on its own
   eq({ { 1, 2 }, { 3, 4 } }, dlib.change_pairs(mixed.merge({ 'a', 'b' }, { 'a', 'B' }, { 'A', 'B' })))
 end)
+
+--- `index_pos` is what an index-based patch would be stated in terms of, so it
+--- is asserted separately from the display columns above.
+--- @param lines unidiff.Line[]
+--- @return string[]
+local function dump_index(lines)
+  local out = {}
+  for i, l in ipairs(lines) do
+    out[i] = ('%s%s|%s|%s'):format(
+      ({ add = '+', del = '-', context = ' ' })[l.kind],
+      l.text,
+      l.side,
+      l.index_pos or ''
+    )
+  end
+  return out
+end
+
+test('mixed: every row is placed against the index', function()
+  -- `b` is in HEAD only and `B` in index and work, so the pair sits in front of
+  -- index line 2 and at index line 2 respectively.
+  local lines = mixed.merge({ 'a', 'b' }, { 'a', 'B' }, { 'a', 'B' })
+  eq({ ' a|index|1', '-b|old|2', '+B|index|2' }, dump_index(lines))
+end)
+
+test('mixed: a row past the last index line is placed one past the end', function()
+  local lines = mixed.merge({ 'a' }, { 'a' }, { 'a', 'z' })
+  eq({ ' a|index|1', '+z|new|2' }, dump_index(lines))
+end)
+
+test('mixed: an index-only line keeps its own index line number', function()
+  -- staged addition of `x`, then removed from the working tree again
+  local lines = mixed.merge({}, { 'x' }, {})
+  eq({ '-x|index|1' }, dump_index(lines))
+end)

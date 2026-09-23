@@ -69,7 +69,8 @@ end
 
 --- Every line of all three versions, in display order. `old_lnum` is the line
 --- number in HEAD and `new_lnum` the one in the working tree; a line in neither
---- has no number at all.
+--- has no number at all. `index_pos` places every row against the index, which
+--- is what staging a single line has to be stated in terms of.
 --- @param head string[]
 --- @param index string[]
 --- @param work string[]
@@ -87,6 +88,7 @@ function M.merge(head, index, work, opts)
         kind = 'del',
         stage = 'staged',
         old_lnum = lnum,
+        index_pos = p,
         side = 'old',
         row = lnum - 1,
       }
@@ -99,6 +101,7 @@ function M.merge(head, index, work, opts)
         kind = 'add',
         stage = 'unstaged',
         new_lnum = lnum,
+        index_pos = p,
         side = 'new',
         row = lnum - 1,
       }
@@ -121,7 +124,14 @@ function M.merge(head, index, work, opts)
 
     if p <= #index then
       local h, w = staged.new_to_old[p], unstaged.old_to_new[p]
-      local l = { text = index[p], old_lnum = h, new_lnum = w, side = 'index', row = p - 1 }
+      local l = {
+        text = index[p],
+        old_lnum = h,
+        new_lnum = w,
+        index_pos = p,
+        side = 'index',
+        row = p - 1,
+      }
       if h and w then
         l.kind = 'context'
       elseif h then

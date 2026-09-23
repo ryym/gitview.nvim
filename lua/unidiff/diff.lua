@@ -16,6 +16,11 @@ local M = {}
 --- @field file integer? index into `unidiff.View.files`
 --- @field stage 'staged'|'unstaged'|'index'? which layer a change belongs to, in
 ---       a mixed view only; see unidiff.mixed
+--- @field index_pos integer? where the row sits in the index, in a mixed view
+---       only: its own line number when the index has the row, and the line it
+---       sits in front of otherwise. Staging a single line needs a patch stated
+---       in the index's line numbers, which neither `old_lnum` nor `new_lnum`
+---       gives. `side == 'index'` tells the two meanings apart.
 
 --- Kinds that stand for a line of one of the two versions.
 --- @type table<string, true>
