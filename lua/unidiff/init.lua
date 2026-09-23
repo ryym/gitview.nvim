@@ -1,3 +1,4 @@
+local config = require('unidiff.config')
 local dlib = require('unidiff.diff')
 local git = require('unidiff.git')
 local hl = require('unidiff.highlight')
@@ -6,21 +7,9 @@ local render = require('unidiff.render')
 
 local M = {}
 
---- @class unidiff.Config
---- @field context integer
---- @field rev string
---- @field algorithm string
---- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.hunks
-local config = {
-  context = 3,
-  rev = 'HEAD',
-  algorithm = 'histogram',
-  linematch = 0,
-}
-
 --- @param opts? unidiff.Config
 function M.setup(opts)
-  config = vim.tbl_extend('force', config, opts or {})
+  config.set(opts)
   -- Colors do not need this: they are defined on first render either way.
   render.setup_highlights()
 end
@@ -169,14 +158,14 @@ end
 --- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer}
 --- @return integer? bufnr
 function M.open(opts)
-  opts = opts or {}
+  opts = config.resolve(opts)
   local src = vim.api.nvim_get_current_buf()
   local file = vim.api.nvim_buf_get_name(src)
   if file == '' then
     vim.notify('unidiff: buffer has no file', vim.log.levels.WARN)
     return
   end
-  local rev = opts.rev or config.rev
+  local rev = opts.rev
 
   local old_lines = git.show('./' .. vim.fs.basename(file), rev, vim.fs.dirname(file))
   if not old_lines then
@@ -191,10 +180,7 @@ function M.open(opts)
       old_lines = old_lines,
       new_lines = vim.api.nvim_buf_get_lines(src, 0, -1, false),
     },
-  }, rev, opts.context or config.context, {
-    algorithm = opts.algorithm or config.algorithm,
-    linematch = opts.linematch or config.linematch,
-  })
+  }, rev, opts.context, config.diff_opts(opts))
   if not view then
     vim.notify('unidiff: no changes', vim.log.levels.INFO)
     return
@@ -219,8 +205,8 @@ end
 --- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer}
 --- @return integer? bufnr
 function M.open_all(opts)
-  opts = opts or {}
-  local rev = opts.rev or config.rev
+  opts = config.resolve(opts)
+  local rev = opts.rev
   local root = repo_root()
   if not root then
     return
@@ -267,10 +253,7 @@ function M.open_all(opts)
     }
   end
 
-  local view, unchanged = build_view(sources, rev, opts.context or config.context, {
-    algorithm = opts.algorithm or config.algorithm,
-    linematch = opts.linematch or config.linematch,
-  })
+  local view, unchanged = build_view(sources, rev, opts.context, config.diff_opts(opts))
   if not view then
     vim.notify('unidiff: no textual changes', vim.log.levels.INFO)
     return
@@ -285,7 +268,7 @@ end
 --- @param opts? {context?:integer, algorithm?:string, linematch?:integer}
 --- @return integer? bufnr
 function M.open_mixed(opts)
-  opts = opts or {}
+  opts = config.resolve(opts)
   local root = repo_root()
   if not root then
     return
@@ -379,10 +362,7 @@ function M.open_mixed(opts)
     }
   end
 
-  local view, unchanged = build_view(sources, 'HEAD', opts.context or config.context, {
-    algorithm = opts.algorithm or config.algorithm,
-    linematch = opts.linematch or config.linematch,
-  })
+  local view, unchanged = build_view(sources, 'HEAD', opts.context, config.diff_opts(opts))
   if not view then
     vim.notify('unidiff: no uncommitted textual changes', vim.log.levels.INFO)
     return
