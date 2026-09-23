@@ -18,22 +18,35 @@ local function blob_lines(text)
   return vim.split((text:gsub('\n$', '')), '\n', { plain = true })
 end
 
+--- @class unidiff.GitResult
+--- @field ok boolean
+--- @field stdout string
+--- @field stderr string what to show the user when `ok` is false
+--- @field code integer
+
+--- Every subprocess goes through here, so that stderr is never thrown away and
+--- so that making these calls asynchronous later is one change rather than many.
+---
 --- @param cmd string[]
 --- @param cwd string
---- @return string? stdout nil when the command failed
-local function run(cmd, cwd)
-  local out = vim.system(cmd, { text = true, cwd = cwd }):wait()
-  if out.code ~= 0 then
-    return nil
-  end
-  return out.stdout
+--- @param opts? table extra `vim.system` options; `text = false` reads stdout raw
+--- @return unidiff.GitResult
+function M.run(cmd, cwd, opts)
+  local sys = vim.tbl_extend('force', { text = true, cwd = cwd }, opts or {})
+  local out = vim.system(cmd, sys):wait()
+  return {
+    ok = out.code == 0,
+    stdout = out.stdout or '',
+    stderr = vim.trim(out.stderr or ''),
+    code = out.code,
+  }
 end
 
 --- @param cwd string
 --- @return string? root absolute path of the repository root
 function M.root(cwd)
-  local out = run({ 'git', 'rev-parse', '--show-toplevel' }, cwd)
-  return out and vim.trim(out) or nil
+  local res = M.run({ 'git', 'rev-parse', '--show-toplevel' }, cwd)
+  return res.ok and vim.trim(res.stdout) or nil
 end
 
 --- Read a blob. `nil` means the path does not exist in that revision, which is
@@ -43,11 +56,11 @@ end
 --- @param cwd string
 --- @return string[]?
 function M.show(path, rev, cwd)
-  local out = run({ 'git', 'show', ('%s:%s'):format(rev, path) }, cwd)
-  if not out then
+  local res = M.run({ 'git', 'show', ('%s:%s'):format(rev, path) }, cwd)
+  if not res.ok then
     return nil
   end
-  return blob_lines(out)
+  return blob_lines(res.stdout)
 end
 
 --- Parse the stream `git cat-file --batch` writes.
@@ -95,14 +108,14 @@ function M.batch_show(specs, cwd)
   end
   -- `text = true` would rewrite CRLF and desynchronise the byte counts in the
   -- headers, so the stream is read raw.
-  local out = vim.system({ 'git', 'cat-file', '--batch' }, {
-    cwd = cwd,
+  local res = M.run({ 'git', 'cat-file', '--batch' }, cwd, {
+    text = false,
     stdin = table.concat(specs, '\n') .. '\n',
-  }):wait()
-  if out.code ~= 0 then
+  })
+  if not res.ok then
     return {}
   end
-  return M.parse_batch(out.stdout)
+  return M.parse_batch(res.stdout)
 end
 
 --- Parse `git diff --name-status -z`.
@@ -178,20 +191,22 @@ end
 
 --- @param args string[] what to compare, as passed to `git diff`
 --- @param cwd string
---- @return unidiff.Change[]?
+--- @return unidiff.Change[]? changes
+--- @return string? err why the command failed
 local function diff_changes(args, cwd)
   local function git_diff(format)
-    return run(vim.list_extend({ 'git', 'diff', format, '-z', '--find-renames' }, args), cwd)
+    return M.run(vim.list_extend({ 'git', 'diff', format, '-z', '--find-renames' }, args), cwd)
   end
   local status = git_diff('--name-status')
-  if not status then
-    return nil
+  if not status.ok then
+    return nil, status.stderr
   end
-  local changes = M.parse_name_status(status)
+  local changes = M.parse_name_status(status.stdout)
 
+  -- A failure here only costs the binary flags, so the listing is still useful.
   local numstat = git_diff('--numstat')
-  if numstat then
-    local binary = M.parse_binary(numstat)
+  if numstat.ok then
+    local binary = M.parse_binary(numstat.stdout)
     for _, c in ipairs(changes) do
       c.binary = binary[c.path] or false
     end
@@ -202,21 +217,24 @@ end
 --- List everything that differs between `rev` and the working tree.
 --- @param rev string
 --- @param cwd string
---- @return unidiff.Change[]?
+--- @return unidiff.Change[]? changes
+--- @return string? err
 function M.changed(rev, cwd)
   return diff_changes({ rev }, cwd)
 end
 
 --- List everything that differs between HEAD and the index.
 --- @param cwd string
---- @return unidiff.Change[]?
+--- @return unidiff.Change[]? changes
+--- @return string? err
 function M.changed_staged(cwd)
   return diff_changes({ '--cached' }, cwd)
 end
 
 --- List everything that differs between the index and the working tree.
 --- @param cwd string
---- @return unidiff.Change[]?
+--- @return unidiff.Change[]? changes
+--- @return string? err
 function M.changed_unstaged(cwd)
   return diff_changes({}, cwd)
 end
