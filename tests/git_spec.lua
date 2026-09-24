@@ -82,3 +82,10 @@ test('keeps an empty blob distinct from a missing one', function()
   local out = ('a'):rep(40) .. ' blob 0\n\n'
   eq({ {} }, git.parse_batch(out))
 end)
+
+test('parses a NUL-separated path list', function()
+  -- The stream is terminated rather than separated, so the trailing empty
+  -- field is not a path.
+  eq({ 'a.txt', 'dir/b b.txt' }, git.parse_paths(z('a.txt', 'dir/b b.txt')))
+  eq({}, git.parse_paths(''))
+end)

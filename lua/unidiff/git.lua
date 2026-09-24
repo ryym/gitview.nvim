@@ -189,6 +189,24 @@ function M.parse_binary(out)
   return binary
 end
 
+--- Split the NUL-separated path list `-z` produces.
+---
+--- The stream ends with a separator rather than delimiting between paths, so
+--- the final field is empty and is dropped. A path may contain anything but
+--- NUL, which is the whole reason for asking for this format.
+---
+--- @param out string
+--- @return string[]
+function M.parse_paths(out)
+  local paths = {}
+  for _, path in ipairs(vim.split(out, '\0', { plain = true })) do
+    if path ~= '' then
+      paths[#paths + 1] = path
+    end
+  end
+  return paths
+end
+
 --- @param args string[] what to compare, as passed to `git diff`
 --- @param cwd string
 --- @return unidiff.Change[]? changes
@@ -237,6 +255,22 @@ end
 --- @return string? err
 function M.changed_unstaged(cwd)
   return diff_changes({}, cwd)
+end
+
+--- Files git is not tracking and has not been told to ignore.
+---
+--- `git diff` never reports these, so they are the one part of the working tree
+--- that has to be asked for separately.
+---
+--- @param cwd string the repository root; paths come back relative to it
+--- @return string[]? paths
+--- @return string? err
+function M.untracked(cwd)
+  local res = M.run({ 'git', 'ls-files', '--others', '--exclude-standard', '-z' }, cwd)
+  if not res.ok then
+    return nil, res.stderr
+  end
+  return M.parse_paths(res.stdout)
 end
 
 return M
