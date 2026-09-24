@@ -6,10 +6,12 @@
 --- when the repository changes underneath it, and to follow the cursor from one
 --- file to the next.
 local config = require('unidiff.config')
+local git = require('unidiff.git')
 local keymap = require('unidiff.diff.keymap')
 local list = require('unidiff.ui.list')
 local render = require('unidiff.diff.render')
 local source = require('unidiff.diff.source')
+local stage = require('unidiff.stage')
 local status = require('unidiff.status')
 local util = require('unidiff.util')
 local vlib = require('unidiff.diff.view')
@@ -25,6 +27,7 @@ local M = {}
 --- @field diff_buf integer drawn into repeatedly, never swapped out
 --- @field entries unidiff.StatusEntry[]
 --- @field selected integer? index of the entry the diff pane is showing
+--- @field has_head boolean whether the repository has a commit; re-read on refresh
 
 --- @type table<integer, unidiff.Session>
 M.sessions = {}
@@ -109,6 +112,10 @@ function M.refresh(s)
     return
   end
   s.entries = entries
+  -- Re-read rather than kept from `open`: the first commit can be made while
+  -- the session is open, and it is one process against the several `status.list`
+  -- already spends.
+  s.has_head = git.has_head(s.root)
   list.draw(s.list_buf, s.root, entries)
 
   -- The list is usually shorter after a refresh, not longer, so the cursor can
@@ -157,6 +164,36 @@ function M.edit_entry(s)
   vim.cmd.edit(vim.fn.fnameescape(path))
 end
 
+--- Change the index for the file under the cursor, then redraw.
+---
+--- Both panes are rebuilt from git rather than adjusted in place: the status
+--- letters, the file's three versions and which lines count as staged all move
+--- together, and re-reading is what keeps them agreeing.
+---
+--- The cursor is left on the row it was on. Staging or unstaging never removes a
+--- file from the list — it still differs from HEAD either way — and the list is
+--- ordered by path, so the row goes on meaning the same file.
+---
+--- @param s unidiff.Session
+--- @param decide fun(e: unidiff.StatusEntry, has_head: boolean): unidiff.StageAction?, string?
+local function apply_to_selected(s, decide)
+  local entry = s.entries[s.selected or 0]
+  if not entry then
+    return
+  end
+  local action, why = decide(entry, s.has_head)
+  if not action then
+    util.info(why or 'nothing to do')
+    return
+  end
+  local err = stage.run(action, s.root)
+  if err then
+    util.git_error(err)
+    return
+  end
+  M.refresh(s)
+end
+
 --- @param s unidiff.Session
 local function set_list_keymaps(s)
   local map = function(lhs, fn, desc)
@@ -165,6 +202,15 @@ local function set_list_keymaps(s)
   map('<CR>', function()
     vim.api.nvim_set_current_win(s.diff_win)
   end, 'unidiff: focus the diff')
+  -- `s` and `u` rather than one key toggling: a file with changes on both sides
+  -- has no obvious sense in which it is on or off, and a row here states that
+  -- state rather than hiding it, so the direction is given explicitly.
+  map('s', function()
+    apply_to_selected(s, stage.stage)
+  end, 'unidiff: stage the file under the cursor')
+  map('u', function()
+    apply_to_selected(s, stage.unstage)
+  end, 'unidiff: unstage the file under the cursor')
   map('R', function()
     M.refresh(s)
   end, 'unidiff: refresh the list')
@@ -216,6 +262,7 @@ function M.open()
     list_buf = list.create_buffer(),
     diff_buf = render.create_buffer(),
     entries = entries,
+    has_head = git.has_head(root),
   }
   vim.api.nvim_win_set_buf(s.list_win, s.list_buf)
   -- An explicit side, rather than `:vsplit`, which follows 'splitright'.
