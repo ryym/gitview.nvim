@@ -135,7 +135,9 @@ function M.draw(buf, root, entries)
 end
 
 --- @param win integer
-function M.configure_window(win)
+--- @param width integer
+function M.configure_window(win, width)
+  vim.api.nvim_win_set_width(win, width)
   vim.wo[win].winbar = '%!v:lua.require("unidiff.ui.list").winbar()'
   vim.wo[win].statuscolumn = '%!v:lua.require("unidiff.ui.list").statuscolumn()'
   vim.wo[win].number = false
@@ -143,6 +145,9 @@ function M.configure_window(win)
   vim.wo[win].signcolumn = 'no'
   vim.wo[win].wrap = false
   vim.wo[win].cursorline = true
+  -- The diff beside it takes whatever is left, and keeps taking it when the
+  -- window is resized.
+  vim.wo[win].winfixwidth = true
 end
 
 --- Which entry a row stands for, if it stands for one.

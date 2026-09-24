@@ -1,12 +1,18 @@
---- One tab page showing a repository's uncommitted changes.
+--- One tab page showing a repository's uncommitted changes: the file list on
+--- the left, the selected file's diff on the right.
 ---
 --- The session is what makes this different from the diff commands: those
 --- render a snapshot and forget it, while this keeps enough state to be redrawn
---- when the repository changes underneath it.
+--- when the repository changes underneath it, and to follow the cursor from one
+--- file to the next.
+local config = require('unidiff.config')
+local keymap = require('unidiff.diff.keymap')
 local list = require('unidiff.ui.list')
+local render = require('unidiff.diff.render')
 local source = require('unidiff.diff.source')
 local status = require('unidiff.status')
 local util = require('unidiff.util')
+local vlib = require('unidiff.diff.view')
 
 local M = {}
 
@@ -15,7 +21,10 @@ local M = {}
 --- @field root string repository root, resolved once
 --- @field list_win integer
 --- @field list_buf integer
+--- @field diff_win integer
+--- @field diff_buf integer drawn into repeatedly, never swapped out
 --- @field entries unidiff.StatusEntry[]
+--- @field selected integer? index of the entry the diff pane is showing
 
 --- @type table<integer, unidiff.Session>
 M.sessions = {}
@@ -25,7 +34,73 @@ function M.current()
   return M.sessions[vim.api.nvim_get_current_tabpage()]
 end
 
---- Re-read the repository and redraw the list, keeping the cursor where it is.
+--- What the diff pane compares. Unlike the diff commands there is no choice of
+--- revision here: the point of the view is what has not been committed.
+local REV = 'HEAD, staged + unstaged'
+
+--- Draw the selected entry, or say why there is nothing to draw.
+--- @param s unidiff.Session
+function M.show_selected(s)
+  local entry = s.entries[s.selected or 0]
+  if not entry then
+    render.notice(s.diff_buf, list.EMPTY_NOTICE)
+    return
+  end
+  if entry.binary then
+    render.notice(s.diff_buf, ('%s   (binary file)'):format(status.label(entry)))
+    return
+  end
+
+  local src = source.for_entry(entry, s.root)
+  local view = src
+    and vlib.build({ src }, REV, config.values.context, config.diff_opts(config.values))
+  if not view then
+    -- a pure rename or a mode change: a real change with no lines to show
+    render.notice(s.diff_buf, ('%s   (no textual change)'):format(status.label(entry)))
+    return
+  end
+  view.mixed = true
+  render.draw(s.diff_buf, view)
+  vlib.dispose(view)
+end
+
+--- Draw whatever the list's cursor is on.
+---
+--- Following the cursor means skipping the work when it has not left the row it
+--- was on, but the first draw and a refresh have to happen regardless: both can
+--- leave the selection exactly where it was and still need the pane rebuilt.
+---
+--- @param s unidiff.Session
+--- @param force boolean? draw even when the selection has not moved
+local function sync_selection(s, force)
+  local row = vim.api.nvim_win_get_cursor(s.list_win)[1]
+  local index = list.index_at(s.list_buf, row)
+  if force or index ~= s.selected then
+    s.selected = index
+    M.show_selected(s)
+  end
+end
+
+--- Put the list's cursor on an entry and show it. An index past either end is
+--- clamped, so `]f` on the last file stays on the last file.
+--- @param s unidiff.Session
+--- @param index integer
+function M.select(s, index)
+  if #s.entries == 0 then
+    return
+  end
+  index = math.max(1, math.min(#s.entries, index))
+  local row = list.row_of(s.list_buf, index)
+  if row then
+    vim.api.nvim_win_set_cursor(s.list_win, { row, 0 })
+  end
+  if index ~= s.selected then
+    s.selected = index
+    M.show_selected(s)
+  end
+end
+
+--- Re-read the repository and redraw both panes.
 --- @param s unidiff.Session
 function M.refresh(s)
   local entries, err = status.list(s.root)
@@ -43,6 +118,10 @@ function M.refresh(s)
   if row > last then
     vim.api.nvim_win_set_cursor(s.list_win, { last, 0 })
   end
+
+  -- The row under the cursor may now be a different file, or the same file with
+  -- different contents, so the diff is rebuilt either way.
+  sync_selection(s, true)
 end
 
 --- @param s unidiff.Session
@@ -51,11 +130,12 @@ function M.close(s)
     return
   end
   -- `tabclose` refuses when it is the only tab page; there is nothing to go
-  -- back to then, so the window is closed instead.
+  -- back to then, so the windows are closed instead.
   if #vim.api.nvim_list_tabpages() > 1 then
     vim.api.nvim_set_current_tabpage(s.tab)
     vim.cmd.tabclose()
   else
+    vim.api.nvim_win_close(s.diff_win, true)
     vim.cmd.quit()
   end
 end
@@ -78,10 +158,13 @@ function M.edit_entry(s)
 end
 
 --- @param s unidiff.Session
-local function set_keymaps(s)
+local function set_list_keymaps(s)
   local map = function(lhs, fn, desc)
     vim.keymap.set('n', lhs, fn, { buffer = s.list_buf, desc = desc })
   end
+  map('<CR>', function()
+    vim.api.nvim_set_current_win(s.diff_win)
+  end, 'unidiff: focus the diff')
   map('R', function()
     M.refresh(s)
   end, 'unidiff: refresh the list')
@@ -91,6 +174,25 @@ local function set_keymaps(s)
   map('q', function()
     M.close(s)
   end, 'unidiff: close')
+end
+
+--- Inside a session a diff is one pane of something larger: `q` gives up the
+--- whole session, and moving between files means moving the list's cursor
+--- rather than scrolling within one buffer.
+--- @param s unidiff.Session
+local function set_diff_keymaps(s)
+  keymap.set(s.diff_buf, {
+    close = function()
+      M.close(s)
+    end,
+    goto_file = function(dir)
+      M.select(s, (s.selected or 1) + dir)
+      vim.api.nvim_set_current_win(s.list_win)
+    end,
+    before_jump = function()
+      M.close(s)
+    end,
+  })
 end
 
 --- Open a tab page listing everything uncommitted.
@@ -112,12 +214,28 @@ function M.open()
     root = root,
     list_win = vim.api.nvim_get_current_win(),
     list_buf = list.create_buffer(),
+    diff_buf = render.create_buffer(),
     entries = entries,
   }
   vim.api.nvim_win_set_buf(s.list_win, s.list_buf)
+  -- An explicit side, rather than `:vsplit`, which follows 'splitright'.
+  s.diff_win = vim.api.nvim_open_win(s.diff_buf, false, {
+    split = 'right',
+    win = s.list_win,
+  })
+
   list.draw(s.list_buf, root, entries)
-  list.configure_window(s.list_win)
-  set_keymaps(s)
+  list.configure_window(s.list_win, config.values.list_width)
+  render.configure_window(s.diff_win, s.diff_buf)
+  set_list_keymaps(s)
+  set_diff_keymaps(s)
+
+  vim.api.nvim_create_autocmd('CursorMoved', {
+    buffer = s.list_buf,
+    callback = function()
+      sync_selection(s)
+    end,
+  })
 
   M.sessions[s.tab] = s
   vim.api.nvim_create_autocmd('TabClosed', {
@@ -126,13 +244,17 @@ function M.open()
       -- TabClosed does not say which tab went, so this checks its own.
       if not vim.api.nvim_tabpage_is_valid(s.tab) then
         M.sessions[s.tab] = nil
-        if vim.api.nvim_buf_is_valid(s.list_buf) then
-          vim.api.nvim_buf_delete(s.list_buf, { force = true })
+        for _, buf in ipairs({ s.list_buf, s.diff_buf }) do
+          if vim.api.nvim_buf_is_valid(buf) then
+            vim.api.nvim_buf_delete(buf, { force = true })
+          end
         end
         return true -- delete the autocommand
       end
     end,
   })
+
+  sync_selection(s, true)
   return s
 end
 

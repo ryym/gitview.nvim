@@ -7,6 +7,7 @@ local M = {}
 --- @field rev string default revision to diff against
 --- @field algorithm string vim.diff() algorithm
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
+--- @field list_width integer columns for the file list in `:UnidiffStatus`
 
 --- @type unidiff.Config
 M.values = {
@@ -14,6 +15,7 @@ M.values = {
   rev = 'HEAD',
   algorithm = 'histogram',
   linematch = 0,
+  list_width = 30,
 }
 
 --- @param opts? unidiff.Config

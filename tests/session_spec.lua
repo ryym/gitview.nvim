@@ -172,3 +172,131 @@ test('session: a file the working tree lacks is not opened', function()
     assert(session.sessions[s.tab], 'the session should still be open')
   end)
 end)
+
+--- @param s unidiff.Session
+--- @return string[]
+local function diff_rows(s)
+  return vim.api.nvim_buf_get_lines(s.diff_buf, 0, -1, false)
+end
+
+--- A repository with one file changed on both sides and one untracked.
+local function two(repo)
+  repo.write('a.lua', { 'return 1' })
+  repo.commit('init')
+  repo.write('a.lua', { 'return 2' })
+  repo.git('add', 'a.lua')
+  repo.write('a.lua', { 'return 3' })
+  repo.write('b.lua', { 'return 9' })
+end
+
+test('session: opens showing the first entry', function()
+  with_session(two, function(s)
+    eq(1, s.selected)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('return 3', 1, true), text)
+    -- one diff carries both layers, which is the whole point of the model
+    local stages = {}
+    for _, l in ipairs(require('unidiff.diff.render').views[s.diff_buf].lines) do
+      if l.stage then
+        stages[l.stage] = true
+      end
+    end
+    assert(stages.staged and stages.unstaged, vim.inspect(stages))
+  end)
+end)
+
+-- The diff pane is one buffer for the life of the session. Swapping a buffer
+-- into the window on every cursor move is what this design exists to avoid.
+test('session: selecting another file redraws the same buffer', function()
+  with_session(two, function(s)
+    local buf = s.diff_buf
+    session.select(s, 2)
+    eq(2, s.selected)
+    eq(buf, s.diff_buf)
+    eq(buf, vim.api.nvim_win_get_buf(s.diff_win))
+    eq({ 'b.lua', 'return 9' }, diff_rows(s))
+  end)
+end)
+
+test('session: moving the list cursor selects', function()
+  with_session(two, function(s)
+    vim.api.nvim_set_current_win(s.list_win)
+    vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 })
+    vim.api.nvim_exec_autocmds('CursorMoved', { buffer = s.list_buf })
+    eq(2, s.selected)
+    eq({ 'b.lua', 'return 9' }, diff_rows(s))
+  end)
+end)
+
+test('session: selecting past either end stays on the last file', function()
+  with_session(two, function(s)
+    session.select(s, 99)
+    eq(2, s.selected)
+    eq(2, vim.api.nvim_win_get_cursor(s.list_win)[1])
+    session.select(s, -5)
+    eq(1, s.selected)
+  end)
+end)
+
+test('session: a change with no lines says so instead of showing nothing', function()
+  with_session(function(repo)
+    repo.write('doc.md', { 'text' })
+    repo.commit('init')
+    repo.git('mv', 'doc.md', 'guide.md')
+  end, function(s)
+    eq({ 'doc.md -> guide.md   (no textual change)' }, diff_rows(s))
+    eq(nil, require('unidiff.diff.render').views[s.diff_buf])
+  end)
+end)
+
+test('session: a binary file says so', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'x' })
+    repo.commit('init')
+    local f = assert(io.open(repo.root .. '/logo.png', 'wb'))
+    f:write('PNG\0\1\2')
+    f:close()
+  end, function(s)
+    eq({ 'logo.png   (binary file)' }, diff_rows(s))
+  end)
+end)
+
+test('session: an empty repository says so in both panes', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'x' })
+    repo.commit('init')
+  end, function(s)
+    eq({ list.EMPTY_NOTICE }, diff_rows(s))
+    eq(nil, s.selected)
+  end)
+end)
+
+-- The same file can differ after a refresh, so the diff is rebuilt whether or
+-- not the selection moved.
+test('session: refreshing rebuilds the diff of the selected file', function()
+  with_session(two, function(s, repo)
+    repo.write('a.lua', { 'return 4' })
+    session.refresh(s)
+    eq(1, s.selected)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('return 4', 1, true), text)
+  end)
+end)
+
+test('session: the diff pane takes what the list leaves', function()
+  with_session(two, function(s)
+    local width = require('unidiff.config').values.list_width
+    eq(width, vim.api.nvim_win_get_width(s.list_win))
+    assert(vim.api.nvim_win_get_width(s.diff_win) > 0, 'the diff pane has no width')
+    eq(true, vim.wo[s.list_win].winfixwidth)
+  end)
+end)
+
+test('session: both buffers go when the session closes', function()
+  with_session(two, function(s)
+    local list_buf, diff_buf = s.list_buf, s.diff_buf
+    session.close(s)
+    eq(false, vim.api.nvim_buf_is_valid(list_buf))
+    eq(false, vim.api.nvim_buf_is_valid(diff_buf))
+  end)
+end)
