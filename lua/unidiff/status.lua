@@ -92,6 +92,24 @@ function M.entries(staged, unstaged, untracked)
   return entries
 end
 
+--- Whether the index differs from HEAD for this entry.
+---
+--- An untracked file is in neither, so it counts as unstaged only. Both letters
+--- are `?` for it, which is why the test is not simply "not unchanged".
+---
+--- @param e unidiff.StatusEntry
+--- @return boolean
+function M.has_staged(e)
+  return e.index_status ~= UNCHANGED and e.index_status ~= UNTRACKED
+end
+
+--- Whether the working tree differs from the index for this entry.
+--- @param e unidiff.StatusEntry
+--- @return boolean
+function M.has_unstaged(e)
+  return e.worktree_status ~= UNCHANGED
+end
+
 --- How much of a file to look at before calling it text. This is git's own
 --- rule, and using a different one would disagree with the `binary` flag that
 --- `git diff --numstat` gives every tracked file.
