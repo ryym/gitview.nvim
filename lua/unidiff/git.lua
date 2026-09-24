@@ -269,6 +269,80 @@ function M.changed_unstaged(cwd)
   return diff_changes({}, cwd)
 end
 
+--- The file mode the index records for a path, from `git ls-files -s`, whose
+--- records are `<mode> <sha> <stage><TAB><path>`.
+---
+--- `nil` means the index has no entry, which is the case for an untracked file
+--- and for a staged deletion. There is then no mode to carry over and the
+--- caller has to choose one.
+---
+--- @param path string repo-relative
+--- @param cwd string
+--- @return string? mode six octal digits
+function M.index_mode(path, cwd)
+  local res = M.run({ 'git', 'ls-files', '-s', '--', path }, cwd)
+  if not res.ok then
+    return nil
+  end
+  return res.stdout:match('^(%d+) ')
+end
+
+--- Write `content` into the object database and return its hash.
+---
+--- `--path` is what makes git apply the same clean filter it would for a real
+--- checkout of that path. Without it a file under a filter would be stored in
+--- its working-tree form and the index would disagree with what `git add` does.
+---
+--- @param path string repo-relative, for the filters it selects
+--- @param content string
+--- @param cwd string
+--- @return string? sha
+--- @return string? err
+function M.hash_object(path, content, cwd)
+  local res = M.run({ 'git', 'hash-object', '-w', '--path', path, '--stdin' }, cwd, {
+    stdin = content,
+  })
+  if not res.ok then
+    return nil, res.stderr
+  end
+  return vim.trim(res.stdout)
+end
+
+--- Point the index entry for `path` at an object already in the database.
+---
+--- `--add` covers a path the index does not hold yet, which is how the first
+--- lines of an untracked file get staged.
+---
+--- @param mode string
+--- @param sha string
+--- @param path string repo-relative
+--- @param cwd string
+--- @return string? err
+function M.update_index(mode, sha, path, cwd)
+  local spec = ('%s,%s,%s'):format(mode, sha, path)
+  local res = M.run({ 'git', 'update-index', '--add', '--cacheinfo', spec }, cwd)
+  if res.ok then
+    return nil
+  end
+  return res.stderr
+end
+
+--- Drop the index entry for `path` without touching the working tree.
+---
+--- `--force-remove` is the only form that works for a path the working tree
+--- still has; plain `--remove` keeps the entry while the file is there.
+---
+--- @param path string repo-relative
+--- @param cwd string
+--- @return string? err
+function M.remove_index_entry(path, cwd)
+  local res = M.run({ 'git', 'update-index', '--force-remove', '--', path }, cwd)
+  if res.ok then
+    return nil
+  end
+  return res.stderr
+end
+
 --- Files git is not tracking and has not been told to ignore.
 ---
 --- `git diff` never reports these, so they are the one part of the working tree
