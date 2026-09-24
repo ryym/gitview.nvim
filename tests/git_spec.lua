@@ -1,4 +1,5 @@
 local git = require('unidiff.git')
+local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq
 
@@ -88,4 +89,13 @@ test('parses a NUL-separated path list', function()
   -- field is not a path.
   eq({ 'a.txt', 'dir/b b.txt' }, git.parse_paths(z('a.txt', 'dir/b b.txt')))
   eq({}, git.parse_paths(''))
+end)
+
+test('tells a repository with a commit from one without', function()
+  helpers.with_repo(function(repo)
+    eq(false, git.has_head(repo.root))
+    repo.write('a.txt', { 'one' })
+    repo.commit('init')
+    eq(true, git.has_head(repo.root))
+  end)
 end)

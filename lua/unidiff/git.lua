@@ -49,6 +49,18 @@ function M.root(cwd)
   return res.ok and vim.trim(res.stdout) or nil
 end
 
+--- Whether the repository has a commit yet.
+---
+--- Before the first commit there is no HEAD to restore from, so the commands
+--- that take a file out of the index have to be chosen differently. The
+--- condition belongs to the repository rather than to any one file.
+---
+--- @param cwd string
+--- @return boolean
+function M.has_head(cwd)
+  return M.run({ 'git', 'rev-parse', '--verify', '--quiet', 'HEAD' }, cwd).ok
+end
+
 --- Read a blob. `nil` means the path does not exist in that revision, which is
 --- how an added file is detected.
 --- @param path string
