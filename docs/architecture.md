@@ -12,6 +12,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `status.lua`         | What is uncommitted, as one entry per file               |
 | `stage.lua`          | Which git command moves a file into or out of the index  |
+| `index.lua`          | Writing part of a file's changes into the index          |
 | `util.lua`           | Messages shown to the user                              |
 | `diff/source.lua`    | Reading the versions to compare, and their filetype     |
 | `diff/view.lua`      | Assembling sources into a view, and freeing it           |
@@ -25,10 +26,10 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `ui/session.lua`     | One tab page's state, and redrawing it                   |
 
 The dependency direction is one-way: `init` uses everything, `source` uses
-`status`, `stage` uses `status` and `git`, `status` uses `git`, `view` uses
-`lines`, `mixed` and `highlight`,
-`render` uses `highlight`, `worddiff` and `lines`, and `config`, `util` and
-`git` depend on nothing but Neovim.
+`status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
+`git`, `view` uses `lines`, `mixed` and `highlight`, `render` uses `highlight`,
+`worddiff` and `lines`, and `config`, `util` and `git` depend on nothing but
+Neovim.
 
 `ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
 under `diff/` knows that `ui` exists.
@@ -107,6 +108,70 @@ all move together. The cursor stays on the row it was on, which is sound only
 because staging and unstaging never remove a file from the list — it differs from
 HEAD either way — and the list is ordered by path. A command that can make a row
 disappear will have to follow the file by path instead.
+
+### Changing part of a file
+
+`index.lua` does the same for a set of rows rather than a whole file, and it
+produces no patch. The pipeline never generates unified diff text at all: it
+reads blobs into line arrays and hands them to `vim.diff`. So the index is
+written the way it is read — the new contents are assembled as lines, hashed with
+`git hash-object`, and the entry pointed at the result with
+`git update-index --cacheinfo`.
+
+The alternative was generating a patch and running `git apply --cached`, with
+`-R` for the other direction. It was not taken: it would mean writing the one
+kind of text this codebase has otherwise never needed, and a patch can be
+rejected for failing to match its context, which is what `--unidiff-zero` exists
+to work around. Assembling the contents directly cannot be rejected, because
+there is no context to match.
+
+#### The rule is `side`
+
+Every row of a mixed view carries `index_pos`, so an operation is stated entirely
+in index coordinates, and `side` says what to do with the row:
+
+| row               | `side`  | effect                    |
+| ----------------- | ------- | ------------------------- |
+| unstaged addition | `new`   | insert before `index_pos` |
+| unstaged deletion | `index` | drop that index line      |
+| staged addition   | `index` | drop that index line      |
+| staged deletion   | `old`   | insert before `index_pos` |
+| in the index only | `index` | drop that index line      |
+
+A row read from the index is a line the operation takes out; any other row is one
+it puts in. Which of the five shapes it is never has to be established.
+
+Positions are read off the rows rather than walked, so rows at the same position
+cannot shift each other and a selection can be applied in any order. Only the
+order of insertions at one position matters, and rows are collected in display
+order for exactly that.
+
+Which rows an operation moves is decided by the row's `stage`: `s` takes the
+`unstaged` layer and `u` the `staged` one. An `index` row — a line the index has
+that neither HEAD nor the working tree does — belongs to both, since either
+direction removes it from the index.
+
+#### Contents of no lines
+
+An empty blob and an absent file read the same here: both give no lines. They are
+told apart by the version the operation moves toward, the working tree for a
+stage and HEAD for an unstage. If that side has no file either, the index entry
+is dropped with `git update-index --force-remove`; plain `--remove` will not do
+it while the working tree still has the file. Otherwise an empty blob is written,
+which is what an existing empty file deserves.
+
+#### What the session has to keep
+
+The rendered rows cannot stand in for the index contents. A view is trimmed, so
+everything away from a change has been folded into a `gap` row and is no longer
+there to be read back. The session therefore keeps the selected file's
+`index_lines`, and clears them whenever the pane shows a notice instead of a
+diff.
+
+The mode is carried over from `git ls-files -s`, and taken from the working tree
+when the index has no entry yet — which is how the first lines of an untracked
+file get staged. `hash-object --path` is what makes git apply the clean filter it
+would for a real checkout of that path.
 
 ## Pipeline
 
@@ -302,12 +367,15 @@ everything still looks right.
 | Word-level pairing never crosses a file boundary                        | `diff_spec`                                      |
 | Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
 | Unstaging a rename leaves the index equal to HEAD                       | `stage_spec`                                     |
+| Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
 
 ## Deliberate omissions
 
 Alternatives that were tried or considered and rejected, so they are not
 re-attempted by accident:
 
+- **Generating a patch and running `git apply --cached`.** See
+  [Changing part of a file](#changing-part-of-a-file).
 - **Parsing `git diff` output instead of using `vim.diff`.** Workable, and it
   would inherit the user's git configuration, but git compares the file on disk
   while this compares the buffer. `vim.diff` already agrees with git on hunk

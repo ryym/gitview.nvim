@@ -118,27 +118,36 @@ row, and its diff is the mixed view above: what is staged and what is not, at
 once. Only the letters are drawn; the row itself is the path, so yanking one
 gives something pasteable.
 
-| key    | in the list                       | in the diff             |
-| ------ | --------------------------------- | ----------------------- |
-| `<CR>` | focus the diff                    | jump to the source line |
-| `s`    | stage the file under the cursor   |                         |
-| `u`    | unstage the file under the cursor |                         |
-| `]f`   |                                   | next file               |
-| `[f`   |                                   | previous file           |
-| `]h`   |                                   | next hunk               |
-| `[h`   |                                   | previous hunk           |
-| `o`    | edit the file under the cursor    |                         |
-| `R`    | re-read the repository            |                         |
-| `q`    | close                             | close                   |
+| key       | in the list                       | in the diff                 |
+| --------- | --------------------------------- | --------------------------- |
+| `<CR>`    | focus the diff                    | jump to the source line     |
+| `s`       | stage the file under the cursor   | stage the line or selection |
+| `u`       | unstage the file under the cursor | unstage the line or selection |
+| `S` / `U` |                                   | stage / unstage this hunk   |
+| `]f`      |                                   | next file                   |
+| `[f`      |                                   | previous file               |
+| `]h`      |                                   | next hunk                   |
+| `[h`      |                                   | previous hunk               |
+| `o`       | edit the file under the cursor    |                             |
+| `R`       | re-read the repository            |                             |
+| `q`       | close                             | close                       |
 
-`s` and `u` work on whole files, and both panes are re-read afterwards. There is
-one key per direction rather than one key toggling: a file changed in the index
-and in the working tree both has no obvious sense in which it is staged or not,
-and a row here states that state rather than hiding it.
+There is one key per direction rather than one key toggling: a file changed in
+the index and in the working tree both has no obvious sense in which it is
+staged or not, and a row here states that state rather than hiding it.
+
+Where the key is pressed decides what it acts on. In the list, `s` and `u` take
+the whole file. In the diff they take the row under the cursor, or the rows a
+visual selection covers, and `S` and `U` take the whole change the cursor is in.
+Both panes are re-read from git afterwards.
+
+Because the diff is a mixed view, the two directions are never ambiguous even
+inside one hunk: `s` acts on the rows that are not staged yet and `u` on the
+rows that are.
 
 Binary files and changes with no lines to them, such as a pure rename, are
-listed and say as much in place of a diff. Discarding changes, staging part of a
-file and committing are not implemented.
+listed and say as much in place of a diff. Discarding changes and committing are
+not implemented.
 
 ```lua
 require('unidiff').setup({ list_width = 30 })
@@ -183,6 +192,9 @@ carries configuration, and the colors do not depend on it.
 - **The winbar can be taken over by your config.** The file the cursor is in is
   reported through `'winbar'`, so a configuration or plugin that sets it for
   every window hides it. Every file still has its own header line in the buffer.
+- **A file with no trailing newline gains one** if part of it is staged. Nothing
+  here can represent a missing final newline: a blob is read as a line array and
+  written back as one.
 - **Everything is computed eagerly** when the diff opens, and grows linearly
   with the number of files. See [docs/performance.md](docs/performance.md) for
   the numbers.
