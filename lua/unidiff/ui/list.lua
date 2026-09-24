@@ -145,16 +145,41 @@ function M.configure_window(win)
   vim.wo[win].cursorline = true
 end
 
---- The entry the cursor is on, if it is on one.
+--- Which entry a row stands for, if it stands for one.
+--- @param buf integer
+--- @param row integer 1-based
+--- @return integer? index into the entries
+function M.index_at(buf, row)
+  local state = M.state[buf]
+  return state and state.rows[row] or nil
+end
+
+--- The entry a row stands for, if it stands for one.
 --- @param buf integer
 --- @param row integer 1-based
 --- @return unidiff.StatusEntry?
 function M.entry_at(buf, row)
+  local index = M.index_at(buf, row)
+  local state = M.state[buf]
+  return index and state.entries[index] or nil
+end
+
+--- Where an entry is shown. The reverse of `index_at`, for moving the cursor to
+--- a file chosen from somewhere other than the list itself.
+--- @param buf integer
+--- @param index integer into the entries
+--- @return integer? row 1-based
+function M.row_of(buf, index)
   local state = M.state[buf]
   if not state then
     return nil
   end
-  return state.entries[state.rows[row]]
+  for row, i in pairs(state.rows) do
+    if i == index then
+      return row
+    end
+  end
+  return nil
 end
 
 return M
