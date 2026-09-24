@@ -18,6 +18,8 @@ works.
 :UnidiffAll main  " ...against any revision
 
 :UnidiffMixed     " experimental: staged and unstaged changes in one view
+
+:UnidiffStatus    " work in progress: list every uncommitted change
 ```
 
 ```lua
@@ -103,6 +105,21 @@ because the index differs from both:
 
 How the three versions are merged is described in
 [docs/architecture.md](docs/architecture.md#mixed-view).
+
+### The file list (work in progress)
+
+`:UnidiffStatus` opens a tab listing every uncommitted change, one row per file,
+with the two status letters `git status --short` prints. A file changed both in
+the index and in the working tree is still one row.
+
+| key | action                       |
+| --- | ---------------------------- |
+| `o` | edit the file under the cursor |
+| `R` | re-read the repository       |
+| `q` | close                        |
+
+Only the letters are drawn; the row itself is the path, so yanking one gives
+something pasteable. Selecting a file does not show its diff yet.
 
 ### Agreement with `git diff`
 

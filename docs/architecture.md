@@ -20,14 +20,38 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 | `diff/keymap.lua`    | What the keys do inside a diff buffer                   |
+| `ui/list.lua`        | The file list: its rows, its gutter, its winbar          |
+| `ui/session.lua`     | One tab page's state, and redrawing it                   |
 
 The dependency direction is one-way: `init` uses everything, `source` uses
 `status`, `status` uses `git`, `view` uses `lines`, `mixed` and `highlight`,
 `render` uses `highlight`, `worddiff` and `lines`, and `config`, `util` and
 `git` depend on nothing but Neovim.
 
+`ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
+under `diff/` knows that `ui` exists.
+
 `source` is the only part that reads git and the editor. It hands `view` plain
 data, so assembling a view looks nothing up for itself.
+
+## The file list
+
+`:UnidiffStatus` opens a tab page that outlives the moment it was opened in.
+That is the difference from the diff commands: those render a snapshot and
+forget it, while a session keeps its repository root and its entries so that it
+can be re-read.
+
+A session is registered against its tab page and dropped when that tab closes,
+however it closes. The list buffer goes with it.
+
+The list follows the same rule as a diff buffer: the text is the thing itself,
+and everything around it is drawn. A row is a path and nothing more, so yanking
+one gives a path; the two status letters are painted by `'statuscolumn'`, and
+the repository and file count by `'winbar'`.
+
+Rows map to entries through a table rather than by position, so that rows
+standing for no file — the notice shown when nothing is uncommitted, and the
+directories of the tree to come — cost nothing to add.
 
 ## Pipeline
 
