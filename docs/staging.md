@@ -247,7 +247,7 @@ newline, and honouring it here.
 
 ## Hazards and gaps
 
-### Merge conflicts are refused
+### Merge conflicts are not written to
 
 A conflicted path has three index entries rather than one:
 
@@ -273,14 +273,21 @@ MM f.txt                       # no longer UU: the conflict is "resolved"
 `git restore --staged` does the same thing by another route — it succeeds and
 leaves ` M`, with the conflict neither resolved nor still recorded.
 
-So an unmerged path is recognised and treated as unshowable:
+So an unmerged path is recognised and nothing writes to its index entry. It is
+also not drawn, which is a separate matter: the view a conflict deserves does not
+exist yet, and
+[architecture.md](architecture.md#a-merge-conflict-has-no-view) records what it
+would take. The notice is a placeholder, not a judgement that there is nothing to
+show.
+
+What holds today:
 
 - `status.entries` sets `conflicted` from the `U` status letter, which
   `git diff --diff-filter` documents as "unmerged". Both listings report it, and
   `in_index` is false because there is no stage 0.
 - The diff pane draws a notice instead of a view, which also means no rows exist
-  to stage from. `apply_to_rows` checks the flag as well, as a backstop for
-  anything that later makes such a file renderable.
+  to stage from. `apply_to_rows` checks the flag as well, as a backstop for when
+  a merge view does make such a file renderable.
 - `:UnidiffMixed` leaves it out and counts it in the winbar note.
 - Whole-file `u` is refused, because `git restore --staged` would discard the
   merge.
@@ -290,7 +297,8 @@ So an unmerged path is recognised and treated as unshowable:
 
 git tells seven pairs apart — `UU`, `AA`, `DU`, `UD`, `AU`, `UA`, `DD` — by which
 of the three stages the index holds. Only the fact that the path is unmerged is
-recorded, so all of them are listed as `UU`.
+recorded, so all of them are listed as `UU`. Reading the stages is what a merge
+view will need anyway, so both are one piece of work.
 
 ### Modes other than a regular file
 

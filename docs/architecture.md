@@ -95,10 +95,11 @@ holes. The parts that constrain the rest of the design are:
   contents cannot be read back out of the buffer.
 - **Whether the repository has a HEAD is a session-level flag**, re-read on every
   refresh, because it decides which unstaging command is even available.
-- **An unmerged file is listed but not showable.** It has no stage 0 to read a
+- **An unmerged file is listed but not drawn.** It has no stage 0 to read a
   version from, and writing one over a conflict's three entries reports no error
-  and discards them. It is drawn as a notice and refused everywhere but
-  whole-file `s`, which is `git add` resolving it.
+  and discards them. It is refused everywhere but whole-file `s`, which is
+  `git add` resolving it. The view it needs is a
+  [known gap](#a-merge-conflict-has-no-view).
 
 After a change both panes are rebuilt from git rather than adjusted in place: the
 status letters, the file's three versions and which of its lines count as staged
@@ -323,6 +324,48 @@ re-attempted by accident:
 - **`vim.inspect_pos()` for collecting highlights.** See the same document.
 
 ## Known gaps
+
+### A merge conflict has no view
+
+An unmerged file is listed and then says `(unresolved conflict)` where its diff
+would be. That notice is a placeholder for a view that does not exist yet, not a
+decision that a conflict has nothing worth showing. Everything it needs is in the
+index already, as merge stages 1, 2 and 3.
+
+A mixed view is the wrong shape for it, for two independent reasons.
+
+- **There is no staged layer to show.** A path has either stage 0 or stages 1–3,
+  never both: `git add` on an unmerged path is what collapses the stages into
+  stage 0, so resolving and staging are the same act. The question a mixed view
+  exists to answer — staged or unstaged — does not arise.
+- **The three versions fork rather than chain.** `HEAD -> index -> work` is a
+  chain, and which versions hold a line maps onto staged and unstaged.
+  `ours <- base -> theirs` has one common ancestor, and the same fact maps onto
+  ours, theirs and both. git draws its own distinction here: `git diff` on an
+  unmerged path emits a combined diff, `@@@` with two marker columns, rather than
+  an ordinary one.
+
+So the display, the gutter legend, the winbar and the keys all differ — take
+ours, take theirs, take both, rather than stage and unstage. It is a sibling of
+the mixed view, not a setting of it.
+
+What carries over and what does not:
+
+- `mixed.align` is reusable as it stands. It turns a hunk list into a line
+  correspondence and assumes nothing about what the two sides are.
+- `mixed.merge` is not. Its pivot is the new side of one diff and the old side of
+  the other, so it reads `staged.new_to_old` and `unstaged.old_to_new`. A merge
+  pivots on base, which is the old side of **both** diffs. The assembly is the
+  same shape written against different tables.
+- **Not all three stages exist.** Each can be missing, and the status pair names
+  which: `AA` has no base, `DU` no ours, `UD` no theirs. Treating a missing stage
+  as empty is what the pipeline already does for a version a file does not have.
+
+Reading `git ls-files -u` is what a merge view needs, and it also yields the
+exact status pair, so the present rounding of every conflict to `UU` is resolved
+by the same work.
+
+### Word-level pairing needs equal-sized blocks
 
 `change_pairs()` matches deleted lines to added ones by position, so a block
 replaced by one of a different size gets no word-level highlights at all.
