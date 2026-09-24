@@ -108,18 +108,34 @@ How the three versions are merged is described in
 
 ### The file list (work in progress)
 
-`:UnidiffStatus` opens a tab listing every uncommitted change, one row per file,
-with the two status letters `git status --short` prints. A file changed both in
-the index and in the working tree is still one row.
+`:UnidiffStatus` opens a tab with every uncommitted change listed on the left
+and the selected file's diff on the right. Moving the cursor in the list draws
+the file it lands on.
 
-| key | action                       |
-| --- | ---------------------------- |
-| `o` | edit the file under the cursor |
-| `R` | re-read the repository       |
-| `q` | close                        |
+The list has one row per file, with the two status letters `git status --short`
+prints. A file changed both in the index and in the working tree is still one
+row, and its diff is the mixed view above: what is staged and what is not, at
+once. Only the letters are drawn; the row itself is the path, so yanking one
+gives something pasteable.
 
-Only the letters are drawn; the row itself is the path, so yanking one gives
-something pasteable. Selecting a file does not show its diff yet.
+| key    | in the list                    | in the diff              |
+| ------ | ------------------------------ | ------------------------ |
+| `<CR>` | focus the diff                 | jump to the source line  |
+| `]f`   |                                | next file                |
+| `[f`   |                                | previous file            |
+| `]h`   |                                | next hunk                |
+| `[h`   |                                | previous hunk            |
+| `o`    | edit the file under the cursor |                          |
+| `R`    | re-read the repository         |                          |
+| `q`    | close                          | close                    |
+
+Binary files and changes with no lines to them, such as a pure rename, are
+listed and say as much in place of a diff. Staging, unstaging and committing
+are not implemented.
+
+```lua
+require('unidiff').setup({ list_width = 30 })
+```
 
 ### Agreement with `git diff`
 

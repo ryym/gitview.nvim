@@ -51,7 +51,28 @@ the repository and file count by `'winbar'`.
 
 Rows map to entries through a table rather than by position, so that rows
 standing for no file — the notice shown when nothing is uncommitted, and the
-directories of the tree to come — cost nothing to add.
+directories of the tree to come — cost nothing to add. The mapping is kept in
+both directions: the cursor picks a file in the list, but `]f` picks one from
+inside the diff.
+
+### The diff pane
+
+The pane is one buffer for the life of the session, drawn into again on each
+selection. Making a buffer per file and swapping it into the window would fire
+the `Buf*` autocommands, disturb the alternate buffer and the jumplist, and
+leave the old buffer to dispose of — on every cursor movement in the list.
+
+Each file is read as three versions and shown through `diff/mixed`, the same
+view `:UnidiffMixed` uses, so the choice between staged and unstaged never has
+to be made. Three things a view cannot express — a binary file, a change with no
+lines, and nothing selected at all — are drawn by `render.notice`, which drops
+the view along with the text so that the gutter and winbar describe nothing
+rather than what was there before.
+
+The keys shared with a standalone diff buffer mean something different here:
+`q` gives up the session rather than one window, and `]f` moves the list's
+cursor rather than scrolling to the next file of a combined view. `diff/keymap`
+takes those three as callbacks instead of branching on where it is used.
 
 ## Pipeline
 
