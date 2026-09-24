@@ -1,6 +1,7 @@
 local config = require('unidiff.config')
 local keymap = require('unidiff.diff.keymap')
 local render = require('unidiff.diff.render')
+local session = require('unidiff.ui.session')
 local source = require('unidiff.diff.source')
 local util = require('unidiff.util')
 local vlib = require('unidiff.diff.view')
@@ -132,6 +133,12 @@ function M.open_mixed(opts)
   view.rev = 'HEAD, staged + unstaged'
   view.note = vlib.skipped_note(#skipped, #unchanged)
   return open_in_tab(view, 'unidiff://mixed')
+end
+
+--- Open a tab page listing every uncommitted change.
+--- @return unidiff.Session?
+function M.status()
+  return session.open()
 end
 
 return M

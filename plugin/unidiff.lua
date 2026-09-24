@@ -23,6 +23,12 @@ end, {
   desc = 'Open a unified diff of every changed file against a revision',
 })
 
+vim.api.nvim_create_user_command('UnidiffStatus', function()
+  require('unidiff').status()
+end, {
+  desc = 'List every uncommitted change',
+})
+
 vim.api.nvim_create_user_command('UnidiffMixed', function()
   require('unidiff').open_mixed()
 end, {

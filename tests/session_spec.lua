@@ -1,0 +1,174 @@
+local list = require('unidiff.ui.list')
+local session = require('unidiff.ui.session')
+local helpers = dofile('tests/helpers.lua')
+
+local test, eq = _G.test, _G.eq
+
+--- Open a session against a fresh repository, run `fn`, then close it.
+---
+--- `:lcd` into the repository is what makes the session find it, the same way
+--- the commands do for the buffer they were called from.
+--- @param setup fun(repo: unidiff.TestRepo)
+--- @param fn fun(s: unidiff.Session, repo: unidiff.TestRepo)
+local function with_session(setup, fn)
+  helpers.with_repo(function(repo)
+    setup(repo)
+    local previous = vim.fn.getcwd()
+    vim.cmd.lcd(repo.root)
+    local s = session.open()
+    local ok, err = pcall(function()
+      assert(s, 'no session opened')
+      fn(s, repo)
+    end)
+    if s and vim.api.nvim_tabpage_is_valid(s.tab) then
+      session.close(s)
+    end
+    vim.cmd.lcd(previous)
+    if not ok then
+      error(err, 0)
+    end
+  end)
+end
+
+--- @param s unidiff.Session
+--- @return string[]
+local function rows(s)
+  return vim.api.nvim_buf_get_lines(s.list_buf, 0, -1, false)
+end
+
+local function base(repo)
+  repo.write('kept.txt', { 'same' })
+  repo.write('edit.txt', { 'one' })
+  repo.commit('init')
+  repo.write('edit.txt', { 'two' })
+  repo.write('loose.txt', { 'new' })
+end
+
+test('session: lists the repository it was opened in', function()
+  with_session(base, function(s)
+    eq({ 'edit.txt', 'loose.txt' }, rows(s))
+    eq(s.root, list.state[s.list_buf].root)
+  end)
+end)
+
+test('session: is registered against its own tab page', function()
+  with_session(base, function(s)
+    eq(s, session.sessions[s.tab])
+    eq(s, session.current())
+  end)
+end)
+
+test('session: refreshing picks up changes made since', function()
+  with_session(base, function(s, repo)
+    repo.git('add', 'loose.txt')
+    repo.write('third.txt', { 'more' })
+    session.refresh(s)
+    eq({ 'edit.txt', 'loose.txt', 'third.txt' }, rows(s))
+    eq('A', s.entries[2].index_status)
+  end)
+end)
+
+-- A refresh usually shortens the list, and a cursor past the end of a buffer is
+-- an error the next time anything reads it.
+test('session: refreshing pulls the cursor back inside the list', function()
+  with_session(base, function(s, repo)
+    vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 })
+    repo.git('checkout', '--', 'edit.txt')
+    vim.fn.delete(s.root .. '/loose.txt')
+    session.refresh(s)
+    eq({ list.EMPTY_NOTICE }, rows(s))
+    eq(1, vim.api.nvim_win_get_cursor(s.list_win)[1])
+  end)
+end)
+
+test('session: a clean repository shows the notice and no entries', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'x' })
+    repo.commit('init')
+  end, function(s)
+    eq({ list.EMPTY_NOTICE }, rows(s))
+    eq({}, s.entries)
+    eq(nil, list.entry_at(s.list_buf, 1))
+  end)
+end)
+
+test('session: closing drops the session and its buffer', function()
+  with_session(base, function(s)
+    local buf, tab = s.list_buf, s.tab
+    session.close(s)
+    eq(nil, session.sessions[tab])
+    eq(false, vim.api.nvim_buf_is_valid(buf))
+  end)
+end)
+
+-- Closing the tab any other way has to clean up just the same, or the session
+-- outlives what it was drawn in.
+test('session: closing the tab directly drops the session', function()
+  with_session(base, function(s)
+    local tab = s.tab
+    vim.cmd.tabclose()
+    eq(nil, session.sessions[tab])
+  end)
+end)
+
+-- The gutter and the winbar are drawn by `%!` expressions, so a typo in one of
+-- them shows only when the window actually renders. Unit tests of the functions
+-- themselves never reach that.
+test('session: the window renders its gutter and winbar', function()
+  with_session(base, function(s)
+    local win = s.list_win
+    local gutter = vim.api.nvim_eval_statusline(vim.wo[win].statuscolumn, {
+      winid = win,
+      use_statuscol_lnum = 1,
+      highlights = true,
+    })
+    eq(' M ', gutter.str) -- edit.txt is modified in the working tree only
+    local groups = {}
+    for _, h in ipairs(gutter.highlights) do
+      groups[#groups + 1] = h.group
+    end
+    eq({ 'UnidiffStatusStaged', 'UnidiffStatusUnstaged' }, groups)
+
+    local bar =
+      vim.api.nvim_eval_statusline(vim.wo[win].winbar, { winid = win, use_winbar = true })
+    assert(bar.str:find('2 files', 1, true), 'winbar: ' .. bar.str)
+    assert(bar.str:find(vim.fs.basename(s.root), 1, true), 'winbar: ' .. bar.str)
+  end)
+end)
+
+test('session: the list buffer carries its keymaps', function()
+  with_session(base, function(s)
+    local lhs = {}
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(s.list_buf, 'n')) do
+      lhs[m.lhs] = true
+    end
+    for _, key in ipairs({ 'R', 'o', 'q' }) do
+      assert(lhs[key], 'no mapping for ' .. key)
+    end
+  end)
+end)
+
+test('session: opening an entry replaces the session with the file', function()
+  with_session(base, function(s)
+    vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 }) -- loose.txt
+    local tab = s.tab
+    session.edit_entry(s)
+    eq(nil, session.sessions[tab])
+    eq(s.root .. '/loose.txt', vim.api.nvim_buf_get_name(0))
+  end)
+end)
+
+-- A staged deletion has no working copy to open, and `:edit` would make an
+-- empty buffer for it as if the file were new.
+test('session: a file the working tree lacks is not opened', function()
+  with_session(function(repo)
+    repo.write('gone.txt', { 'x' })
+    repo.commit('init')
+    repo.git('rm', '-q', 'gone.txt')
+  end, function(s)
+    local before = vim.api.nvim_get_current_buf()
+    session.edit_entry(s)
+    eq(before, vim.api.nvim_get_current_buf())
+    assert(session.sessions[s.tab], 'the session should still be open')
+  end)
+end)
