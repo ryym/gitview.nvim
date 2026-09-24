@@ -208,9 +208,10 @@ end
 --- One entry's three versions, for a view showing a single file.
 --- @param entry unidiff.StatusEntry
 --- @param root string repository root
---- @return unidiff.Source? source nil for a binary file, which has none to read
+--- @return unidiff.Source? source nil when there is nothing to read: a binary
+---         file, or an unmerged one, whose index version is not at stage 0
 function M.for_entry(entry, root)
-  if entry.binary then
+  if entry.binary or entry.conflicted then
     return nil
   end
   return sources_of({ entry }, root)[1]

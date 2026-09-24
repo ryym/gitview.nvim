@@ -62,6 +62,12 @@ function M.show_selected(s)
     render.notice(s.diff_buf, ('%s   (binary file)'):format(status.label(entry)))
     return
   end
+  -- An unmerged path holds the three merge stages and no stage 0, so there is no
+  -- index version to build the middle of a mixed view from.
+  if entry.conflicted then
+    render.notice(s.diff_buf, ('%s   (unresolved conflict)'):format(status.label(entry)))
+    return
+  end
 
   local src = source.for_entry(entry, s.root)
   local view = src
@@ -219,6 +225,15 @@ local function apply_to_rows(s, op, first, last)
   local entry = s.entries[s.selected or 0]
   local view = render.views[s.diff_buf]
   if not entry or not view or not s.index_lines then
+    return
+  end
+  -- A backstop, not the guard that fires today: `show_selected` draws a notice
+  -- for a conflicted entry, so no view and no index contents exist to get here
+  -- with. It stays because writing a stage-0 entry over a conflict's merge stages
+  -- discards them and git reports no error, so anything that later makes such a
+  -- file renderable would silently reopen that.
+  if entry.conflicted then
+    util.warn(('%s has an unresolved conflict; resolve it first'):format(entry.path))
     return
   end
   local rows = index.selection(view.lines, first, last, op)

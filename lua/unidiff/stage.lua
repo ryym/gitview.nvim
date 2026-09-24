@@ -22,6 +22,10 @@ local M = {}
 --- change, an addition, a deletion and an untracked file all take the same
 --- command and nothing here has to branch on which it is.
 ---
+--- An unmerged path is allowed: `git add` on one marks the conflict resolved,
+--- which is how git itself is told that the file in the working tree is the
+--- answer. Unstaging has no such reading; see `unstage`.
+---
 --- @param e unidiff.StatusEntry
 --- @return unidiff.StageAction? action
 --- @return string? why nothing to do, phrased for the user
@@ -34,8 +38,13 @@ end
 
 --- The command that takes one file's staged changes back out of the index.
 ---
---- Two things make this more than the inverse of `stage`:
+--- Three things make this more than the inverse of `stage`:
 ---
+--- - **An unmerged path is refused.** `git restore --staged` on one succeeds and
+---   leaves an ordinary modification: the three merge stages are gone and the
+---   conflict is neither resolved nor still recorded. That is git's own
+---   behaviour, but nobody presses `u` meaning to abandon a merge, so it is not
+---   offered here.
 --- - **A staged rename needs both of its names.** `git restore --staged` on the
 ---   new path alone restores that path and leaves the old one still deleted in
 ---   the index, which is a state the file never had. The entry carries both.
@@ -50,6 +59,9 @@ end
 --- @return unidiff.StageAction? action
 --- @return string? why nothing to do, phrased for the user
 function M.unstage(e, has_head)
+  if e.conflicted then
+    return nil, ('%s has an unresolved conflict; unstaging would discard it'):format(e.path)
+  end
   if not status.has_staged(e) then
     return nil, ('nothing to unstage in %s'):format(e.path)
   end

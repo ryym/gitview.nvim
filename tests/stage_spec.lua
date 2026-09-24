@@ -115,3 +115,19 @@ test('unstaging before the first commit takes the file out of the index', functi
     eq({ 'one', 'two' }, vim.fn.readfile(repo.root .. '/a.txt'))
   end)
 end)
+
+-- `git restore --staged` on an unmerged path succeeds and leaves an ordinary
+-- modification: the merge stages are gone and the conflict is neither resolved
+-- nor recorded. Staging one is a real workflow, so only unstaging is refused.
+test('unstage: an unmerged path is refused', function()
+  local action, why = stage.unstage(entry({ index_status = 'U', conflicted = true }), true)
+  eq(nil, action)
+  assert(why and why:find('unresolved conflict', 1, true), tostring(why))
+end)
+
+test('stage: an unmerged path is allowed, and resolves it', function()
+  eq(
+    { what = 'git add', args = { 'add', '--', 'a.txt' } },
+    (stage.stage(entry({ index_status = 'U', worktree_status = 'U', conflicted = true })))
+  )
+end)

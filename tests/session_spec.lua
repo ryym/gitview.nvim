@@ -497,3 +497,55 @@ test('session: staging part of an untracked file from the diff', function()
     eq('A  loose.txt\n', repo.git('status', '--short'):match('(A  loose.txt\n)'))
   end)
 end)
+
+--- Leave the repository mid-merge with one conflicted file and one clean change.
+--- @param repo unidiff.TestRepo
+local function mid_merge(repo)
+  repo.write('fight.txt', { 'base' })
+  repo.commit('init')
+  repo.git('checkout', '-q', '-b', 'other')
+  repo.write('fight.txt', { 'theirs' })
+  repo.commit('theirs')
+  repo.git('checkout', '-q', '-')
+  repo.write('fight.txt', { 'ours' })
+  repo.commit('ours')
+  -- The merge is meant to fail, so its exit code is not checked.
+  vim.system({ 'git', 'merge', 'other' }, { cwd = repo.root, text = true }):wait()
+end
+
+test('session: a conflicted file says so instead of showing a diff', function()
+  with_session(mid_merge, function(s)
+    eq({ 'fight.txt' }, rows(s))
+    eq(true, s.entries[1].conflicted)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('unresolved conflict', 1, true), text)
+    -- Nothing was drawn, so nothing can be staged from it by row.
+    eq(nil, s.index_lines)
+  end)
+end)
+
+-- Writing a stage-0 entry over a conflict's merge stages discards them and git
+-- reports no error, so the row-level keys have to refuse outright.
+test('session: `s` in the diff leaves a conflict alone', function()
+  with_session(mid_merge, function(s, repo)
+    local before = repo.git('ls-files', '-u')
+    assert(before ~= '', 'the merge stages should be there to begin with')
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal('s')
+    vim.cmd.normal('u')
+    vim.cmd.normal('S')
+    eq(before, repo.git('ls-files', '-u'))
+    eq('UU fight.txt\n', repo.git('status', '--short'))
+  end)
+end)
+
+test('session: `u` in the list refuses a conflict, `s` resolves it', function()
+  with_session(mid_merge, function(s, repo)
+    session.select(s, 1)
+    press(s, 'u')
+    eq('UU fight.txt\n', repo.git('status', '--short'))
+    press(s, 's')
+    eq('M  fight.txt\n', repo.git('status', '--short'))
+    eq('', repo.git('ls-files', '-u'))
+  end)
+end)
