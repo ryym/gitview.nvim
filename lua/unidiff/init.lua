@@ -14,6 +14,25 @@ function M.setup(opts)
   render.setup_highlights()
 end
 
+--- Buffer names have to be unique, and closing a diff's tab leaves its buffer
+--- behind, so opening the same command twice in one session would otherwise
+--- fail outright. The earlier buffer is left alone: it may still be on screen
+--- somewhere.
+--- @param base string
+--- @return string
+local function unique_name(base)
+  local taken = {}
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    taken[vim.api.nvim_buf_get_name(buf)] = true
+  end
+  local name, n = base, 1
+  while taken[name] do
+    n = n + 1
+    name = ('%s (%d)'):format(base, n)
+  end
+  return name
+end
+
 --- Show a view in a tab of its own.
 ---
 --- Making the buffer and placing it are separate calls because a file list will
@@ -26,7 +45,7 @@ local function open_in_tab(view, name)
   render.draw(buf, view)
   vlib.dispose(view)
 
-  vim.api.nvim_buf_set_name(buf, name)
+  vim.api.nvim_buf_set_name(buf, unique_name(name))
   vim.cmd.tabnew()
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buf)
