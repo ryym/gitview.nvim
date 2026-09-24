@@ -79,28 +79,25 @@ takes those three as callbacks instead of branching on where it is used.
 
 ### Changing the index
 
-`stage.lua` decides which git command stages or unstages a file and hands it
-back as data; the session runs it and re-reads. Deciding is kept apart from
-running for the same reason the parsers in `git.lua` are: what is asked of git is
-the part worth pinning down in a test, and it can be pinned down without a
-repository.
+Two modules write to the index, and both hand back what they decided rather than
+acting on it, so the decision can be tested without a repository:
 
-`git add` covers staging whatever the change is — since git 2.0 it stages a
-deletion as well as content — so only unstaging branches, and on two things that
-are easy to get wrong:
+- `stage.lua` picks the porcelain command that stages or unstages a whole file.
+- `index.lua` assembles the index contents a set of diff rows implies, and writes
+  them as a blob the entry is pointed at. No patch is generated anywhere.
 
-- **A staged rename takes both of its names.** `git restore --staged` on the new
-  path alone restores that path and leaves the old one still deleted in the
-  index. The entry carries `head_path` as well as `path` for this.
-- **Before the first commit there is nothing to restore from.** `git restore
-  --staged` fails outright, so the entry leaves the index through
-  `git rm --cached -f` instead. The `-f` is not optional: git refuses to drop an
-  index entry matching neither the file nor HEAD, and with no HEAD that is every
-  staged file that was edited again. `--cached` leaves the working tree alone.
+[staging.md](staging.md) covers both in full: the commands, why `git apply
+--cached` was not used, what a row's `side` decides, and where the approach has
+holes. The parts that constrain the rest of the design are:
 
-The condition is the repository's, not the entry's, so the session holds it as
-one flag from `git.has_head`. It is re-read on every refresh rather than settled
-at `open`, because the first commit can be made while a session is open.
+- **The session keeps the selected file's `index_lines`.** A view is trimmed, so
+  everything away from a change has been folded into a `gap` row; the index
+  contents cannot be read back out of the buffer.
+- **Whether the repository has a HEAD is a session-level flag**, re-read on every
+  refresh, because it decides which unstaging command is even available.
+- **A conflicted file is listed but must not be staged by row.** Writing a
+  stage-0 entry over a conflict's three entries reports no error and discards
+  them. This is not guarded yet.
 
 After a change both panes are rebuilt from git rather than adjusted in place: the
 status letters, the file's three versions and which of its lines count as staged
@@ -108,70 +105,6 @@ all move together. The cursor stays on the row it was on, which is sound only
 because staging and unstaging never remove a file from the list — it differs from
 HEAD either way — and the list is ordered by path. A command that can make a row
 disappear will have to follow the file by path instead.
-
-### Changing part of a file
-
-`index.lua` does the same for a set of rows rather than a whole file, and it
-produces no patch. The pipeline never generates unified diff text at all: it
-reads blobs into line arrays and hands them to `vim.diff`. So the index is
-written the way it is read — the new contents are assembled as lines, hashed with
-`git hash-object`, and the entry pointed at the result with
-`git update-index --cacheinfo`.
-
-The alternative was generating a patch and running `git apply --cached`, with
-`-R` for the other direction. It was not taken: it would mean writing the one
-kind of text this codebase has otherwise never needed, and a patch can be
-rejected for failing to match its context, which is what `--unidiff-zero` exists
-to work around. Assembling the contents directly cannot be rejected, because
-there is no context to match.
-
-#### The rule is `side`
-
-Every row of a mixed view carries `index_pos`, so an operation is stated entirely
-in index coordinates, and `side` says what to do with the row:
-
-| row               | `side`  | effect                    |
-| ----------------- | ------- | ------------------------- |
-| unstaged addition | `new`   | insert before `index_pos` |
-| unstaged deletion | `index` | drop that index line      |
-| staged addition   | `index` | drop that index line      |
-| staged deletion   | `old`   | insert before `index_pos` |
-| in the index only | `index` | drop that index line      |
-
-A row read from the index is a line the operation takes out; any other row is one
-it puts in. Which of the five shapes it is never has to be established.
-
-Positions are read off the rows rather than walked, so rows at the same position
-cannot shift each other and a selection can be applied in any order. Only the
-order of insertions at one position matters, and rows are collected in display
-order for exactly that.
-
-Which rows an operation moves is decided by the row's `stage`: `s` takes the
-`unstaged` layer and `u` the `staged` one. An `index` row — a line the index has
-that neither HEAD nor the working tree does — belongs to both, since either
-direction removes it from the index.
-
-#### Contents of no lines
-
-An empty blob and an absent file read the same here: both give no lines. They are
-told apart by the version the operation moves toward, the working tree for a
-stage and HEAD for an unstage. If that side has no file either, the index entry
-is dropped with `git update-index --force-remove`; plain `--remove` will not do
-it while the working tree still has the file. Otherwise an empty blob is written,
-which is what an existing empty file deserves.
-
-#### What the session has to keep
-
-The rendered rows cannot stand in for the index contents. A view is trimmed, so
-everything away from a change has been folded into a `gap` row and is no longer
-there to be read back. The session therefore keeps the selected file's
-`index_lines`, and clears them whenever the pane shows a notice instead of a
-diff.
-
-The mode is carried over from `git ls-files -s`, and taken from the working tree
-when the index has no entry yet — which is how the first lines of an untracked
-file get staged. `hash-object --path` is what makes git apply the clean filter it
-would for a real checkout of that path.
 
 ## Pipeline
 
@@ -375,7 +308,7 @@ Alternatives that were tried or considered and rejected, so they are not
 re-attempted by accident:
 
 - **Generating a patch and running `git apply --cached`.** See
-  [Changing part of a file](#changing-part-of-a-file).
+  [staging.md](staging.md#why-not-git-apply---cached).
 - **Parsing `git diff` output instead of using `vim.diff`.** Workable, and it
   would inherit the user's git configuration, but git compares the file on disk
   while this compares the buffer. `vim.diff` already agrees with git on hunk

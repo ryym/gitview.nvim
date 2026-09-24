@@ -192,6 +192,10 @@ carries configuration, and the colors do not depend on it.
 - **The winbar can be taken over by your config.** The file the cursor is in is
   reported through `'winbar'`, so a configuration or plugin that sets it for
   every window hides it. Every file still has its own header line in the buffer.
+- **A conflicted file cannot be staged line by line.** It is listed, but the
+  index version of it cannot be read, and writing one over a conflict's entries
+  would discard them. Resolve the conflict first. See
+  [docs/staging.md](docs/staging.md#merge-conflicts-silently-resolve).
 - **A file with no trailing newline gains one** if part of it is staged. Nothing
   here can represent a missing final newline: a blob is read as a line array and
   written back as one.
@@ -209,5 +213,6 @@ make test
 | --- | --- |
 | [docs/architecture.md](docs/architecture.md) | The pipeline, the modules, the data shapes, and the invariants |
 | [docs/neovim-notes.md](docs/neovim-notes.md) | Neovim and git behaviours the code depends on, and why the obvious alternatives were rejected |
+| [docs/staging.md](docs/staging.md) | How the index is written, why not with a patch, and where that has holes |
 | [docs/performance.md](docs/performance.md) | Where the time goes, measured, and how to measure it again |
 | [docs/testing.md](docs/testing.md) | How the suite runs and how to add to it |

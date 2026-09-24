@@ -7,6 +7,7 @@ installation, commands and configuration; nothing here is repeated there.
 | ---------------------------------- | --------------------------------------------------------------------------------------------- |
 | [architecture.md](architecture.md) | The pipeline, the modules, the data shapes, and the invariants                                |
 | [neovim-notes.md](neovim-notes.md) | Neovim and git behaviours the code depends on, and why the obvious alternatives were rejected |
+| [staging.md](staging.md)           | How the index is written, why not with a patch, and where that has holes                      |
 | [performance.md](performance.md)   | Where the time goes, measured, and how to measure it again                                    |
 | [testing.md](testing.md)           | How the suite runs and how to add to it                                                       |
 
