@@ -7,6 +7,7 @@
 --- file to the next.
 local config = require('unidiff.config')
 local git = require('unidiff.git')
+local index = require('unidiff.index')
 local keymap = require('unidiff.diff.keymap')
 local list = require('unidiff.ui.list')
 local render = require('unidiff.diff.render')
@@ -28,6 +29,8 @@ local M = {}
 --- @field entries unidiff.StatusEntry[]
 --- @field selected integer? index of the entry the diff pane is showing
 --- @field has_head boolean whether the repository has a commit; re-read on refresh
+--- @field index_lines string[]? the selected file's index contents, for staging
+---        part of it; nil whenever the pane shows a notice instead of a diff
 
 --- @type table<integer, unidiff.Session>
 M.sessions = {}
@@ -42,8 +45,14 @@ end
 local REV = 'HEAD, staged + unstaged'
 
 --- Draw the selected entry, or say why there is nothing to draw.
+---
+--- The index contents are kept, because the drawn rows cannot stand in for them:
+--- a view is trimmed, so everything away from a change has been folded into a
+--- `gap` row and is no longer there to be read back.
+---
 --- @param s unidiff.Session
 function M.show_selected(s)
+  s.index_lines = nil
   local entry = s.entries[s.selected or 0]
   if not entry then
     render.notice(s.diff_buf, list.EMPTY_NOTICE)
@@ -65,6 +74,7 @@ function M.show_selected(s)
   view.mixed = true
   render.draw(s.diff_buf, view)
   vlib.dispose(view)
+  s.index_lines = src.index_lines
 end
 
 --- Draw whatever the list's cursor is on.
@@ -194,6 +204,77 @@ local function apply_to_selected(s, decide)
   M.refresh(s)
 end
 
+--- Move some of the selected file's rows across the index, then redraw.
+---
+--- The rows on display are the operation's whole input: each one says which
+--- layer it belongs to and where it sits in the index, so a range of rows is
+--- enough to state what to write. Which rows those are — one, a visual
+--- selection, a hunk — is the caller's business.
+---
+--- @param s unidiff.Session
+--- @param op 'stage'|'unstage'
+--- @param first integer 1-based row of the diff buffer
+--- @param last integer inclusive
+local function apply_to_rows(s, op, first, last)
+  local entry = s.entries[s.selected or 0]
+  local view = render.views[s.diff_buf]
+  if not entry or not view or not s.index_lines then
+    return
+  end
+  local rows = index.selection(view.lines, first, last, op)
+  if #rows == 0 then
+    util.info(('nothing to %s here'):format(op))
+    return
+  end
+  local err = index.write(op, entry, index.apply(s.index_lines, rows), s.root)
+  if err then
+    util.git_error(err)
+    return
+  end
+  M.refresh(s)
+end
+
+--- The rows a key pressed in the diff pane acts on.
+---
+--- In visual mode the two ends of the selection are read before leaving it,
+--- since the marks that would give them afterwards are only set on the way out.
+--- @param visual boolean
+--- @return integer first
+--- @return integer last
+local function pressed_rows(visual)
+  if not visual then
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    return row, row
+  end
+  local a, b = vim.fn.line('v'), vim.fn.line('.')
+  vim.cmd.normal({ args = { vim.keycode('<Esc>') }, bang = true })
+  return math.min(a, b), math.max(a, b)
+end
+
+--- Inside the diff, `s` and `u` work on lines rather than on the whole file:
+--- the rows under the cursor or the visual selection, and with a capital, the
+--- whole change the cursor is in.
+--- @param s unidiff.Session
+local function set_diff_stage_keymaps(s)
+  for _, op in ipairs({ 'stage', 'unstage' }) do
+    local lhs = op == 'stage' and 's' or 'u'
+    for _, mode in ipairs({ 'n', 'x' }) do
+      vim.keymap.set(mode, lhs, function()
+        apply_to_rows(s, op, pressed_rows(mode == 'x'))
+      end, { buffer = s.diff_buf, desc = ('unidiff: %s the selected lines'):format(op) })
+    end
+    vim.keymap.set('n', lhs:upper(), function()
+      local view = render.views[s.diff_buf]
+      local first, last = index.hunk_at(view and view.lines or {}, vim.fn.line('.'))
+      if not first then
+        util.info('not inside a change')
+        return
+      end
+      apply_to_rows(s, op, first, last)
+    end, { buffer = s.diff_buf, desc = ('unidiff: %s this hunk'):format(op) })
+  end
+end
+
 --- @param s unidiff.Session
 local function set_list_keymaps(s)
   local map = function(lhs, fn, desc)
@@ -276,6 +357,7 @@ function M.open()
   render.configure_window(s.diff_win, s.diff_buf)
   set_list_keymaps(s)
   set_diff_keymaps(s)
+  set_diff_stage_keymaps(s)
 
   vim.api.nvim_create_autocmd('CursorMoved', {
     buffer = s.list_buf,

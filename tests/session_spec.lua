@@ -387,3 +387,113 @@ test('session: staging a file with nothing unstaged changes nothing', function()
     eq('M  edit.txt\n?? loose.txt\n', repo.git('status', '--short'))
   end)
 end)
+
+--- Press a key in the diff pane, where `s` and `u` work on lines rather than on
+--- the whole file. Mappings are applied, so the mapping is what is tested.
+--- @param s unidiff.Session
+--- @param keys string
+local function press_diff(s, keys)
+  vim.api.nvim_set_current_win(s.diff_win)
+  vim.cmd.normal(keys)
+end
+
+--- The diff row a changed line of this text is drawn on.
+--- @param s unidiff.Session
+--- @param text string
+--- @return integer
+local function changed_row(s, text)
+  local view = assert(require('unidiff.diff.render').views[s.diff_buf], 'no view drawn')
+  for i, l in ipairs(view.lines) do
+    if l.text == text and l.stage then
+      return i
+    end
+  end
+  error('no changed row reading ' .. text)
+end
+
+--- @param s unidiff.Session
+--- @param row integer
+local function put_cursor(s, row)
+  vim.api.nvim_set_current_win(s.diff_win)
+  vim.api.nvim_win_set_cursor(s.diff_win, { row, 0 })
+end
+
+local function partial(repo)
+  repo.write('f.txt', { 'one', 'two', 'three', 'four', 'five' })
+  repo.commit('init')
+  repo.write('f.txt', { 'one', 'TWO', 'three', 'four', 'five', 'six' })
+end
+
+test('session: `s` in the diff stages the line under the cursor', function()
+  with_session(partial, function(s, repo)
+    put_cursor(s, changed_row(s, 'six'))
+    press_diff(s, 's')
+    eq('one\ntwo\nthree\nfour\nfive\nsix\n', repo.git('show', ':f.txt'))
+    eq('MM f.txt\n', repo.git('status', '--short'))
+  end)
+end)
+
+test('session: `S` in the diff stages the whole change the cursor is in', function()
+  with_session(partial, function(s, repo)
+    put_cursor(s, changed_row(s, 'TWO'))
+    press_diff(s, 'S')
+    -- Both rows of the change go, not only the added one.
+    eq('one\nTWO\nthree\nfour\nfive\n', repo.git('show', ':f.txt'))
+  end)
+end)
+
+test('session: a visual selection stages every row it covers', function()
+  with_session(partial, function(s, repo)
+    press_diff(s, 'ggVGs')
+    eq('', repo.git('diff'))
+    eq('M  f.txt\n', repo.git('status', '--short'))
+  end)
+end)
+
+test('session: `u` in the diff unstages the line under the cursor', function()
+  with_session(function(repo)
+    repo.write('f.txt', { 'one', 'two' })
+    repo.commit('init')
+    repo.write('f.txt', { 'one', 'two', 'three' })
+    repo.git('add', 'f.txt')
+  end, function(s, repo)
+    put_cursor(s, changed_row(s, 'three'))
+    press_diff(s, 'u')
+    eq('', repo.git('diff', '--cached'))
+    eq(' M f.txt\n', repo.git('status', '--short'))
+  end)
+end)
+
+test('session: staging in the diff redraws the pane as staged', function()
+  with_session(partial, function(s)
+    put_cursor(s, changed_row(s, 'six'))
+    press_diff(s, 's')
+    local view = require('unidiff.diff.render').views[s.diff_buf]
+    eq('staged', view.lines[changed_row(s, 'six')].stage)
+  end)
+end)
+
+test('session: a row with nothing to stage leaves the index alone', function()
+  with_session(partial, function(s, repo)
+    -- `three` is unchanged in all three versions, so it is a context row.
+    local view = require('unidiff.diff.render').views[s.diff_buf]
+    local row
+    for i, l in ipairs(view.lines) do
+      if l.text == 'three' then
+        row = i
+      end
+    end
+    put_cursor(s, assert(row))
+    press_diff(s, 's')
+    eq(' M f.txt\n', repo.git('status', '--short'))
+  end)
+end)
+
+test('session: staging part of an untracked file from the diff', function()
+  with_session(base, function(s, repo)
+    session.select(s, 2)
+    put_cursor(s, changed_row(s, 'new'))
+    press_diff(s, 's')
+    eq('A  loose.txt\n', repo.git('status', '--short'):match('(A  loose.txt\n)'))
+  end)
+end)
