@@ -61,16 +61,25 @@ local function label_of(c)
   return c.status == 'R' and ('%s -> %s'):format(c.old_path, c.path) or c.path
 end
 
---- Split a change list into the files that can be shown and the binary ones.
---- @generic T: {binary:boolean, path:string}
+--- @class unidiff.Skipped paths left out of a view, by why they were
+--- @field binary string[]
+--- @field conflicted string[]
+
+--- Split a change list into the files that can be shown and those that cannot.
+---
+--- `conflicted` is only ever set on a `StatusEntry`; a plain change list has no
+--- such field and leaves that group empty.
+---
+--- @generic T: {binary:boolean, path:string, conflicted?:boolean}
 --- @param entries T[]
 --- @return T[] wanted
---- @return string[] skipped
-local function partition_binary(entries)
-  local wanted, skipped = {}, {}
+--- @return unidiff.Skipped skipped
+local function partition_showable(entries)
+  local wanted, skipped = {}, { binary = {}, conflicted = {} }
   for _, e in ipairs(entries) do
-    if e.binary then
-      skipped[#skipped + 1] = e.path
+    local group = e.conflicted and skipped.conflicted or e.binary and skipped.binary
+    if group then
+      group[#group + 1] = e.path
     else
       wanted[#wanted + 1] = e
     end
@@ -105,14 +114,14 @@ end
 --- @param rev string
 --- @param root string repository root
 --- @return unidiff.Source[]? sources
---- @return string[] skipped binary paths
+--- @return unidiff.Skipped skipped
 --- @return unidiff.GitError? err
 function M.for_rev(rev, root)
   local changes, err = git.changed(rev, root)
   if not changes then
-    return nil, {}, { what = 'git diff ' .. rev, stderr = err or '' }
+    return nil, { binary = {}, conflicted = {} }, { what = 'git diff ' .. rev, stderr = err or '' }
   end
-  local wanted, skipped = partition_binary(changes)
+  local wanted, skipped = partition_showable(changes)
 
   -- One `git cat-file` for every old version: a process per file is what makes
   -- a large diff slow, not the diffing itself. Added files have no blob in
@@ -151,7 +160,8 @@ end
 --- the first two, a staged deletion has no index version, and a file deleted
 --- from the working tree has no third.
 ---
---- @param entries unidiff.StatusEntry[] not binary; those have nothing to read
+--- @param entries unidiff.StatusEntry[] neither binary nor unmerged; those have
+---        nothing to read
 --- @param root string repository root
 --- @return unidiff.Source[]
 local function sources_of(entries, root)
@@ -194,14 +204,14 @@ end
 --- Every uncommitted change, as three versions per file.
 --- @param root string repository root
 --- @return unidiff.Source[]? sources
---- @return string[] skipped binary paths
+--- @return unidiff.Skipped skipped
 --- @return unidiff.GitError? err
 function M.for_uncommitted(root)
   local entries, err = status.list(root)
   if not entries then
-    return nil, {}, err
+    return nil, { binary = {}, conflicted = {} }, err
   end
-  local wanted, skipped = partition_binary(entries)
+  local wanted, skipped = partition_showable(entries)
   return sources_of(wanted, root), skipped
 end
 

@@ -92,7 +92,7 @@ function M.open_all(opts)
     util.git_error(err)
     return
   end
-  if #sources == 0 and #skipped == 0 then
+  if #sources == 0 and #skipped.binary == 0 then
     util.info(('no changes against %s'):format(rev))
     return
   end
@@ -103,7 +103,7 @@ function M.open_all(opts)
     return
   end
 
-  view.note = vlib.skipped_note(#skipped, #unchanged)
+  view.note = vlib.skipped_note(skipped, #unchanged)
   return open_in_tab(view, ('unidiff://all @ %s'):format(rev))
 end
 
@@ -126,12 +126,18 @@ function M.open_mixed(opts)
 
   local view, unchanged = vlib.build(sources, 'HEAD', opts.context, config.diff_opts(opts))
   if not view then
-    util.info('no uncommitted textual changes')
+    -- An unmerged file is a real change with nothing to diff, so saying there is
+    -- none would be wrong when that is all there is.
+    if #skipped.conflicted > 0 then
+      util.warn(('%d unmerged file(s); resolve them first'):format(#skipped.conflicted))
+    else
+      util.info('no uncommitted textual changes')
+    end
     return
   end
   view.mixed = true
   view.rev = 'HEAD, staged + unstaged'
-  view.note = vlib.skipped_note(#skipped, #unchanged)
+  view.note = vlib.skipped_note(skipped, #unchanged)
   return open_in_tab(view, 'unidiff://mixed')
 end
 
