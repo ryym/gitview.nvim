@@ -1,7 +1,7 @@
 local M = {}
 
 --- @class unidiff.Change
---- @field status 'A'|'M'|'D'|'R'|'C'|'T'
+--- @field status 'A'|'M'|'D'|'R'|'C'|'T'|'U' `U` is an unmerged path
 --- @field path string repo-relative path in the working tree
 --- @field old_path string repo-relative path in the revision (differs on rename)
 --- @field binary boolean

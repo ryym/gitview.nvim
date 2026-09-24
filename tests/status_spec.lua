@@ -138,3 +138,53 @@ test('status: reports a directory that is not a repository', function()
     assert(err.stderr ~= '', 'the failure should carry stderr')
   end)
 end)
+
+-- An unmerged path is reported by both listings: `U` by `git diff --cached` and
+-- `U` plus an ordinary letter by `git diff`. Neither may leave the entry looking
+-- like an ordinary change, because writing to the index would drop the merge
+-- stages.
+test('status: an unmerged path is marked conflicted and shown as UU', function()
+  local entries = status.entries(
+    { change('U', 'fight.txt') },
+    { change('U', 'fight.txt'), change('M', 'fight.txt') },
+    {}
+  )
+  eq({ 'UU fight.txt' }, dump(entries))
+  eq(true, entries[1].conflicted)
+  -- There is no stage 0 to read the index version from.
+  eq(false, entries[1].in_index)
+end)
+
+test('status: an ordinary change is not conflicted', function()
+  local entries = status.entries({ change('M', 'a.txt') }, { change('M', 'b.txt') }, { 'c.txt' })
+  for _, e in ipairs(entries) do
+    eq(false, e.conflicted)
+  end
+end)
+
+--- Leave the repository mid-merge with one conflicted file.
+--- @param repo unidiff.TestRepo
+local function conflict(repo)
+  repo.write('fight.txt', { 'base' })
+  repo.write('calm.txt', { 'quiet' })
+  repo.commit('init')
+  repo.git('checkout', '-q', '-b', 'other')
+  repo.write('fight.txt', { 'theirs' })
+  repo.commit('theirs')
+  repo.git('checkout', '-q', '-')
+  repo.write('fight.txt', { 'ours' })
+  repo.commit('ours')
+  -- The merge is meant to fail, so its exit code is not checked.
+  vim.system({ 'git', 'merge', 'other' }, { cwd = repo.root, text = true }):wait()
+end
+
+test('status: a real conflict comes back conflicted', function()
+  helpers.with_repo(function(repo)
+    conflict(repo)
+    assert(repo.git('status', '--short'):find('UU fight.txt', 1, true), 'no conflict was set up')
+
+    local entries = assert(status.list(repo.root))
+    eq({ 'UU fight.txt' }, dump(entries))
+    eq(true, entries[1].conflicted)
+  end)
+end)

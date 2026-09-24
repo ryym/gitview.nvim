@@ -16,6 +16,14 @@ local UNCHANGED = ' '
 --- neither HEAD nor the index, so no other pair would describe it.
 local UNTRACKED = '?'
 
+--- The status letter `git diff` gives an unmerged path, and the letter printed
+--- for one here.
+---
+--- git tells seven pairs apart — `UU`, `AA`, `DU`, `UD`, `AU`, `UA`, `DD` — by
+--- which of the three merge stages the index holds. Only the fact that the path
+--- is unmerged is recorded, so all of them are shown as `UU`.
+local UNMERGED = 'U'
+
 --- @class unidiff.StatusEntry
 --- @field path string repo-relative, as the index and the working tree name it
 --- @field head_path string? repo-relative in HEAD; nil for a file HEAD lacks
@@ -23,6 +31,8 @@ local UNTRACKED = '?'
 --- @field worktree_status string one character, as it prints Y
 --- @field in_index boolean whether the index holds a version of the file
 --- @field binary boolean no diff can be shown
+--- @field conflicted boolean an unresolved merge; no diff can be shown either,
+---        and writing to the index would discard the merge stages
 
 --- Build the entries from three listings.
 ---
@@ -52,9 +62,12 @@ function M.entries(staged, unstaged, untracked)
       head_path = c.status ~= 'A' and c.old_path or nil,
       index_status = c.status,
       worktree_status = UNCHANGED,
-      -- a staged deletion leaves the index with no version of the file
-      in_index = c.status ~= 'D',
+      -- A staged deletion leaves the index with no version of the file, and an
+      -- unmerged path has the three merge stages but no stage 0, which is the
+      -- only one anything can be read from.
+      in_index = c.status ~= 'D' and c.status ~= UNMERGED,
       binary = c.binary,
+      conflicted = c.status == UNMERGED,
     })
   end
 
@@ -69,10 +82,12 @@ function M.entries(staged, unstaged, untracked)
         worktree_status = UNCHANGED,
         in_index = true,
         binary = false,
+        conflicted = false,
       })
     end
     e.worktree_status = c.status
     e.binary = e.binary or c.binary
+    e.conflicted = e.conflicted or c.status == UNMERGED
   end
 
   for _, path in ipairs(untracked) do
@@ -83,7 +98,16 @@ function M.entries(staged, unstaged, untracked)
       worktree_status = UNTRACKED,
       in_index = false,
       binary = false,
+      conflicted = false,
     })
+  end
+
+  -- An unmerged path is reported by both listings, the second of which would
+  -- otherwise leave an ordinary letter on the working tree side.
+  for _, e in ipairs(entries) do
+    if e.conflicted then
+      e.index_status, e.worktree_status = UNMERGED, UNMERGED
+    end
   end
 
   table.sort(entries, function(a, b)
