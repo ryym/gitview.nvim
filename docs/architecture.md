@@ -10,6 +10,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `init.lua`           | Commands and the public API                             |
 | `config.lua`         | Defaults, and resolving a call's options against them   |
 | `git.lua`            | Every subprocess call, and the parsers for their output |
+| `status.lua`         | What is uncommitted, as one entry per file               |
 | `util.lua`           | Messages shown to the user                              |
 | `diff/source.lua`    | Reading the versions to compare, and their filetype     |
 | `diff/view.lua`      | Assembling sources into a view, and freeing it           |
@@ -20,9 +21,10 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 | `diff/keymap.lua`    | What the keys do inside a diff buffer                   |
 
-The dependency direction is one-way: `init` uses everything, `view` uses
-`lines`, `mixed` and `highlight`, `render` uses `highlight`, `worddiff` and
-`lines`, and `config`, `util` and `git` depend on nothing but Neovim.
+The dependency direction is one-way: `init` uses everything, `source` uses
+`status`, `status` uses `git`, `view` uses `lines`, `mixed` and `highlight`,
+`render` uses `highlight`, `worddiff` and `lines`, and `config`, `util` and
+`git` depend on nothing but Neovim.
 
 `source` is the only part that reads git and the editor. It hands `view` plain
 data, so assembling a view looks nothing up for itself.
@@ -186,10 +188,21 @@ would compare HEAD with the working tree past the index.
 
 ### File list
 
-A file appears when `git diff --cached` or `git diff` lists it, joined on the
-index path. A file with only staged changes has a working tree equal to its
-index, and one with only unstaged changes has a HEAD equal to its index, so
-neither is read twice.
+`status.list` names the files. A file appears when `git diff --cached`,
+`git diff` or `git ls-files --others` lists it, and it appears once however
+many of them do: the first two are joined on the index path, which is the only
+name both use for a file renamed in the index.
+
+Each entry keeps the status letter of either side, as `git status --short`
+prints them, but nothing downstream branches on it. The diff is built from HEAD,
+the index and the working tree whatever changed, and a version the file does not
+have is empty — an untracked file has neither of the first two. A file with only
+staged changes has a working tree equal to its index, and one with only unstaged
+changes has a HEAD equal to its index, so neither is read twice.
+
+Binary files are excluded. git flags the tracked ones through
+`git diff --numstat`; it never diffs an untracked file, so those are recognised
+the way git itself does it, by a NUL byte in the first 8000 bytes.
 
 ## Invariants
 
