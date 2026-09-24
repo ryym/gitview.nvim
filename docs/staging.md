@@ -247,10 +247,9 @@ newline, and honouring it here.
 
 ## Hazards and gaps
 
-### Merge conflicts silently resolve
+### Merge conflicts are refused
 
-**This is the one path that can lose data.** A conflicted path has three index
-entries rather than one:
+A conflicted path has three index entries rather than one:
 
 ```
 $ git ls-files -s
@@ -259,32 +258,39 @@ $ git ls-files -s
 100644 e45c9c2.. 3	f.txt     # stage 3: theirs
 ```
 
-Writing a stage-0 entry over them reports no error and drops all three:
+There is no stage 0, which is the only stage anything here can read a version
+from: `git show :f.txt` fails with `path 'f.txt' is in the index, but not at
+stage 0`, and `cat-file --batch` answers `missing`.
+
+Writing a stage-0 entry over those three reports no error and drops all of them:
 
 ```
 $ git update-index --add --cacheinfo 100644,<sha>,f.txt
-$ git ls-files -s
-100644 2ab19ae.. 0	f.txt
 $ git status --short
 MM f.txt                       # no longer UU: the conflict is "resolved"
 ```
 
-The state this is reachable from today:
+`git restore --staged` does the same thing by another route — it succeeds and
+leaves ` M`, with the conflict neither resolved nor still recorded.
 
-- `git diff --name-status` reports a conflicted file as `U`, so it **is listed**.
-- The index version cannot be read: `git show :f.txt` fails with
-  `path 'f.txt' is in the index, but not at stage 0`, and `cat-file --batch`
-  answers `missing`. So `index_lines` comes back empty and the diff pane already
-  draws the file as though the index held nothing.
-- Staging a row from that state writes contents built from an empty index and
-  takes the conflict with it.
+So an unmerged path is recognised and treated as unshowable:
 
-Whole-file `s` is `git add`, which resolves a conflict the way git itself does, so
-only the row-level path is dangerous.
+- `status.entries` sets `conflicted` from the `U` status letter, which
+  `git diff --diff-filter` documents as "unmerged". Both listings report it, and
+  `in_index` is false because there is no stage 0.
+- The diff pane draws a notice instead of a view, which also means no rows exist
+  to stage from. `apply_to_rows` checks the flag as well, as a backstop for
+  anything that later makes such a file renderable.
+- `:UnidiffMixed` leaves it out and counts it in the winbar note.
+- Whole-file `u` is refused, because `git restore --staged` would discard the
+  merge.
+- **Whole-file `s` is allowed.** `git add` on an unmerged path marks the conflict
+  resolved, which is how git itself is told that the working tree holds the
+  answer. It is the one operation with a sensible reading.
 
-The fix that fits the existing structure is a `conflicted` flag on `StatusEntry`,
-handled like `binary`: listed, drawn as a notice, and not stageable by row.
-`git diff`'s `U` status is enough to set it, so no extra command is needed.
+git tells seven pairs apart — `UU`, `AA`, `DU`, `UD`, `AU`, `UA`, `DD` — by which
+of the three stages the index holds. Only the fact that the path is unmerged is
+recorded, so all of them are listed as `UU`.
 
 ### Modes other than a regular file
 

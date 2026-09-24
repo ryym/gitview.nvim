@@ -192,10 +192,10 @@ carries configuration, and the colors do not depend on it.
 - **The winbar can be taken over by your config.** The file the cursor is in is
   reported through `'winbar'`, so a configuration or plugin that sets it for
   every window hides it. Every file still has its own header line in the buffer.
-- **A conflicted file cannot be staged line by line.** It is listed, but the
-  index version of it cannot be read, and writing one over a conflict's entries
-  would discard them. Resolve the conflict first. See
-  [docs/staging.md](docs/staging.md#merge-conflicts-silently-resolve).
+- **An unmerged file cannot be staged line by line.** It is listed as `UU` and
+  says so in place of a diff. `s` on the whole file resolves the conflict the way
+  `git add` does; everything else is refused, because it would discard the merge.
+  See [docs/staging.md](docs/staging.md#merge-conflicts-are-refused).
 - **A file with no trailing newline gains one** if part of it is staged. Nothing
   here can represent a missing final newline: a blob is read as a line array and
   written back as one.

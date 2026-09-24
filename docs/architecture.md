@@ -95,9 +95,10 @@ holes. The parts that constrain the rest of the design are:
   contents cannot be read back out of the buffer.
 - **Whether the repository has a HEAD is a session-level flag**, re-read on every
   refresh, because it decides which unstaging command is even available.
-- **A conflicted file is listed but must not be staged by row.** Writing a
-  stage-0 entry over a conflict's three entries reports no error and discards
-  them. This is not guarded yet.
+- **An unmerged file is listed but not showable.** It has no stage 0 to read a
+  version from, and writing one over a conflict's three entries reports no error
+  and discards them. It is drawn as a notice and refused everywhere but
+  whole-file `s`, which is `git add` resolving it.
 
 After a change both panes are rebuilt from git rather than adjusted in place: the
 status letters, the file's three versions and which of its lines count as staged
@@ -300,6 +301,7 @@ everything still looks right.
 | Word-level pairing never crosses a file boundary                        | `diff_spec`                                      |
 | Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
 | Unstaging a rename leaves the index equal to HEAD                       | `stage_spec`                                     |
+| An unmerged path is never written to the index                           | `session_spec`                                   |
 | Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
 
 ## Deliberate omissions
