@@ -143,29 +143,22 @@ function M.for_rev(rev, root)
   return sources, skipped
 end
 
---- Every uncommitted change, as three versions per file.
+--- Read the three versions of every entry: HEAD, the index and the working
+--- tree. One diff over all three can show what is staged and what is not at the
+--- same time, which is why this differs from `for_rev` and its two versions.
 ---
---- Unlike `for_rev`, which compares two versions, this reads HEAD, the index
---- and the working tree for every file, so one diff can show what is staged and
---- what is not at the same time. A version the file does not have is empty: an
---- untracked file has neither of the first two, a staged deletion has no index
---- version, and a file deleted from the working tree has no third.
+--- A version the file does not have is empty: an untracked file has neither of
+--- the first two, a staged deletion has no index version, and a file deleted
+--- from the working tree has no third.
 ---
+--- @param entries unidiff.StatusEntry[] not binary; those have nothing to read
 --- @param root string repository root
---- @return unidiff.Source[]? sources
---- @return string[] skipped binary paths
---- @return unidiff.GitError? err
-function M.for_uncommitted(root)
-  local entries, err = status.list(root)
-  if not entries then
-    return nil, {}, err
-  end
-  local wanted, skipped = partition_binary(entries)
-
+--- @return unidiff.Source[]
+local function sources_of(entries, root)
   -- `:path` is the index's copy of a path. As in for_rev, a version that does
   -- not exist is left out of the request.
   local specs, head_spec, index_spec = {}, {}, {}
-  for i, e in ipairs(wanted) do
+  for i, e in ipairs(entries) do
     if e.head_path then
       specs[#specs + 1] = 'HEAD:' .. e.head_path
       head_spec[i] = #specs
@@ -178,7 +171,7 @@ function M.for_uncommitted(root)
   local blobs = git.batch_show(specs, root)
 
   local sources = {}
-  for i, e in ipairs(wanted) do
+  for i, e in ipairs(entries) do
     local path = root .. '/' .. e.path
     local index_lines = index_spec[i] and blobs[index_spec[i]] or {}
     -- an unchanged working tree is the index, which spares a read
@@ -195,7 +188,32 @@ function M.for_uncommitted(root)
       new_lines = work_lines,
     }
   end
-  return sources, skipped
+  return sources
+end
+
+--- Every uncommitted change, as three versions per file.
+--- @param root string repository root
+--- @return unidiff.Source[]? sources
+--- @return string[] skipped binary paths
+--- @return unidiff.GitError? err
+function M.for_uncommitted(root)
+  local entries, err = status.list(root)
+  if not entries then
+    return nil, {}, err
+  end
+  local wanted, skipped = partition_binary(entries)
+  return sources_of(wanted, root), skipped
+end
+
+--- One entry's three versions, for a view showing a single file.
+--- @param entry unidiff.StatusEntry
+--- @param root string repository root
+--- @return unidiff.Source? source nil for a binary file, which has none to read
+function M.for_entry(entry, root)
+  if entry.binary then
+    return nil
+  end
+  return sources_of({ entry }, root)[1]
 end
 
 return M
