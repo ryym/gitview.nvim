@@ -272,6 +272,31 @@ function M.draw(buf, view)
   M.views[buf] = view
 end
 
+--- Replace whatever `buf` holds with a single line of text.
+---
+--- Some things a diff window has to show are not views: a binary file, a change
+--- with no lines to it such as a pure rename, and nothing being selected at
+--- all. The view is dropped with the text, so the gutter and the winbar fall
+--- back to showing nothing rather than describing what was there before.
+--- @param buf integer from `create_buffer`
+--- @param text string
+function M.notice(buf, text)
+  vim.bo[buf].modifiable = true
+  vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
+  vim.api.nvim_buf_set_extmark(buf, ns_diff, 0, 0, {
+    end_row = 1,
+    end_col = 0,
+    hl_group = 'UnidiffSeparator',
+    hl_eol = true,
+    priority = 10,
+  })
+  vim.bo[buf].modifiable = false
+  vim.bo[buf].modified = false
+  M.views[buf] = nil
+end
+
 --- Make a buffer and draw a view in it. Callers that keep a buffer of their own
 --- use `create_buffer` and `draw` apart.
 --- @param view unidiff.View
