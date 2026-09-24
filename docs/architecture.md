@@ -11,6 +11,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `config.lua`         | Defaults, and resolving a call's options against them   |
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `status.lua`         | What is uncommitted, as one entry per file               |
+| `stage.lua`          | Which git command moves a file into or out of the index  |
 | `util.lua`           | Messages shown to the user                              |
 | `diff/source.lua`    | Reading the versions to compare, and their filetype     |
 | `diff/view.lua`      | Assembling sources into a view, and freeing it           |
@@ -24,7 +25,8 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `ui/session.lua`     | One tab page's state, and redrawing it                   |
 
 The dependency direction is one-way: `init` uses everything, `source` uses
-`status`, `status` uses `git`, `view` uses `lines`, `mixed` and `highlight`,
+`status`, `stage` uses `status` and `git`, `status` uses `git`, `view` uses
+`lines`, `mixed` and `highlight`,
 `render` uses `highlight`, `worddiff` and `lines`, and `config`, `util` and
 `git` depend on nothing but Neovim.
 
@@ -74,6 +76,38 @@ The keys shared with a standalone diff buffer mean something different here:
 cursor rather than scrolling to the next file of a combined view. `diff/keymap`
 takes those three as callbacks instead of branching on where it is used.
 
+### Changing the index
+
+`stage.lua` decides which git command stages or unstages a file and hands it
+back as data; the session runs it and re-reads. Deciding is kept apart from
+running for the same reason the parsers in `git.lua` are: what is asked of git is
+the part worth pinning down in a test, and it can be pinned down without a
+repository.
+
+`git add` covers staging whatever the change is — since git 2.0 it stages a
+deletion as well as content — so only unstaging branches, and on two things that
+are easy to get wrong:
+
+- **A staged rename takes both of its names.** `git restore --staged` on the new
+  path alone restores that path and leaves the old one still deleted in the
+  index. The entry carries `head_path` as well as `path` for this.
+- **Before the first commit there is nothing to restore from.** `git restore
+  --staged` fails outright, so the entry leaves the index through
+  `git rm --cached -f` instead. The `-f` is not optional: git refuses to drop an
+  index entry matching neither the file nor HEAD, and with no HEAD that is every
+  staged file that was edited again. `--cached` leaves the working tree alone.
+
+The condition is the repository's, not the entry's, so the session holds it as
+one flag from `git.has_head`. It is re-read on every refresh rather than settled
+at `open`, because the first commit can be made while a session is open.
+
+After a change both panes are rebuilt from git rather than adjusted in place: the
+status letters, the file's three versions and which of its lines count as staged
+all move together. The cursor stays on the row it was on, which is sound only
+because staging and unstaging never remove a file from the list — it differs from
+HEAD either way — and the list is ordered by path. A command that can make a row
+disappear will have to follow the file by path instead.
+
 ## Pipeline
 
 For each file in the diff:
@@ -113,10 +147,13 @@ One row of the rendered buffer.
 - `side` — which version `text` came from, `old` or `new`
 - `row` — 0-based row of `text` in that version's ghost buffer
 - `file` — index into `View.files`
+- `index_pos` — where the row sits in the index; a mixed view only
 
 `side` plus `row` plus `file` is what links a rendered row back to the ghost
 buffer its highlights come from. `old_lnum` / `new_lnum` are for display and for
-jumping to the source; they are not used for highlighting.
+jumping to the source; they are not used for highlighting. `index_pos` is there
+for writing the index back: see `diff/mixed` for how every row is placed against
+it, including the rows the index does not have.
 
 ### `unidiff.View`
 
@@ -264,6 +301,7 @@ everything still looks right.
 | Colors work without `setup()` ever being called                         | `render_spec`                                    |
 | Word-level pairing never crosses a file boundary                        | `diff_spec`                                      |
 | Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
+| Unstaging a rename leaves the index equal to HEAD                       | `stage_spec`                                     |
 
 ## Deliberate omissions
 

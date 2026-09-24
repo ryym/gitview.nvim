@@ -118,20 +118,27 @@ row, and its diff is the mixed view above: what is staged and what is not, at
 once. Only the letters are drawn; the row itself is the path, so yanking one
 gives something pasteable.
 
-| key    | in the list                    | in the diff              |
-| ------ | ------------------------------ | ------------------------ |
-| `<CR>` | focus the diff                 | jump to the source line  |
-| `]f`   |                                | next file                |
-| `[f`   |                                | previous file            |
-| `]h`   |                                | next hunk                |
-| `[h`   |                                | previous hunk            |
-| `o`    | edit the file under the cursor |                          |
-| `R`    | re-read the repository         |                          |
-| `q`    | close                          | close                    |
+| key    | in the list                       | in the diff             |
+| ------ | --------------------------------- | ----------------------- |
+| `<CR>` | focus the diff                    | jump to the source line |
+| `s`    | stage the file under the cursor   |                         |
+| `u`    | unstage the file under the cursor |                         |
+| `]f`   |                                   | next file               |
+| `[f`   |                                   | previous file           |
+| `]h`   |                                   | next hunk               |
+| `[h`   |                                   | previous hunk           |
+| `o`    | edit the file under the cursor    |                         |
+| `R`    | re-read the repository            |                         |
+| `q`    | close                             | close                   |
+
+`s` and `u` work on whole files, and both panes are re-read afterwards. There is
+one key per direction rather than one key toggling: a file changed in the index
+and in the working tree both has no obvious sense in which it is staged or not,
+and a row here states that state rather than hiding it.
 
 Binary files and changes with no lines to them, such as a pure rename, are
-listed and say as much in place of a diff. Staging, unstaging and committing
-are not implemented.
+listed and say as much in place of a diff. Discarding changes, staging part of a
+file and committing are not implemented.
 
 ```lua
 require('unidiff').setup({ list_width = 30 })
