@@ -71,6 +71,10 @@ file highlighted with its own language.
 working tree, with each changed line marked by whether it is staged. It is
 read-only; nothing is staged or unstaged from the view.
 
+Untracked files are included, every line of them an unstaged addition. Binary
+ones are left out, as they are elsewhere; since git never diffs an untracked
+file, they are recognised the way git itself does, by a NUL byte near the start.
+
 The gutter reads `HEAD lnum | working-tree lnum | mark | sign`. Line numbers
 are those of HEAD and the working tree, so a line in neither has none.
 

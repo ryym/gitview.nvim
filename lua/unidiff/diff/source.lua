@@ -4,6 +4,7 @@
 --- This is the only part of the pipeline that reads git and the editor. What it
 --- hands back is plain data, so `view.build` has nothing left to look up.
 local git = require('unidiff.git')
+local status = require('unidiff.status')
 local util = require('unidiff.util')
 
 local M = {}
@@ -142,72 +143,24 @@ function M.for_rev(rev, root)
   return sources, skipped
 end
 
---- @class unidiff.MixedEntry
---- @field path string repo-relative, in the index and the working tree
---- @field head_path string? repo-relative in HEAD; nil when added
---- @field label string
---- @field in_index boolean
---- @field unstaged unidiff.Change? set when the working tree differs
---- @field binary boolean
-
---- Join the staged and unstaged change lists into one entry per file.
----
---- A file can have staged changes, unstaged ones, or both. Index -> working tree
---- compares paths as the index has them, so that is the key to join on.
----
---- @param staged unidiff.Change[]
---- @param unstaged unidiff.Change[]
---- @return unidiff.MixedEntry[]
-function M.merge_changes(staged, unstaged)
-  local entries, by_path = {}, {} --- @type unidiff.MixedEntry[], table<string, unidiff.MixedEntry>
-  for _, c in ipairs(staged) do
-    local e = {
-      path = c.path,
-      head_path = c.status ~= 'A' and c.old_path or nil,
-      label = label_of(c),
-      in_index = c.status ~= 'D',
-      binary = c.binary,
-    }
-    entries[#entries + 1], by_path[c.path] = e, e
-  end
-  for _, c in ipairs(unstaged) do
-    local e = by_path[c.old_path]
-    if not e then
-      -- no staged change: HEAD and the index agree on this path
-      e = {
-        path = c.old_path,
-        head_path = c.old_path,
-        label = c.old_path,
-        in_index = true,
-        binary = false,
-      }
-      entries[#entries + 1], by_path[c.old_path] = e, e
-    end
-    e.unstaged = c
-    e.binary = e.binary or c.binary
-  end
-  -- files with only unstaged changes were appended after the staged ones
-  table.sort(entries, function(a, b)
-    return a.path < b.path
-  end)
-  return entries
-end
-
 --- Every uncommitted change, as three versions per file.
+---
+--- Unlike `for_rev`, which compares two versions, this reads HEAD, the index
+--- and the working tree for every file, so one diff can show what is staged and
+--- what is not at the same time. A version the file does not have is empty: an
+--- untracked file has neither of the first two, a staged deletion has no index
+--- version, and a file deleted from the working tree has no third.
+---
 --- @param root string repository root
 --- @return unidiff.Source[]? sources
 --- @return string[] skipped binary paths
 --- @return unidiff.GitError? err
 function M.for_uncommitted(root)
-  local staged, staged_err = git.changed_staged(root)
-  if not staged then
-    return nil, {}, { what = 'git diff --cached', stderr = staged_err or '' }
+  local entries, err = status.list(root)
+  if not entries then
+    return nil, {}, err
   end
-  local unstaged, unstaged_err = git.changed_unstaged(root)
-  if not unstaged then
-    return nil, {}, { what = 'git diff', stderr = unstaged_err or '' }
-  end
-  local wanted, skipped = partition_binary(M.merge_changes(staged, unstaged))
+  local wanted, skipped = partition_binary(entries)
 
   -- `:path` is the index's copy of a path. As in for_rev, a version that does
   -- not exist is left out of the request.
@@ -228,13 +181,14 @@ function M.for_uncommitted(root)
   for i, e in ipairs(wanted) do
     local path = root .. '/' .. e.path
     local index_lines = index_spec[i] and blobs[index_spec[i]] or {}
+    -- an unchanged working tree is the index, which spares a read
     local work_lines = index_lines
-    if e.unstaged then
-      work_lines = e.unstaged.status == 'D' and {} or M.working_lines(path)
+    if e.worktree_status ~= ' ' then
+      work_lines = e.worktree_status == 'D' and {} or M.working_lines(path)
     end
     sources[#sources + 1] = {
       path = path,
-      label = e.label,
+      label = status.label(e),
       ft = M.filetype_of(path),
       old_lines = head_spec[i] and blobs[head_spec[i]] or {},
       index_lines = index_lines,
