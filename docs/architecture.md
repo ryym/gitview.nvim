@@ -41,8 +41,8 @@ data, so assembling a view looks nothing up for itself.
 
 `:UnidiffStatus` opens a tab page that outlives the moment it was opened in.
 That is the difference from the diff commands: those render a snapshot and
-forget it, while a session keeps its repository root and its entries so that it
-can be re-read.
+forget it, while a session keeps its repository root, its entries and the tail
+of the history so that all of them can be re-read.
 
 A session is registered against its tab page and dropped when that tab closes,
 however it closes. The list buffer goes with it.
@@ -52,11 +52,22 @@ and everything around it is drawn. A row is a path and nothing more, so yanking
 one gives a path; the two status letters are painted by `'statuscolumn'`, and
 the repository and file count by `'winbar'`.
 
-Rows map to entries through a table rather than by position, so that rows
-standing for no file — the notice shown when nothing is uncommitted, and the
-directories of the tree to come — cost nothing to add. The mapping is kept in
-both directions: the cursor picks a file in the list, but `]f` picks one from
+A row stands for a `unidiff.ListTarget` — a kind and an index — rather than for
+an entry, because the list no longer holds one kind of thing: the uncommitted
+files, the commits below them, and the files of a commit being looked into. Rows
+standing for nothing cost nothing to add, which is what the empty notice, the
+blank separator and the section headers are. The mapping is kept in both
+directions: the cursor picks a target in the list, but `]f` picks a file from
 inside the diff.
+
+What the list draws is a `unidiff.ListModel` rather than a list of entries, and
+the session hands it a fresh one on every redraw. The three sources of rows are
+mutually exclusive enough that passing them positionally stopped saying
+anything.
+
+The gutter is computed when a row is built rather than when the screen line is
+drawn. An entry has two status letters and a commit has none, and putting that
+decision in `'statuscolumn'` would mean teaching it every kind of row there is.
 
 ### The diff pane
 
@@ -76,6 +87,76 @@ The keys shared with a standalone diff buffer mean something different here:
 `q` gives up the session rather than one window, and `]f` moves the list's
 cursor rather than scrolling to the next file of a combined view. `diff/keymap`
 takes those three as callbacks instead of branching on where it is used.
+
+### The commit list
+
+Below the files sit the most recent commits, and selecting one draws what it
+changed. That view is the ordinary two-version one, the shape `:UnidiffAll`
+already produces: both sides are committed, so there is no index between them
+and nothing to mark as staged.
+
+Three things follow from both sides being committed:
+
+- **Neither side comes from the working tree.** `source.for_commit` reads both
+  from the object database, in one `git cat-file --batch` as everything else
+  does. The working tree is not one of the versions being compared, and may no
+  longer have the file.
+- **The view is marked `historical`,** and `<CR>` refuses to jump from it. Its
+  line numbers name lines of the commit, so jumping would land on whatever now
+  occupies that line, or on a file that is no longer there.
+- **Nothing about it can be staged.** `s` and `u` refuse outright rather than
+  relying on there being no index contents to write.
+
+Building the view is deferred by a few tens of milliseconds while a commit is
+selected, and a generation counter drops the result if the selection has moved
+on. A commit's diff is every file it touched, so without that, sweeping the
+cursor down the list would run the whole pipeline once per row passed over. A
+file row costs a single file's view and is still drawn at once.
+
+#### Which commit is compared with what
+
+`git log -z` gives the list, including each commit's parents, which is what
+decides how it can be compared at all:
+
+| parents | compared with                              |
+| ------- | ------------------------------------------ |
+| none    | `git diff-tree --root`, against the empty tree |
+| one     | `git diff <parent> <sha>`                  |
+| several | the same, against the first parent         |
+
+`git diff-tree -m` would have covered all three, but on a merge it concatenates
+one diff per parent and `--no-commit-id` removes the headers that would tell the
+blocks apart. `--first-parent` is a rev-list option that `diff-tree` rejects.
+Naming the parent explicitly avoids the question, and both commands print the
+same `--name-status` and `--numstat` records, so one pair of parsers reads both.
+
+#### Looking into one commit
+
+`<CR>` on a commit sets the session's `scope`, and the list is **replaced** by
+the files that commit changed rather than extended with them. That is the point
+of replacing: a commit's `unidiff.Change` and an uncommitted
+`unidiff.StatusEntry` are different shapes — one status letter against two, a
+parent against three versions — and a row model holding both at once in one
+buffer would have to keep them apart everywhere it was read.
+
+- **The change list is read once, on the way in, and kept.** It is what the rows
+  stand for and what each file's two versions are then read against, so
+  selecting a file lists nothing again. `source.for_commit_change` reads one
+  entry of it the way `source.for_entry` reads one status entry.
+- **A commit is immutable, so a refresh leaves the scope alone.** What `R`
+  re-reads is everything underneath, which is what backing out goes back to.
+- **`<BS>` backs out**, and the cursor lands on the commit that was being looked
+  into rather than wherever the row happens to fall. `q` still closes the
+  session: a stack one level deep is not worth overloading it for.
+
+`]f` and `[f` mean what the view is shaped like rather than where they are
+pressed. A whole commit is many files in one buffer, so they scroll within it; a
+single file — uncommitted or from a commit — is one of many rows, so they move
+the list's cursor.
+
+Comparing two commits with each other is not implemented. The listing and the
+two-sided blob read it needs are both here; what is missing is how the second
+commit is chosen.
 
 ### Changing the index
 
@@ -103,10 +184,12 @@ holes. The parts that constrain the rest of the design are:
 
 After a change both panes are rebuilt from git rather than adjusted in place: the
 status letters, the file's three versions and which of its lines count as staged
-all move together. The cursor stays on the row it was on, which is sound only
-because staging and unstaging never remove a file from the list — it differs from
-HEAD either way — and the list is ordered by path. A command that can make a row
-disappear will have to follow the file by path instead.
+all move together. The cursor follows what was selected rather than the row it
+was on, by path for a file and by sha for a commit: the file section changes
+length, and everything below it moves with it. When the selection is gone
+altogether the row is kept, clamped to the buffer, and then pulled up to the
+nearest row that stands for something, so the cursor never rests on a separator
+or a header.
 
 ## Pipeline
 
@@ -303,6 +386,10 @@ everything still looks right.
 | Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
 | Unstaging a rename leaves the index equal to HEAD                       | `stage_spec`                                     |
 | An unmerged path is never written to the index                           | `session_spec`                                   |
+| A merge is compared with its first parent only                          | `git_spec`                                       |
+| A commit's view reads neither side from the working tree                | `session_spec`                                   |
+| Nothing is staged while a commit or one of its files is selected        | `session_spec`                                   |
+| Looking into a commit replaces the list rather than extending it         | `list_spec`                                      |
 | Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
 
 ## Deliberate omissions

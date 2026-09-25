@@ -19,7 +19,7 @@ works.
 
 :UnidiffMixed     " experimental: staged and unstaged changes in one view
 
-:UnidiffStatus    " work in progress: list every uncommitted change
+:UnidiffStatus    " work in progress: uncommitted changes, and recent commits
 ```
 
 ```lua
@@ -108,9 +108,9 @@ How the three versions are merged is described in
 
 ### The file list (work in progress)
 
-`:UnidiffStatus` opens a tab with every uncommitted change listed on the left
-and the selected file's diff on the right. Moving the cursor in the list draws
-the file it lands on.
+`:UnidiffStatus` opens a tab with the uncommitted changes listed on the left and
+the selected file's diff on the right. Moving the cursor in the list draws
+whatever it lands on.
 
 The list has one row per file, with the two status letters `git status --short`
 prints. A file changed both in the index and in the working tree is still one
@@ -118,9 +118,30 @@ row, and its diff is the mixed view above: what is staged and what is not, at
 once. Only the letters are drawn; the row itself is the path, so yanking one
 gives something pasteable.
 
+#### Recent commits
+
+Below the files sit the most recent commits, and putting the cursor on one draws
+what that commit changed. It is the ordinary diff of `:UnidiffAll`, not a mixed
+view: both sides are committed, so nothing there is staged or unstaged. A merge
+is compared with its first parent, the way `git show` does, and the winbar says
+so.
+
+A commit row states its own sha and subject, so yanking one gives something that
+names the commit elsewhere. Two keys mean less there and say so rather than
+acting: `s` and `u` have nothing to stage, and `<CR>` in the diff has no
+working-tree line to jump to, because the line numbers are the commit's.
+
+`<CR>` on a commit goes one level in: the list is replaced by the files that
+commit changed, and selecting one shows that file's diff by itself. `<BS>` comes
+back out, onto the commit you were looking at. `R` in there re-reads the
+uncommitted state you came from; the commit itself cannot change.
+
+Comparing two commits with each other is not implemented yet.
+
 | key       | in the list                       | in the diff                 |
 | --------- | --------------------------------- | --------------------------- |
-| `<CR>`    | focus the diff                    | jump to the source line     |
+| `<CR>`    | look into the commit, or focus the diff | jump to the source line |
+| `<BS>`    | back out of the commit            |                             |
 | `s`       | stage the file under the cursor   | stage the line or selection |
 | `u`       | unstage the file under the cursor | unstage the line or selection |
 | `S` / `U` |                                   | stage / unstage this hunk   |
@@ -150,7 +171,10 @@ listed and say as much in place of a diff. Discarding changes and committing are
 not implemented.
 
 ```lua
-require('unidiff').setup({ list_width = 30 })
+require('unidiff').setup({
+  list_width = 30,   -- columns for the list on the left
+  commit_count = 20, -- how many recent commits it lists
+})
 ```
 
 ### Agreement with `git diff`
