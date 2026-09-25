@@ -7,6 +7,7 @@
 --- way, so what they call is passed in rather than branched on here.
 local dlib = require('unidiff.diff.lines')
 local render = require('unidiff.diff.render')
+local util = require('unidiff.util')
 
 local M = {}
 
@@ -48,6 +49,14 @@ function M.goto_source(before_jump)
   local buf = vim.api.nvim_get_current_buf()
   local view = render.views[buf]
   if not view then
+    return
+  end
+  -- Both sides of a historical view are committed versions, so its line
+  -- numbers name lines of the commit rather than of the file on disk. Jumping
+  -- would land on whatever now occupies that line, or on a file the working
+  -- tree no longer has.
+  if view.historical then
+    util.warn('this diff is between commits; there is no working-tree line to jump to')
     return
   end
   local l = view.lines[vim.api.nvim_win_get_cursor(0)[1]]

@@ -26,6 +26,8 @@ M.views = {}
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
 --- @field mixed boolean? staged and unstaged changes in one view; see unidiff.diff.mixed
+--- @field historical boolean? the versions compared are both committed, so the
+---        line numbers are not the working tree's
 
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
