@@ -8,18 +8,17 @@ local status = require('unidiff.status')
 
 local M = {}
 
-local ns = vim.api.nvim_create_namespace('unidiff.ui.list')
-
 --- @class unidiff.ListScope the commit the list is looking into, in place of
 --- the uncommitted changes
 --- @field commit unidiff.Commit
 --- @field changes unidiff.Change[] what it changed
 
---- @class unidiff.ListModel what the list is showing
+--- @class unidiff.ListModel what one pane of the sidebar is showing
+--- @field pane 'files'|'commits' which of the two it is
 --- @field root string repository root
---- @field entries unidiff.StatusEntry[]? the uncommitted changes
---- @field commits unidiff.Commit[]? the tail of the history
---- @field scope unidiff.ListScope? shown instead of both of the above
+--- @field entries unidiff.StatusEntry[]? the files pane
+--- @field commits unidiff.Commit[]? the commits pane
+--- @field scope unidiff.ListScope? the commits pane, looking into one commit
 
 --- @class unidiff.ListTarget what a row stands for
 --- @field kind 'file'|'commit'|'commit_file'
@@ -29,15 +28,13 @@ local ns = vim.api.nvim_create_namespace('unidiff.ui.list')
 --- @field text string the buffer line, which is the thing itself
 --- @field gutter string? what `'statuscolumn'` draws, highlight groups included
 --- @field target unidiff.ListTarget? absent on a row standing for nothing
---- @field header boolean? a section label rather than content
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
 M.EMPTY_NOTICE = 'no uncommitted changes'
 
---- Names the section below it. Like the empty notice it stands for nothing, so
---- nothing resolves it to an entry or a commit.
-M.COMMITS_HEADER = 'commits'
+--- Shown in the commits pane of a repository that has no commit yet.
+M.NO_COMMITS_NOTICE = 'no commits yet'
 
 --- Shown in place of the file list of a commit that changed nothing, which
 --- `git commit --allow-empty` makes.
@@ -63,23 +60,23 @@ local function gutter_of(e)
   )
 end
 
---- The files one commit changed, in place of the whole list.
+--- The files one commit changed, shown in the commits pane in place of the
+--- commits themselves.
 ---
 --- A commit's changes and the uncommitted entries are different shapes, so they
---- are never mixed into one buffer: looking into a commit replaces the list
---- rather than extending it.
+--- are never mixed into one buffer: looking into a commit replaces what the
+--- pane holds. Which commit that is, is named by the pane's `'winbar'`, so no
+--- row of the buffer has to stand for it.
+---
 --- @param scope unidiff.ListScope
 --- @return unidiff.ListRow[]
 local function scope_rows(scope)
-  local rows = {
-    { text = ('%s %s'):format(scope.commit.sha, scope.commit.subject), header = true },
-  }
   if #scope.changes == 0 then
-    rows[#rows + 1] = { text = M.EMPTY_COMMIT_NOTICE }
-    return rows
+    return { { text = M.EMPTY_COMMIT_NOTICE } }
   end
+  local rows = {}
   for i, c in ipairs(scope.changes) do
-    rows[#rows + 1] = {
+    rows[i] = {
       text = status.change_label(c),
       -- One letter, in the color the list already uses for a settled change,
       -- padded to the width the two letters of an entry take.
@@ -93,38 +90,35 @@ end
 --- @param model unidiff.ListModel
 --- @return unidiff.ListRow[]
 function M.content(model)
-  if model.scope then
-    return scope_rows(model.scope)
-  end
-  local rows = {}
-  local function add(row)
-    rows[#rows + 1] = row
-  end
-
-  local entries = model.entries or {}
-  if #entries == 0 then
-    add({ text = M.EMPTY_NOTICE })
-  else
+  if model.pane == 'files' then
+    local entries = model.entries or {}
+    if #entries == 0 then
+      return { { text = M.EMPTY_NOTICE } }
+    end
+    local rows = {}
     for i, e in ipairs(entries) do
-      add({
+      rows[i] = {
         text = status.label(e),
         gutter = gutter_of(e),
         target = { kind = 'file', index = i },
-      })
+      }
     end
+    return rows
   end
 
-  for i, c in ipairs(model.commits or {}) do
-    if i == 1 then
-      -- A blank row keeps the header off the last file, the way a view
-      -- separates one file from the next.
-      add({ text = '' })
-      add({ text = M.COMMITS_HEADER, header = true })
-    end
-    add({
+  if model.scope then
+    return scope_rows(model.scope)
+  end
+  local commits = model.commits or {}
+  if #commits == 0 then
+    return { { text = M.NO_COMMITS_NOTICE } }
+  end
+  local rows = {}
+  for i, c in ipairs(commits) do
+    rows[i] = {
       text = ('%s %s'):format(c.sha, c.subject),
       target = { kind = 'commit', index = i },
-    })
+    }
   end
   return rows
 end
@@ -175,7 +169,16 @@ function M.statuscolumn()
   return row and row.gutter or BLANK_GUTTER
 end
 
---- Names the repository and how much it is showing.
+--- @param n integer
+--- @param what string singular
+--- @return string
+local function counted(n, what)
+  return ('%d %s%s'):format(n, what, n == 1 and '' or 's')
+end
+
+--- What the pane is showing. The repository is named by the files pane alone,
+--- since both panes are the same repository and the name would only be read
+--- once.
 --- @return string
 function M.winbar()
   local win = vim.g.statusline_winid
@@ -183,13 +186,16 @@ function M.winbar()
   if not state then
     return ''
   end
-  local count = state.scope and #state.scope.changes or #state.entries
-  local text = (' %s%s   %d file%s'):format(
-    vim.fs.basename(state.root),
-    state.scope and '   ' .. state.scope.commit.sha or '',
-    count,
-    count == 1 and '' or 's'
-  )
+  local text
+  if state.pane == 'files' then
+    text = (' %s   %s'):format(vim.fs.basename(state.root), counted(#state.entries, 'file'))
+  elseif state.scope then
+    -- The commit being looked into has no row of its own, so this is the only
+    -- place it is named.
+    text = (' %s %s'):format(state.scope.commit.sha, state.scope.commit.subject)
+  else
+    text = ' ' .. counted(#state.commits, 'commit')
+  end
   return '%#UnidiffStatusHeader#' .. text:gsub('%%', '%%%%')
 end
 
@@ -219,22 +225,11 @@ function M.draw(buf, model)
   end
 
   vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
-  for i, r in ipairs(rows) do
-    if r.header then
-      -- Only the label is highlighted, not the rest of the line: there is no
-      -- row after it to end an `hl_eol` range on when the header is last.
-      vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, {
-        end_row = i - 1,
-        end_col = #r.text,
-        hl_group = 'UnidiffStatusHeader',
-      })
-    end
-  end
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
   M.state[buf] = {
+    pane = model.pane,
     root = model.root,
     entries = model.entries or {},
     commits = model.commits or {},

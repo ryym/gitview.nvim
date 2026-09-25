@@ -30,28 +30,18 @@ local function with_session(setup, fn)
   end)
 end
 
---- The file section of the list. The commit section below it, and the blank
---- row separating the two, have tests of their own.
+--- The files pane. The commits pane below it has tests of its own.
 --- @param s unidiff.Session
 --- @return string[]
 local function rows(s)
-  local out = {}
-  for _, r in ipairs(list.state[s.list_buf].rows) do
-    if r.header then
-      break
-    end
-    if r.text ~= '' then
-      out[#out + 1] = r.text
-    end
-  end
-  return out
+  return vim.api.nvim_buf_get_lines(s.files_buf, 0, -1, false)
 end
 
---- Every row of the list, whatever it stands for.
+--- The commits pane, which holds the commit list or, inside one, its files.
 --- @param s unidiff.Session
 --- @return string[]
-local function rows_all(s)
-  return vim.api.nvim_buf_get_lines(s.list_buf, 0, -1, false)
+local function commit_rows(s)
+  return vim.api.nvim_buf_get_lines(s.commits_buf, 0, -1, false)
 end
 
 --- Which file is selected, for the tests that only care about that.
@@ -72,7 +62,7 @@ end
 test('session: lists the repository it was opened in', function()
   with_session(base, function(s)
     eq({ 'edit.txt', 'loose.txt' }, rows(s))
-    eq(s.root, list.state[s.list_buf].root)
+    eq(s.root, list.state[s.files_buf].root)
   end)
 end)
 
@@ -97,12 +87,12 @@ end)
 -- past the end of the buffer, nor on one of the rows that stand for nothing.
 test('session: refreshing pulls the cursor back inside the list', function()
   with_session(base, function(s, repo)
-    vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 })
+    vim.api.nvim_win_set_cursor(s.files_win, { 2, 0 })
     repo.git('checkout', '--', 'edit.txt')
     vim.fn.delete(s.root .. '/loose.txt')
     session.refresh(s)
     eq({ list.EMPTY_NOTICE }, rows(s))
-    eq(1, vim.api.nvim_win_get_cursor(s.list_win)[1])
+    eq(1, vim.api.nvim_win_get_cursor(s.files_win)[1])
   end)
 end)
 
@@ -113,13 +103,13 @@ test('session: a clean repository shows the notice and no entries', function()
   end, function(s)
     eq({ list.EMPTY_NOTICE }, rows(s))
     eq({}, s.entries)
-    eq(nil, list.entry_at(s.list_buf, 1))
+    eq(nil, list.entry_at(s.files_buf, 1))
   end)
 end)
 
 test('session: closing drops the session and its buffer', function()
   with_session(base, function(s)
-    local buf, tab = s.list_buf, s.tab
+    local buf, tab = s.files_buf, s.tab
     session.close(s)
     eq(nil, session.sessions[tab])
     eq(false, vim.api.nvim_buf_is_valid(buf))
@@ -141,7 +131,7 @@ end)
 -- themselves never reach that.
 test('session: the window renders its gutter and winbar', function()
   with_session(base, function(s)
-    local win = s.list_win
+    local win = s.files_win
     local gutter = vim.api.nvim_eval_statusline(vim.wo[win].statuscolumn, {
       winid = win,
       use_statuscol_lnum = 1,
@@ -164,7 +154,7 @@ end)
 test('session: the list buffer carries its keymaps', function()
   with_session(base, function(s)
     local lhs = {}
-    for _, m in ipairs(vim.api.nvim_buf_get_keymap(s.list_buf, 'n')) do
+    for _, m in ipairs(vim.api.nvim_buf_get_keymap(s.files_buf, 'n')) do
       lhs[m.lhs] = true
     end
     for _, key in ipairs({ 'R', 'o', 'q' }) do
@@ -175,7 +165,7 @@ end)
 
 test('session: opening an entry replaces the session with the file', function()
   with_session(base, function(s)
-    vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 }) -- loose.txt
+    vim.api.nvim_win_set_cursor(s.files_win, { 2, 0 }) -- loose.txt
     local tab = s.tab
     session.edit_entry(s)
     eq(nil, session.sessions[tab])
@@ -245,9 +235,9 @@ end)
 
 test('session: moving the list cursor selects', function()
   with_session(two, function(s)
-    vim.api.nvim_set_current_win(s.list_win)
-    vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 })
-    vim.api.nvim_exec_autocmds('CursorMoved', { buffer = s.list_buf })
+    vim.api.nvim_set_current_win(s.files_win)
+    vim.api.nvim_win_set_cursor(s.files_win, { 2, 0 })
+    vim.api.nvim_exec_autocmds('CursorMoved', { buffer = s.files_buf })
     eq(2, selected(s))
     eq({ 'b.lua', 'return 9' }, diff_rows(s))
   end)
@@ -257,7 +247,7 @@ test('session: selecting past either end stays on the last file', function()
   with_session(two, function(s)
     session.select(s, 99)
     eq(2, selected(s))
-    eq(2, vim.api.nvim_win_get_cursor(s.list_win)[1])
+    eq(2, vim.api.nvim_win_get_cursor(s.files_win)[1])
     session.select(s, -5)
     eq(1, selected(s))
   end)
@@ -311,27 +301,33 @@ end)
 test('session: the diff pane takes what the list leaves', function()
   with_session(two, function(s)
     local width = require('unidiff.config').values.list_width
-    eq(width, vim.api.nvim_win_get_width(s.list_win))
+    eq(width, vim.api.nvim_win_get_width(s.files_win))
+    eq(width, vim.api.nvim_win_get_width(s.commits_win))
     assert(vim.api.nvim_win_get_width(s.diff_win) > 0, 'the diff pane has no width')
-    eq(true, vim.wo[s.list_win].winfixwidth)
+    eq(true, vim.wo[s.files_win].winfixwidth)
+    -- the files pane absorbs a resize; the commit list keeps its height
+    eq(true, vim.wo[s.commits_win].winfixheight)
+    eq(false, vim.wo[s.files_win].winfixheight)
   end)
 end)
 
-test('session: both buffers go when the session closes', function()
+test('session: every buffer goes when the session closes', function()
   with_session(two, function(s)
-    local list_buf, diff_buf = s.list_buf, s.diff_buf
+    local bufs = { s.files_buf, s.commits_buf, s.diff_buf }
     session.close(s)
-    eq(false, vim.api.nvim_buf_is_valid(list_buf))
-    eq(false, vim.api.nvim_buf_is_valid(diff_buf))
+    for _, buf in ipairs(bufs) do
+      eq(false, vim.api.nvim_buf_is_valid(buf))
+    end
   end)
 end)
 
---- Press a key in the list window, so that the buffer-local mapping is what is
---- being tested rather than the function behind it.
+--- Press a key in one of the sidebar panes, so that the buffer-local mapping is
+--- what is being tested rather than the function behind it.
 --- @param s unidiff.Session
 --- @param key string
-local function press(s, key)
-  vim.api.nvim_set_current_win(s.list_win)
+--- @param win integer? which pane; the files pane by default
+local function press(s, key, win)
+  vim.api.nvim_set_current_win(win or s.files_win)
   vim.cmd.normal(key)
 end
 
@@ -592,21 +588,51 @@ end
 --- @param s unidiff.Session
 --- @param index integer into the commits
 local function show_commit(s, index)
-  local row = assert(list.row_of(s.list_buf, { kind = 'commit', index = index }))
-  vim.api.nvim_win_set_cursor(s.list_win, { row, 0 })
+  local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = index }))
+  vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
   s.selected = { kind = 'commit', index = index }
   session.show_selected(s)
 end
 
-test('session: lists the recent commits below the files', function()
+test('session: lists the recent commits in a pane of their own', function()
   with_session(history, function(s)
     eq({ 'second', 'first' }, vim.tbl_map(function(c)
       return c.subject
     end, s.commits))
-    local rows = list.state[s.list_buf].rows
-    eq('a.lua', rows[1].text)
-    eq(list.COMMITS_HEADER, rows[3].text)
-    eq({ kind = 'commit', index = 1 }, rows[4].target)
+    -- however long the file list grows, it does not push the history down
+    eq({ 'a.lua' }, rows(s))
+    local shas = vim.tbl_map(function(c)
+      return c.sha
+    end, s.commits)
+    eq({ shas[1] .. ' second', shas[2] .. ' first' }, commit_rows(s))
+    eq({ kind = 'commit', index = 1 }, list.target_at(s.commits_buf, 1))
+  end)
+end)
+
+-- Both panes are the same repository, so it is named once, and each says what
+-- it is holding.
+test('session: each pane says what it is showing', function()
+  with_session(history, function(s)
+    local function winbar(win)
+      vim.g.statusline_winid = win
+      return (list.winbar():gsub('%%#%w+#', ''))
+    end
+    eq(' test-repo   1 file', winbar(s.files_win))
+    eq(' 2 commits', winbar(s.commits_win))
+    show_commit(s, 1)
+    session.enter(s)
+    eq(' ' .. s.commits[1].sha .. ' second', winbar(s.commits_win))
+  end)
+end)
+
+-- The cursors are independent, so moving between the panes has to be what tells
+-- the diff which list the selection now comes from; neither cursor moves.
+test('session: entering a pane selects from that pane', function()
+  with_session(history, function(s)
+    vim.api.nvim_set_current_win(s.commits_win)
+    eq('commit', s.selected.kind)
+    vim.api.nvim_set_current_win(s.files_win)
+    eq('file', s.selected.kind)
   end)
 end)
 
@@ -668,8 +694,8 @@ test('session: staging is refused while a commit is selected', function()
     -- Nothing was read for the index, so nothing can be written back to it.
     eq(nil, s.index_lines)
     local before = repo.git('status', '--short')
-    press(s, 's')
-    press(s, 'u')
+    press(s, 's', s.commits_win)
+    press(s, 'u', s.commits_win)
     eq(before, repo.git('status', '--short'))
   end)
 end)
@@ -695,7 +721,7 @@ test('session: looking into a commit lists the files it changed', function()
       return c.path
     end, s.scope.changes))
     -- the header names the commit, and the files replace the whole list
-    eq({ s.commits[1].sha .. ' second', 'a.lua', 'added.lua' }, rows_all(s))
+    eq({ 'a.lua', 'added.lua' }, commit_rows(s))
     -- the first file is selected, so the pane shows it rather than nothing
     eq({ kind = 'commit_file', index = 1 }, s.selected)
   end)
@@ -760,8 +786,8 @@ test('session: staging is refused while a commit file is selected', function()
     show_commit(s, 1)
     session.enter(s)
     local before = repo.git('status', '--short')
-    press(s, 's')
-    press(s, 'u')
+    press(s, 's', s.commits_win)
+    press(s, 'u', s.commits_win)
     eq(before, repo.git('status', '--short'))
   end)
 end)

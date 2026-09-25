@@ -45,29 +45,54 @@ forget it, while a session keeps its repository root, its entries and the tail
 of the history so that all of them can be re-read.
 
 A session is registered against its tab page and dropped when that tab closes,
-however it closes. The list buffer goes with it.
+however it closes. Its three buffers go with it.
 
 The list follows the same rule as a diff buffer: the text is the thing itself,
-and everything around it is drawn. A row is a path and nothing more, so yanking
-one gives a path; the two status letters are painted by `'statuscolumn'`, and
-the repository and file count by `'winbar'`.
+and everything around it is drawn. A row is a path, or a sha and a subject, and
+nothing more, so yanking one gives something that names the thing elsewhere; the
+status letters are painted by `'statuscolumn'`, and what the pane is holding by
+`'winbar'`.
 
 A row stands for a `unidiff.ListTarget` — a kind and an index — rather than for
-an entry, because the list no longer holds one kind of thing: the uncommitted
-files, the commits below them, and the files of a commit being looked into. Rows
-standing for nothing cost nothing to add, which is what the empty notice, the
-blank separator and the section headers are. The mapping is kept in both
-directions: the cursor picks a target in the list, but `]f` picks a file from
-inside the diff.
+an entry, because a row is no longer always a file: it can be a commit, or a file
+of one. A row can also stand for nothing, which is what the notices are. The
+mapping is kept in both directions: the cursor picks a target, but `]f` picks a
+file from inside the diff.
 
-What the list draws is a `unidiff.ListModel` rather than a list of entries, and
-the session hands it a fresh one on every redraw. The three sources of rows are
-mutually exclusive enough that passing them positionally stopped saying
-anything.
-
-The gutter is computed when a row is built rather than when the screen line is
-drawn. An entry has two status letters and a commit has none, and putting that
+What a pane draws is a `unidiff.ListModel` rather than a list of entries, and the
+session hands each pane a fresh one on every redraw. The gutter is computed while
+those rows are built rather than when the screen line is drawn: an entry has two
+status letters, a commit's file has one and a commit has none, and putting that
 decision in `'statuscolumn'` would mean teaching it every kind of row there is.
+
+#### Two panes, not two sections
+
+The sidebar is split: the uncommitted files above, the commits below, each its
+own window and its own buffer. One buffer holding both would push the history off
+the bottom of the screen as soon as a working tree had more changes than the
+sidebar is tall — and the history is the part that does not grow.
+
+Being separate windows is what makes the rest simple:
+
+- **`list.state` is keyed by buffer**, so `'statuscolumn'` and `'winbar'` already
+  read the pane they are drawn in. Telling the two apart needed nothing but a
+  `pane` field for the winbar to switch on.
+- **Each pane carries only the keys that mean something in it**, instead of one
+  set of keys branching on the kind of row under the cursor. `s` and `u` are the
+  exception: the commits pane maps them in order to say why they do nothing,
+  since leaving `s` unmapped would let it reach a buffer that cannot be modified
+  and error.
+- **No row has to stand for nothing.** The section header and the blank row that
+  separated the two lists are gone, and with them the rule that had to pull a
+  cursor off them.
+
+What two cursors cost is that neither moves when the focus does, so `WinEnter` is
+watched alongside `CursorMoved`: entering a pane is the only thing that tells the
+diff the selection now comes from that list.
+
+The commits pane is the one with `'winfixheight'`. What the sidebar gains or
+loses on a resize belongs to the files, which is the list that grows without
+bound.
 
 ### The diff pane
 
@@ -101,7 +126,7 @@ takes those three as callbacks instead of branching on where it is used.
 
 ### The commit list
 
-Below the files sit the most recent commits, and selecting one draws what it
+The lower pane lists the most recent commits, and selecting one draws what it
 changed. That view is the ordinary two-version one, the shape `:UnidiffAll`
 already produces: both sides are committed, so there is no index between them
 and nothing to mark as staged.
@@ -143,12 +168,15 @@ same `--name-status` and `--numstat` records, so one pair of parsers reads both.
 
 #### Looking into one commit
 
-`<CR>` on a commit sets the session's `scope`, and the list is **replaced** by
-the files that commit changed rather than extended with them. That is the point
-of replacing: a commit's `unidiff.Change` and an uncommitted
-`unidiff.StatusEntry` are different shapes — one status letter against two, a
-parent against three versions — and a row model holding both at once in one
-buffer would have to keep them apart everywhere it was read.
+`<CR>` on a commit sets the session's `scope`, and the commits pane is
+**replaced** by the files that commit changed. The files pane above is left
+alone, so what is uncommitted stays in view. Replacing rather than merging the
+two lists is what a commit's `unidiff.Change` and an uncommitted
+`unidiff.StatusEntry` being different shapes — one status letter against two, a
+parent against three versions — makes right.
+
+Which commit is being looked into is named by the pane's `'winbar'`, so no row of
+the buffer stands for it and every row remains a file.
 
 - **The change list is read once, on the way in, and kept.** It is what the rows
   stand for and what each file's two versions are then read against, so
@@ -159,6 +187,8 @@ buffer would have to keep them apart everywhere it was read.
 - **`<BS>` backs out**, and the cursor lands on the commit that was being looked
   into rather than wherever the row happens to fall. `q` still closes the
   session: a stack one level deep is not worth overloading it for.
+- **`<CR>` inside a commit focuses the diff**, which is what it does in the files
+  pane, since the row already names what is being shown.
 
 `]f` and `[f` mean what the view is shaped like rather than where they are
 pressed. A whole commit is many files in one buffer, so they scroll within it; a
@@ -193,14 +223,12 @@ holes. The parts that constrain the rest of the design are:
   `git add` resolving it. The view it needs is a
   [known gap](#a-merge-conflict-has-no-view).
 
-After a change both panes are rebuilt from git rather than adjusted in place: the
+After a change everything is rebuilt from git rather than adjusted in place: the
 status letters, the file's three versions and which of its lines count as staged
 all move together. The cursor follows what was selected rather than the row it
-was on, by path for a file and by sha for a commit: the file section changes
-length, and everything below it moves with it. When the selection is gone
-altogether the row is kept, clamped to the buffer, and then pulled up to the
-nearest row that stands for something, so the cursor never rests on a separator
-or a header.
+was on, by path for a file and by sha for a commit, because a file added or
+committed away shifts every row below it. When the selection is gone altogether
+each pane keeps the row it was on, clamped to what was just drawn.
 
 ## Pipeline
 
@@ -400,7 +428,7 @@ everything still looks right.
 | A merge is compared with its first parent only                          | `git_spec`                                       |
 | A commit's view reads neither side from the working tree                | `session_spec`                                   |
 | Nothing is staged while a commit or one of its files is selected        | `session_spec`                                   |
-| Looking into a commit replaces the list rather than extending it         | `list_spec`                                      |
+| Looking into a commit replaces the commits pane, not the files pane      | `list_spec`, `session_spec`                      |
 | The diff pane restarts at the top unless it is redrawing the same thing  | `session_spec`                                   |
 | Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
 

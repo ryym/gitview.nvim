@@ -9,6 +9,7 @@ local M = {}
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
 --- @field list_width integer columns for the file list in `:UnidiffStatus`
 --- @field commit_count integer how many recent commits `:UnidiffStatus` lists
+--- @field commit_ratio number share of the sidebar height the commit list takes
 
 --- @type unidiff.Config
 M.values = {
@@ -18,6 +19,7 @@ M.values = {
   linematch = 0,
   list_width = 30,
   commit_count = 20,
+  commit_ratio = 0.4,
 }
 
 --- @param opts? unidiff.Config

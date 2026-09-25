@@ -22,8 +22,10 @@ local M = {}
 --- @class unidiff.Session
 --- @field tab integer tab page handle
 --- @field root string repository root, resolved once
---- @field list_win integer
---- @field list_buf integer
+--- @field files_win integer
+--- @field files_buf integer
+--- @field commits_win integer
+--- @field commits_buf integer
 --- @field diff_win integer
 --- @field diff_buf integer drawn into repeatedly, never swapped out
 --- @field entries unidiff.StatusEntry[]
@@ -75,6 +77,19 @@ local function selection_id(s)
     end,
   })[t.kind]()
   return named and { kind = t.kind, id = named } or nil
+end
+
+--- Which pane a kind of target lives in. The sidebar holds two lists, and a
+--- selection belongs to exactly one of them.
+--- @param s unidiff.Session
+--- @param kind 'file'|'commit'|'commit_file'
+--- @return integer win
+--- @return integer buf
+local function pane_of(s, kind)
+  if kind == 'file' then
+    return s.files_win, s.files_buf
+  end
+  return s.commits_win, s.commits_buf
 end
 
 --- Put the diff pane back at the start.
@@ -264,10 +279,12 @@ end
 local COMMIT_DELAY_MS = 60
 
 --- @param s unidiff.Session
+--- @param win integer the pane whose cursor decides the selection
 --- @param force boolean? draw even when the selection has not moved
-local function sync_selection(s, force)
-  local row = vim.api.nvim_win_get_cursor(s.list_win)[1]
-  local target = list.target_at(s.list_buf, row)
+local function sync_selection(s, win, force)
+  local buf = vim.api.nvim_win_get_buf(win)
+  local row = vim.api.nvim_win_get_cursor(win)[1]
+  local target = list.target_at(buf, row)
   if not force and list.same_target(target, s.selected) then
     return
   end
@@ -305,9 +322,10 @@ local function select_nth(s, kind, index)
   end
   index = math.max(1, math.min(count, index))
   local target = { kind = kind, index = index } --- @type unidiff.ListTarget
-  local row = list.row_of(s.list_buf, target)
+  local win, buf = pane_of(s, kind)
+  local row = list.row_of(buf, target)
   if row then
-    vim.api.nvim_win_set_cursor(s.list_win, { row, 0 })
+    vim.api.nvim_win_set_cursor(win, { row, 0 })
   end
   if not list.same_target(target, s.selected) then
     s.selected = target
@@ -353,49 +371,46 @@ local function target_of_id(s, id)
   return nil
 end
 
---- The nearest row at or above `row` that stands for something.
----
---- Rows standing for nothing used to be rare enough to ignore: the list held
---- paths and, when there were none, one notice. A commit section adds a blank
---- row and a header in the middle of the list, and a cursor left on either of
---- those selects nothing while looking as though it selects a file.
----
---- @param s unidiff.Session
---- @param row integer 1-based
---- @return integer row
-local function settle(s, row)
-  for r = row, 1, -1 do
-    if list.target_at(s.list_buf, r) then
-      return r
-    end
+--- A pane is usually shorter after a redraw, not longer, and a cursor past the
+--- end of a buffer is an error the next time anything reads it.
+--- @param win integer
+local function clamp_cursor(win)
+  local last = vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(win))
+  local row = vim.api.nvim_win_get_cursor(win)[1]
+  if row > last then
+    vim.api.nvim_win_set_cursor(win, { last, 0 })
   end
-  return 1
 end
 
---- Draw the list from the session's state and settle the cursor on `target`.
+--- Draw both panes of the sidebar from the session's state, and put the cursor
+--- on `target`.
 ---
---- Failing that — the file was committed away, say — the row is kept and
---- clamped, since the list is usually shorter afterwards, not longer.
+--- Failing that — the file was committed away, say — each pane keeps the row it
+--- was on, and the selection is taken from whichever pane it was already in.
 ---
 --- @param s unidiff.Session
 --- @param target unidiff.ListTarget? where the cursor should end up
 local function redraw_list(s, target)
-  list.draw(s.list_buf, {
+  list.draw(s.files_buf, { pane = 'files', root = s.root, entries = s.entries })
+  list.draw(s.commits_buf, {
+    pane = 'commits',
     root = s.root,
-    entries = s.entries,
     commits = s.commits,
     scope = s.scope,
   })
-  local row = list.row_of(s.list_buf, target)
-  if not row then
-    local last = vim.api.nvim_buf_line_count(s.list_buf)
-    row = settle(s, math.min(vim.api.nvim_win_get_cursor(s.list_win)[1], last))
+  clamp_cursor(s.files_win)
+  clamp_cursor(s.commits_win)
+
+  local from = target or s.selected
+  local win, buf = pane_of(s, from and from.kind or 'file')
+  local row = target and list.row_of(buf, target)
+  if row then
+    vim.api.nvim_win_set_cursor(win, { row, 0 })
   end
-  vim.api.nvim_win_set_cursor(s.list_win, { row, 0 })
 
   -- The row under the cursor may now be a different file, or the same file with
   -- different contents, so the diff is rebuilt either way.
-  sync_selection(s, true)
+  sync_selection(s, win, true)
 end
 
 --- Re-read the repository and redraw both panes.
@@ -460,12 +475,17 @@ function M.close(s)
     return
   end
   -- `tabclose` refuses when it is the only tab page; there is nothing to go
-  -- back to then, so the windows are closed instead.
+  -- back to then, so the windows are closed instead. The last one goes through
+  -- `:quit`, which is what decides whether Neovim itself should exit.
   if #vim.api.nvim_list_tabpages() > 1 then
     vim.api.nvim_set_current_tabpage(s.tab)
     vim.cmd.tabclose()
   else
-    vim.api.nvim_win_close(s.diff_win, true)
+    for _, win in ipairs({ s.diff_win, s.commits_win }) do
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_close(win, true)
+      end
+    end
     vim.cmd.quit()
   end
 end
@@ -473,8 +493,8 @@ end
 --- Open the file under the cursor in place of the session.
 --- @param s unidiff.Session
 function M.edit_entry(s)
-  local row = vim.api.nvim_win_get_cursor(s.list_win)[1]
-  local entry = list.entry_at(s.list_buf, row)
+  local row = vim.api.nvim_win_get_cursor(s.files_win)[1]
+  local entry = list.entry_at(s.files_buf, row)
   if not entry then
     return
   end
@@ -606,23 +626,30 @@ local function set_diff_stage_keymaps(s)
   end
 end
 
+--- The keys both panes of the sidebar share.
 --- @param s unidiff.Session
-local function set_list_keymaps(s)
+--- @param buf integer
+local function set_shared_keymaps(s, buf)
   local map = function(lhs, fn, desc)
-    vim.keymap.set('n', lhs, fn, { buffer = s.list_buf, desc = desc })
+    vim.keymap.set('n', lhs, fn, { buffer = buf, desc = desc })
+  end
+  map('R', function()
+    M.refresh(s)
+  end, 'unidiff: refresh')
+  map('q', function()
+    M.close(s)
+  end, 'unidiff: close')
+end
+
+--- What the keys do in the files pane.
+--- @param s unidiff.Session
+local function set_files_keymaps(s)
+  local map = function(lhs, fn, desc)
+    vim.keymap.set('n', lhs, fn, { buffer = s.files_buf, desc = desc })
   end
   map('<CR>', function()
-    -- On a commit there is somewhere further in to go; anywhere else the row
-    -- already names what the diff is showing.
-    if s.selected and s.selected.kind == 'commit' then
-      M.enter(s)
-      return
-    end
     vim.api.nvim_set_current_win(s.diff_win)
-  end, 'unidiff: look into the commit, or focus the diff')
-  map('<BS>', function()
-    M.leave(s)
-  end, 'unidiff: back out of the commit')
+  end, 'unidiff: focus the diff')
   -- `s` and `u` rather than one key toggling: a file with changes on both sides
   -- has no obvious sense in which it is on or off, and a row here states that
   -- state rather than hiding it, so the direction is given explicitly.
@@ -632,15 +659,42 @@ local function set_list_keymaps(s)
   map('u', function()
     apply_to_selected(s, stage.unstage)
   end, 'unidiff: unstage the file under the cursor')
-  map('R', function()
-    M.refresh(s)
-  end, 'unidiff: refresh the list')
   map('o', function()
     M.edit_entry(s)
   end, 'unidiff: edit the file under the cursor')
-  map('q', function()
-    M.close(s)
-  end, 'unidiff: close')
+  set_shared_keymaps(s, s.files_buf)
+end
+
+--- What the keys do in the commits pane.
+---
+--- Separating the panes is what lets each one carry only the keys that mean
+--- something in it. `s` and `u` are the exception: they are mapped in order to
+--- say why they do nothing, since leaving them unmapped would let `s` reach a
+--- buffer that cannot be modified and error.
+---
+--- @param s unidiff.Session
+local function set_commits_keymaps(s)
+  local map = function(lhs, fn, desc)
+    vim.keymap.set('n', lhs, fn, { buffer = s.commits_buf, desc = desc })
+  end
+  map('<CR>', function()
+    -- On a commit there is somewhere further in to go; on one of its files the
+    -- row already names what the diff is showing.
+    if s.scope then
+      vim.api.nvim_set_current_win(s.diff_win)
+      return
+    end
+    M.enter(s)
+  end, 'unidiff: look into the commit, or focus the diff')
+  map('<BS>', function()
+    M.leave(s)
+  end, 'unidiff: back out of the commit')
+  for _, lhs in ipairs({ 's', 'u' }) do
+    map(lhs, function()
+      util.info('only an uncommitted file can be staged')
+    end, 'unidiff: nothing to stage here')
+  end
+  set_shared_keymaps(s, s.commits_buf)
 end
 
 --- Inside a session a diff is one pane of something larger: `q` gives up the
@@ -661,8 +715,9 @@ local function set_diff_keymaps(s)
         keymap.jump(dir, 'files')
         return
       end
-      select_nth(s, t and t.kind == 'commit_file' and 'commit_file' or 'file', (t and t.index or 1) + dir)
-      vim.api.nvim_set_current_win(s.list_win)
+      local kind = t and t.kind == 'commit_file' and 'commit_file' or 'file'
+      select_nth(s, kind, (t and t.index or 1) + dir)
+      vim.api.nvim_set_current_win((pane_of(s, kind)))
     end,
     before_jump = function()
       M.close(s)
@@ -687,8 +742,9 @@ function M.open()
   local s = { --- @type unidiff.Session
     tab = vim.api.nvim_get_current_tabpage(),
     root = root,
-    list_win = vim.api.nvim_get_current_win(),
-    list_buf = list.create_buffer(),
+    files_win = vim.api.nvim_get_current_win(),
+    files_buf = list.create_buffer(),
+    commits_buf = list.create_buffer(),
     diff_buf = render.create_buffer(),
     entries = entries,
     commits = {},
@@ -696,26 +752,48 @@ function M.open()
     has_head = git.has_head(root),
   }
   s.commits = read_commits(s)
-  vim.api.nvim_win_set_buf(s.list_win, s.list_buf)
-  -- An explicit side, rather than `:vsplit`, which follows 'splitright'.
+  vim.api.nvim_win_set_buf(s.files_win, s.files_buf)
+  -- Explicit sides, rather than `:vsplit` and `:split`, which follow
+  -- 'splitright' and 'splitbelow'.
   s.diff_win = vim.api.nvim_open_win(s.diff_buf, false, {
     split = 'right',
-    win = s.list_win,
+    win = s.files_win,
+  })
+  s.commits_win = vim.api.nvim_open_win(s.commits_buf, false, {
+    split = 'below',
+    win = s.files_win,
   })
 
-  list.draw(s.list_buf, { root = root, entries = entries, commits = s.commits })
-  list.configure_window(s.list_win, config.values.list_width)
+  list.configure_window(s.files_win, config.values.list_width)
+  list.configure_window(s.commits_win, config.values.list_width)
   render.configure_window(s.diff_win, s.diff_buf)
-  set_list_keymaps(s)
+  -- The split is even until told otherwise, and the commits pane is the one
+  -- pinned: what the sidebar gains or loses on a resize belongs to the files,
+  -- which is the list that grows without bound.
+  local total = vim.api.nvim_win_get_height(s.files_win)
+    + vim.api.nvim_win_get_height(s.commits_win)
+  vim.api.nvim_win_set_height(
+    s.commits_win,
+    math.max(1, math.floor(total * config.values.commit_ratio))
+  )
+  vim.wo[s.commits_win].winfixheight = true
+
+  set_files_keymaps(s)
+  set_commits_keymaps(s)
   set_diff_keymaps(s)
   set_diff_stage_keymaps(s)
 
-  vim.api.nvim_create_autocmd('CursorMoved', {
-    buffer = s.list_buf,
-    callback = function()
-      sync_selection(s)
-    end,
-  })
+  for _, buf in ipairs({ s.files_buf, s.commits_buf }) do
+    vim.api.nvim_create_autocmd({ 'CursorMoved', 'WinEnter' }, {
+      buffer = buf,
+      callback = function()
+        -- `WinEnter` as well as `CursorMoved`: moving between the two panes does
+        -- not move either cursor, so nothing else would tell the diff that the
+        -- selection is now the other pane's.
+        sync_selection(s, vim.api.nvim_get_current_win())
+      end,
+    })
+  end
 
   M.sessions[s.tab] = s
   vim.api.nvim_create_autocmd('TabClosed', {
@@ -724,7 +802,7 @@ function M.open()
       -- TabClosed does not say which tab went, so this checks its own.
       if not vim.api.nvim_tabpage_is_valid(s.tab) then
         M.sessions[s.tab] = nil
-        for _, buf in ipairs({ s.list_buf, s.diff_buf }) do
+        for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
           if vim.api.nvim_buf_is_valid(buf) then
             vim.api.nvim_buf_delete(buf, { force = true })
           end
@@ -734,7 +812,7 @@ function M.open()
     end,
   })
 
-  sync_selection(s, true)
+  redraw_list(s, { kind = 'file', index = 1 })
   return s
 end
 

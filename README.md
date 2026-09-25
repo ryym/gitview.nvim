@@ -108,19 +108,20 @@ How the three versions are merged is described in
 
 ### The file list (work in progress)
 
-`:UnidiffStatus` opens a tab with the uncommitted changes listed on the left and
-the selected file's diff on the right. Moving the cursor in the list draws
-whatever it lands on.
+`:UnidiffStatus` opens a tab with a sidebar on the left and the diff on the
+right. The sidebar is split in two: the uncommitted changes above, the recent
+commits below. Moving the cursor in either draws whatever it lands on, and moving
+between the two panes switches which list the diff follows.
 
-The list has one row per file, with the two status letters `git status --short`
-prints. A file changed both in the index and in the working tree is still one
+The upper pane has one row per file, with the two status letters
+`git status --short` prints. A file changed both in the index and in the working tree is still one
 row, and its diff is the mixed view above: what is staged and what is not, at
 once. Only the letters are drawn; the row itself is the path, so yanking one
 gives something pasteable.
 
 #### Recent commits
 
-Below the files sit the most recent commits, and putting the cursor on one draws
+The lower pane lists the most recent commits, and putting the cursor on one draws
 what that commit changed. It is the ordinary diff of `:UnidiffAll`, not a mixed
 view: both sides are committed, so nothing there is staged or unstaged. A merge
 is compared with its first parent, the way `git show` does, and the winbar says
@@ -131,27 +132,26 @@ names the commit elsewhere. Two keys mean less there and say so rather than
 acting: `s` and `u` have nothing to stage, and `<CR>` in the diff has no
 working-tree line to jump to, because the line numbers are the commit's.
 
-`<CR>` on a commit goes one level in: the list is replaced by the files that
-commit changed, and selecting one shows that file's diff by itself. `<BS>` comes
-back out, onto the commit you were looking at. `R` in there re-reads the
-uncommitted state you came from; the commit itself cannot change.
+`<CR>` on a commit goes one level in: the pane is replaced by the files that
+commit changed, and selecting one shows that file's diff by itself. The
+uncommitted changes above stay in view. `<BS>` comes back out, onto the commit you
+were looking at. `R` in there re-reads the uncommitted state; the commit itself
+cannot change.
 
 Comparing two commits with each other is not implemented yet.
 
-| key       | in the list                       | in the diff                 |
-| --------- | --------------------------------- | --------------------------- |
-| `<CR>`    | look into the commit, or focus the diff | jump to the source line |
-| `<BS>`    | back out of the commit            |                             |
-| `s`       | stage the file under the cursor   | stage the line or selection |
-| `u`       | unstage the file under the cursor | unstage the line or selection |
-| `S` / `U` |                                   | stage / unstage this hunk   |
-| `]f`      |                                   | next file                   |
-| `[f`      |                                   | previous file               |
-| `]h`      |                                   | next hunk                   |
-| `[h`      |                                   | previous hunk               |
-| `o`       | edit the file under the cursor    |                             |
-| `R`       | re-read the repository            |                             |
-| `q`       | close                             | close                       |
+| key         | in the files pane | in the commits pane  | in the diff                   |
+| ----------- | ----------------- | -------------------- | ----------------------------- |
+| `<CR>`      | focus the diff    | look into the commit | jump to the source line       |
+| `<BS>`      |                   | back out of it       |                               |
+| `s`         | stage the file    |                      | stage the line or selection   |
+| `u`         | unstage the file  |                      | unstage the line or selection |
+| `S` / `U`   |                   |                      | stage / unstage this hunk     |
+| `]f` / `[f` |                   |                      | next / previous file          |
+| `]h` / `[h` |                   |                      | next / previous hunk          |
+| `o`         | edit the file     |                      |                               |
+| `R`         | re-read           | re-read              |                               |
+| `q`         | close             | close                | close                         |
 
 There is one key per direction rather than one key toggling: a file changed in
 the index and in the working tree both has no obvious sense in which it is
@@ -172,8 +172,9 @@ not implemented.
 
 ```lua
 require('unidiff').setup({
-  list_width = 30,   -- columns for the list on the left
-  commit_count = 20, -- how many recent commits it lists
+  list_width = 30,    -- columns for the sidebar
+  commit_count = 20,  -- how many recent commits it lists
+  commit_ratio = 0.4, -- share of the sidebar height the commit list takes
 })
 ```
 
