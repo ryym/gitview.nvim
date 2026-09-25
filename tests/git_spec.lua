@@ -99,3 +99,103 @@ test('tells a repository with a commit from one without', function()
     eq(true, git.has_head(repo.root))
   end)
 end)
+
+--- `git log -z --format=...` separates commits with NUL and the fields within
+--- one with a unit separator.
+local function log_z(...)
+  return table.concat({ ... }, '\0') .. '\0'
+end
+
+--- @param ... string
+local function rec(...)
+  return table.concat({ ... }, '\31')
+end
+
+test('parses a commit log', function()
+  eq({
+    {
+      sha = 'abc1234',
+      parents = { 'def5678' },
+      subject = 'do a thing',
+      author = 'Ada',
+      when = '2 days ago',
+    },
+  }, git.parse_log(log_z(rec('abc1234', 'def5678', 'do a thing', 'Ada', '2 days ago'))))
+end)
+
+-- The root commit has no parent, and a merge has more than one. Which it is
+-- decides what the commit can be compared against.
+test('parses the parent list of a root commit and of a merge', function()
+  local commits = git.parse_log(log_z(
+    rec('m000000', 'p111111 p222222', 'merge', 'Ada', 'now'),
+    rec('r000000', '', 'root', 'Ada', 'now')
+  ))
+  eq({ 'p111111', 'p222222' }, commits[1].parents)
+  eq({}, commits[2].parents)
+end)
+
+-- A subject may hold anything but a newline, which is why the fields are
+-- separated by a unit separator rather than by anything more plausible.
+test('keeps a subject containing separators intact', function()
+  local commits = git.parse_log(log_z(rec('abc1234', 'p', 'fix a | b, and "c"', 'Ada', 'now')))
+  eq('fix a | b, and "c"', commits[1].subject)
+end)
+
+test('parses an empty log', function()
+  eq({}, git.parse_log(''))
+end)
+
+test('lists the log of a real repository, newest first', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.write('a.txt', { 'two' })
+    repo.commit('second')
+
+    local commits = assert(git.log(10, repo.root))
+    eq(2, #commits)
+    eq('second', commits[1].subject)
+    eq('first', commits[2].subject)
+    eq({}, commits[2].parents)
+    eq(commits[2].sha, commits[1].parents[1])
+  end)
+end)
+
+-- A root commit has no parent to compare with, so it is the one case that
+-- cannot go through `git diff`.
+test('lists what a root commit added', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.write('b.txt', { 'two' })
+    repo.commit('first')
+
+    local commits = assert(git.log(1, repo.root))
+    local changes = assert(git.changed_in(commits[1], repo.root))
+    eq({ 'A', 'A' }, { changes[1].status, changes[2].status })
+    eq({ 'a.txt', 'b.txt' }, { changes[1].path, changes[2].path })
+  end)
+end)
+
+-- `git diff-tree -m` would emit one diff per parent with nothing to tell the
+-- blocks apart, so the first parent is named explicitly instead.
+test('compares a merge with its first parent only', function()
+  helpers.with_repo(function(repo)
+    repo.write('base.txt', { 'base' })
+    repo.commit('first')
+    repo.git('checkout', '-b', 'side')
+    repo.write('side.txt', { 'side' })
+    repo.commit('on side')
+    repo.git('checkout', '-')
+    repo.write('main.txt', { 'main' })
+    repo.commit('on main')
+    repo.git('merge', '--no-ff', 'side', '-m', 'merge side')
+
+    local commits = assert(git.log(1, repo.root))
+    eq(2, #commits[1].parents)
+    local changes = assert(git.changed_in(commits[1], repo.root))
+    -- Against the first parent only `side.txt` is new; `main.txt` would appear
+    -- as well if the second parent were included.
+    eq(1, #changes)
+    eq('side.txt', changes[1].path)
+  end)
+end)

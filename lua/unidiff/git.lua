@@ -219,22 +219,31 @@ function M.parse_paths(out)
   return paths
 end
 
---- @param args string[] what to compare, as passed to `git diff`
+--- List a change set, whatever command names it.
+---
+--- `git diff` and `git diff-tree` print the same `--name-status` and
+--- `--numstat` records, so both are read by the same parsers and differ only in
+--- how the two sides are named.
+---
+--- @param prefix string[] the git command, up to but not including the format
+--- @param args string[] what to compare, appended after the format flags
 --- @param cwd string
 --- @return unidiff.Change[]? changes
 --- @return string? err why the command failed
-local function diff_changes(args, cwd)
-  local function git_diff(format)
-    return M.run(vim.list_extend({ 'git', 'diff', format, '-z', '--find-renames' }, args), cwd)
+local function changes_of(prefix, args, cwd)
+  local function listing(format)
+    local cmd = vim.list_extend({}, prefix)
+    vim.list_extend(cmd, { format, '-z', '--find-renames' })
+    return M.run(vim.list_extend(cmd, args), cwd)
   end
-  local status = git_diff('--name-status')
+  local status = listing('--name-status')
   if not status.ok then
     return nil, status.stderr
   end
   local changes = M.parse_name_status(status.stdout)
 
   -- A failure here only costs the binary flags, so the listing is still useful.
-  local numstat = git_diff('--numstat')
+  local numstat = listing('--numstat')
   if numstat.ok then
     local binary = M.parse_binary(numstat.stdout)
     for _, c in ipairs(changes) do
@@ -242,6 +251,14 @@ local function diff_changes(args, cwd)
     end
   end
   return changes
+end
+
+--- @param args string[] what to compare, as passed to `git diff`
+--- @param cwd string
+--- @return unidiff.Change[]? changes
+--- @return string? err why the command failed
+local function diff_changes(args, cwd)
+  return changes_of({ 'git', 'diff' }, args, cwd)
 end
 
 --- List everything that differs between `rev` and the working tree.
@@ -341,6 +358,84 @@ function M.remove_index_entry(path, cwd)
     return nil
   end
   return res.stderr
+end
+
+--- @class unidiff.Commit
+--- @field sha string abbreviated
+--- @field parents string[] abbreviated; empty for the root commit
+--- @field subject string
+--- @field author string
+--- @field when string relative date, as `%ar` prints it
+
+--- `-z` already spends NUL on separating the records, so the fields within one
+--- are separated by a unit separator: a subject can hold anything but a
+--- newline, and that includes every other plausible delimiter.
+local LOG_FORMAT = '%h%x1f%p%x1f%s%x1f%an%x1f%ar'
+
+--- Parse the stream `git log -z --format=LOG_FORMAT` writes.
+---
+--- `-z` terminates every record rather than delimiting between them, so the
+--- last field is empty and is dropped, as in `parse_paths`. `%p` is a
+--- space-separated parent list and is empty for the root commit.
+---
+--- @param out string
+--- @return unidiff.Commit[]
+function M.parse_log(out)
+  local commits = {}
+  for _, rec in ipairs(vim.split(out, '\0', { plain = true })) do
+    if rec ~= '' then
+      local f = vim.split(rec, '\31', { plain = true })
+      commits[#commits + 1] = {
+        sha = f[1],
+        parents = (f[2] and f[2] ~= '') and vim.split(f[2], ' ', { plain = true }) or {},
+        subject = f[3] or '',
+        author = f[4] or '',
+        when = f[5] or '',
+      }
+    end
+  end
+  return commits
+end
+
+--- The most recent commits, newest first.
+---
+--- A repository with no HEAD has no log, and `git log` fails outright there
+--- rather than printing nothing, so the caller has to know whether there is a
+--- HEAD before asking.
+---
+--- @param count integer how many to ask for
+--- @param cwd string
+--- @return unidiff.Commit[]? commits
+--- @return string? err
+function M.log(count, cwd)
+  local res = M.run({ 'git', 'log', '-z', '--format=' .. LOG_FORMAT, '-n', tostring(count) }, cwd)
+  if not res.ok then
+    return nil, res.stderr
+  end
+  return M.parse_log(res.stdout)
+end
+
+--- What a commit changed, against its first parent.
+---
+--- A merge is compared with its first parent only, which is what `git show`
+--- does. `git diff-tree -m` would instead concatenate one diff per parent, and
+--- `--no-commit-id` removes the headers that would tell the blocks apart;
+--- `--first-parent` is a rev-list option that `diff-tree` rejects. Naming the
+--- parent explicitly avoids the question.
+---
+--- The root commit has no parent to name, and is the one case that needs
+--- `diff-tree --root`.
+---
+--- @param commit unidiff.Commit
+--- @param cwd string
+--- @return unidiff.Change[]? changes
+--- @return string? err
+function M.changed_in(commit, cwd)
+  local parent = commit.parents[1]
+  if not parent then
+    return changes_of({ 'git', 'diff-tree', '--no-commit-id', '-r', '--root' }, { commit.sha }, cwd)
+  end
+  return diff_changes({ parent, commit.sha }, cwd)
 end
 
 --- Files git is not tracking and has not been told to ignore.
