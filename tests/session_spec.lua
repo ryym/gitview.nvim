@@ -765,3 +765,87 @@ test('session: staging is refused while a commit file is selected', function()
     eq(before, repo.git('status', '--short'))
   end)
 end)
+
+--- A history whose diffs are long enough for a position in them to matter, and
+--- an uncommitted change of the same size.
+local function long_history(repo)
+  local function numbered(word)
+    local lines = {}
+    for i = 1, 40 do
+      lines[i] = ('%s %d'):format(word, i)
+    end
+    return lines
+  end
+  repo.write('a.txt', numbered('line'))
+  repo.commit('first')
+  repo.write('a.txt', numbered('edited'))
+  repo.commit('second')
+  repo.write('a.txt', numbered('again'))
+end
+
+--- Where the diff pane is looking.
+--- @param s unidiff.Session
+--- @return integer row
+local function diff_row(s)
+  return vim.api.nvim_win_get_cursor(s.diff_win)[1]
+end
+
+-- The pane is one buffer for the life of the session, so a position in it
+-- outlives the contents it belonged to. Merely clamping it leaves a shorter
+-- diff opening at its end.
+test('session: showing something else puts the diff pane back at the start', function()
+  with_session(long_history, function(s)
+    show_commit(s, 1)
+    assert(vim.api.nvim_buf_line_count(s.diff_buf) > 50, 'the fixture should be long')
+    vim.api.nvim_win_set_cursor(s.diff_win, { 50, 0 })
+    show_commit(s, 2)
+    eq(1, diff_row(s))
+  end)
+end)
+
+test('session: moving to another file puts the diff pane back at the start', function()
+  with_session(long_history, function(s, repo)
+    repo.write('b.txt', { 'new' })
+    session.refresh(s)
+    session.select(s, 1)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 30, 0 })
+    session.select(s, 2)
+    eq(1, diff_row(s))
+  end)
+end)
+
+-- Staging a hunk redraws the same file, and being thrown back to the top on
+-- every `s` would make working down a diff impossible.
+test('session: staging keeps the position in the diff', function()
+  with_session(long_history, function(s)
+    session.select(s, 1)
+    local row = changed_row(s, 'again 20')
+    put_cursor(s, row)
+    press_diff(s, 's')
+    eq('staged', require('unidiff.diff.render').views[s.diff_buf].lines[row].stage)
+    eq(row, diff_row(s))
+  end)
+end)
+
+test('session: a refresh that changes nothing keeps the position in the diff', function()
+  with_session(long_history, function(s)
+    session.select(s, 1)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 25, 0 })
+    session.refresh(s)
+    eq(25, diff_row(s))
+  end)
+end)
+
+-- A file keeps its place even when a refresh moves it to another index, which
+-- is why what is shown is compared rather than the selection itself.
+test('session: the position survives a file moving in the list', function()
+  with_session(long_history, function(s, repo)
+    session.select(s, 1)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 25, 0 })
+    repo.write('0-first.txt', { 'new' })
+    session.refresh(s)
+    eq(2, selected(s))
+    eq('a.txt', s.entries[selected(s)].path)
+    eq(25, diff_row(s))
+  end)
+end)

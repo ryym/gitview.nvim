@@ -76,6 +76,17 @@ selection. Making a buffer per file and swapping it into the window would fire
 the `Buf*` autocommands, disturb the alternate buffer and the jumplist, and
 leave the old buffer to dispose of — on every cursor movement in the list.
 
+What one buffer costs is that a position in it outlives the contents it belonged
+to. Replacing the text only clamps the cursor to the new line count, so a short
+diff drawn after a long one opens at its end. The pane is therefore put back to
+its start whenever what it shows changes, and left alone whenever it does not:
+staging a hunk redraws the same file, and being thrown back to the top on every
+`s` would make working down a diff impossible.
+
+Which of the two it is is decided by comparing what is shown — a kind and a path
+or sha — rather than the selection itself, because a refresh can move a file to
+another index while it goes on being the same file.
+
 Each file is read as three versions and shown through `diff/mixed`, the same
 view `:UnidiffMixed` uses, so the choice between staged and unstaged never has
 to be made. Three things a view cannot express — a binary file, a change with no
@@ -390,6 +401,7 @@ everything still looks right.
 | A commit's view reads neither side from the working tree                | `session_spec`                                   |
 | Nothing is staged while a commit or one of its files is selected        | `session_spec`                                   |
 | Looking into a commit replaces the list rather than extending it         | `list_spec`                                      |
+| The diff pane restarts at the top unless it is redrawing the same thing  | `session_spec`                                   |
 | Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
 
 ## Deliberate omissions

@@ -31,6 +31,8 @@ local M = {}
 --- @field scope unidiff.ListScope? the commit being looked into, whose files
 ---        replace the list while it is set
 --- @field selected unidiff.ListTarget? what the diff pane is showing
+--- @field shown unidiff.SelectionId? what it is currently showing, so that
+---        redrawing the same thing can keep the scroll position
 --- @field generation integer bumped by every draw, so a deferred one can tell
 ---        whether it is still wanted
 --- @field has_head boolean whether the repository has a commit; re-read on refresh
@@ -48,6 +50,45 @@ end
 --- What the diff pane compares. Unlike the diff commands there is no choice of
 --- revision here: the point of the view is what has not been committed.
 local REV = 'HEAD, staged + unstaged'
+
+--- @alias unidiff.SelectionId {kind:'file'|'commit'|'commit_file', id:string}
+
+--- @param s unidiff.Session
+--- @return unidiff.SelectionId?
+local function selection_id(s)
+  local t = s.selected
+  if not t then
+    return nil
+  end
+  local named = ({
+    file = function()
+      local e = s.entries[t.index]
+      return e and e.path
+    end,
+    commit = function()
+      local c = s.commits[t.index]
+      return c and c.sha
+    end,
+    commit_file = function()
+      local c = s.scope and s.scope.changes[t.index]
+      return c and c.path
+    end,
+  })[t.kind]()
+  return named and { kind = t.kind, id = named } or nil
+end
+
+--- Put the diff pane back at the start.
+---
+--- The pane is one buffer for the life of the session, so a position in it
+--- outlives the contents it belonged to. Without this, a shorter diff drawn
+--- after a longer one opens at its end rather than its beginning, because the
+--- cursor is merely clamped to the new line count.
+--- @param s unidiff.Session
+local function reset_view(s)
+  if vim.api.nvim_win_is_valid(s.diff_win) then
+    vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
+  end
+end
 
 --- The commit list, or nothing when there is no HEAD to read one from.
 ---
@@ -150,6 +191,21 @@ end
 --- @param s unidiff.Session
 function M.show_selected(s)
   s.index_lines = nil
+
+  -- Redrawing the same thing keeps the position in it: that is what staging a
+  -- hunk does, and being thrown back to the top on every `s` would make working
+  -- down a diff impossible. Anything else is new contents in a reused buffer,
+  -- where an inherited position means nothing.
+  --
+  -- The comparison is by what is shown rather than by the target, because a
+  -- refresh can move a file to another index while it goes on being the same
+  -- file.
+  local id = selection_id(s)
+  if not vim.deep_equal(id, s.shown) then
+    reset_view(s)
+  end
+  s.shown = id
+
   local target = s.selected
   if not target then
     render.notice(s.diff_buf, list.EMPTY_NOTICE)
@@ -273,32 +329,6 @@ end
 --- again: the file section changes length, which moves every commit row below
 --- it, and a file removed from the list shifts the indices of the rest.
 ---
---- @alias unidiff.SelectionId {kind:'file'|'commit'|'commit_file', id:string}
-
---- @param s unidiff.Session
---- @return unidiff.SelectionId?
-local function selection_id(s)
-  local t = s.selected
-  if not t then
-    return nil
-  end
-  local named = ({
-    file = function()
-      local e = s.entries[t.index]
-      return e and e.path
-    end,
-    commit = function()
-      local c = s.commits[t.index]
-      return c and c.sha
-    end,
-    commit_file = function()
-      local c = s.scope and s.scope.changes[t.index]
-      return c and c.path
-    end,
-  })[t.kind]()
-  return named and { kind = t.kind, id = named } or nil
-end
-
 --- The reverse of `selection_id` against the lists as they now are.
 --- @param s unidiff.Session
 --- @param id unidiff.SelectionId?
