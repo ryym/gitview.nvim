@@ -194,4 +194,16 @@ function M.label(e)
   return e.path
 end
 
+--- The same for a change, which names its two sides differently. Both labels
+--- live here because the list, a view's file header and the notice shown in
+--- place of a diff all have to agree on what a file is called.
+--- @param c unidiff.Change
+--- @return string
+function M.change_label(c)
+  if c.status == 'R' or c.status == 'C' then
+    return ('%s -> %s'):format(c.old_path, c.path)
+  end
+  return c.path
+end
+
 return M
