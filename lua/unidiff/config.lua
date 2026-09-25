@@ -8,6 +8,7 @@ local M = {}
 --- @field algorithm string vim.diff() algorithm
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
 --- @field list_width integer columns for the file list in `:UnidiffStatus`
+--- @field commit_count integer how many recent commits `:UnidiffStatus` lists
 
 --- @type unidiff.Config
 M.values = {
@@ -16,6 +17,7 @@ M.values = {
   algorithm = 'histogram',
   linematch = 0,
   list_width = 30,
+  commit_count = 20,
 }
 
 --- @param opts? unidiff.Config

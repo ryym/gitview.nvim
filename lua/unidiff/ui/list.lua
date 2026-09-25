@@ -8,27 +8,125 @@ local status = require('unidiff.status')
 
 local M = {}
 
---- @class unidiff.ListContent
---- @field lines string[] one per buffer row
---- @field rows table<integer, integer> 1-based row -> index into the entries;
----        a row standing for no entry, such as the empty notice, is absent
+local ns = vim.api.nvim_create_namespace('unidiff.ui.list')
+
+--- @class unidiff.ListScope the commit the list is looking into, in place of
+--- the uncommitted changes
+--- @field commit unidiff.Commit
+--- @field changes unidiff.Change[] what it changed
+
+--- @class unidiff.ListModel what the list is showing
+--- @field root string repository root
+--- @field entries unidiff.StatusEntry[]? the uncommitted changes
+--- @field commits unidiff.Commit[]? the tail of the history
+--- @field scope unidiff.ListScope? shown instead of both of the above
+
+--- @class unidiff.ListTarget what a row stands for
+--- @field kind 'file'|'commit'|'commit_file'
+--- @field index integer into the entries, the commits, or the scope's changes
+
+--- @class unidiff.ListRow
+--- @field text string the buffer line, which is the thing itself
+--- @field gutter string? what `'statuscolumn'` draws, highlight groups included
+--- @field target unidiff.ListTarget? absent on a row standing for nothing
+--- @field header boolean? a section label rather than content
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
 M.EMPTY_NOTICE = 'no uncommitted changes'
 
---- @param entries unidiff.StatusEntry[]
---- @return unidiff.ListContent
-function M.content(entries)
+--- Names the section below it. Like the empty notice it stands for nothing, so
+--- nothing resolves it to an entry or a commit.
+M.COMMITS_HEADER = 'commits'
+
+--- Shown in place of the file list of a commit that changed nothing, which
+--- `git commit --allow-empty` makes.
+M.EMPTY_COMMIT_NOTICE = 'this commit changed nothing'
+
+--- Two status letters and a space. A row with no entry keeps the width so the
+--- paths stay in one column.
+local BLANK_GUTTER = '   '
+
+--- The gutter is computed when the row is built rather than when the screen
+--- line is drawn, because rows no longer all stand for the same kind of thing:
+--- an entry has two status letters, a commit has none, and `'statuscolumn'`
+--- would otherwise have to know about every kind.
+--- @param e unidiff.StatusEntry
+--- @return string
+local function gutter_of(e)
+  if e.index_status == '?' then
+    return '%#UnidiffStatusUntracked#?? '
+  end
+  return ('%%#UnidiffStatusStaged#%s%%#UnidiffStatusUnstaged#%s '):format(
+    e.index_status,
+    e.worktree_status
+  )
+end
+
+--- The files one commit changed, in place of the whole list.
+---
+--- A commit's changes and the uncommitted entries are different shapes, so they
+--- are never mixed into one buffer: looking into a commit replaces the list
+--- rather than extending it.
+--- @param scope unidiff.ListScope
+--- @return unidiff.ListRow[]
+local function scope_rows(scope)
+  local rows = {
+    { text = ('%s %s'):format(scope.commit.sha, scope.commit.subject), header = true },
+  }
+  if #scope.changes == 0 then
+    rows[#rows + 1] = { text = M.EMPTY_COMMIT_NOTICE }
+    return rows
+  end
+  for i, c in ipairs(scope.changes) do
+    rows[#rows + 1] = {
+      text = status.change_label(c),
+      -- One letter, in the color the list already uses for a settled change,
+      -- padded to the width the two letters of an entry take.
+      gutter = ('%%#UnidiffStatusStaged#%s  '):format(c.status),
+      target = { kind = 'commit_file', index = i },
+    }
+  end
+  return rows
+end
+
+--- @param model unidiff.ListModel
+--- @return unidiff.ListRow[]
+function M.content(model)
+  if model.scope then
+    return scope_rows(model.scope)
+  end
+  local rows = {}
+  local function add(row)
+    rows[#rows + 1] = row
+  end
+
+  local entries = model.entries or {}
   if #entries == 0 then
-    return { lines = { M.EMPTY_NOTICE }, rows = {} }
+    add({ text = M.EMPTY_NOTICE })
+  else
+    for i, e in ipairs(entries) do
+      add({
+        text = status.label(e),
+        gutter = gutter_of(e),
+        target = { kind = 'file', index = i },
+      })
+    end
   end
-  local lines, rows = {}, {}
-  for i, e in ipairs(entries) do
-    lines[i] = status.label(e)
-    rows[i] = i
+
+  for i, c in ipairs(model.commits or {}) do
+    if i == 1 then
+      -- A blank row keeps the header off the last file, the way a view
+      -- separates one file from the next.
+      add({ text = '' })
+      add({ text = M.COMMITS_HEADER, header = true })
+    end
+    add({
+      text = ('%s %s'):format(c.sha, c.subject),
+      target = { kind = 'commit', index = i },
+    })
   end
-  return { lines = lines, rows = rows }
+  return rows
 end
 
 local highlights_ready = false
@@ -62,13 +160,9 @@ function M.ensure_highlights_reset()
 end
 
 --- Sessions by the buffer holding their list, so that `'statuscolumn'` can find
---- the entry a screen line belongs to. Filled in by `ui.session`.
---- @type table<integer, {root:string, entries:unidiff.StatusEntry[], rows:table<integer,integer>}>
+--- what a screen line belongs to. Filled in by `ui.session`.
+--- @type table<integer, unidiff.ListModel|{rows:unidiff.ListRow[]}>
 M.state = {}
-
---- Two status letters and a space. A row with no entry keeps the width so the
---- paths stay in one column.
-local BLANK_GUTTER = '   '
 
 --- @return string
 function M.statuscolumn()
@@ -77,20 +171,11 @@ function M.statuscolumn()
   if vim.v.virtnum ~= 0 or not state then
     return BLANK_GUTTER
   end
-  local entry = state.entries[state.rows[vim.v.lnum]]
-  if not entry then
-    return BLANK_GUTTER
-  end
-  if entry.index_status == '?' then
-    return '%#UnidiffStatusUntracked#?? '
-  end
-  return ('%%#UnidiffStatusStaged#%s%%#UnidiffStatusUnstaged#%s '):format(
-    entry.index_status,
-    entry.worktree_status
-  )
+  local row = state.rows[vim.v.lnum]
+  return row and row.gutter or BLANK_GUTTER
 end
 
---- Names the repository and how much is uncommitted.
+--- Names the repository and how much it is showing.
 --- @return string
 function M.winbar()
   local win = vim.g.statusline_winid
@@ -98,10 +183,12 @@ function M.winbar()
   if not state then
     return ''
   end
-  local text = (' %s   %d file%s'):format(
+  local count = state.scope and #state.scope.changes or #state.entries
+  local text = (' %s%s   %d file%s'):format(
     vim.fs.basename(state.root),
-    #state.entries,
-    #state.entries == 1 and '' or 's'
+    state.scope and '   ' .. state.scope.commit.sha or '',
+    count,
+    count == 1 and '' or 's'
   )
   return '%#UnidiffStatusHeader#' .. text:gsub('%%', '%%%%')
 end
@@ -123,15 +210,37 @@ function M.create_buffer()
 end
 
 --- @param buf integer from `create_buffer`
---- @param root string repository root
---- @param entries unidiff.StatusEntry[]
-function M.draw(buf, root, entries)
-  local content = M.content(entries)
+--- @param model unidiff.ListModel
+function M.draw(buf, model)
+  local rows = M.content(model)
+  local texts = {}
+  for i, r in ipairs(rows) do
+    texts[i] = r.text
+  end
+
   vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, content.lines)
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
+  for i, r in ipairs(rows) do
+    if r.header then
+      -- Only the label is highlighted, not the rest of the line: there is no
+      -- row after it to end an `hl_eol` range on when the header is last.
+      vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, {
+        end_row = i - 1,
+        end_col = #r.text,
+        hl_group = 'UnidiffStatusHeader',
+      })
+    end
+  end
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
-  M.state[buf] = { root = root, entries = entries, rows = content.rows }
+  M.state[buf] = {
+    root = model.root,
+    entries = model.entries or {},
+    commits = model.commits or {},
+    scope = model.scope,
+    rows = rows,
+  }
 end
 
 --- @param win integer
@@ -150,41 +259,56 @@ function M.configure_window(win, width)
   vim.wo[win].winfixwidth = true
 end
 
---- Which entry a row stands for, if it stands for one.
+--- What a row stands for, if it stands for anything.
 --- @param buf integer
 --- @param row integer 1-based
---- @return integer? index into the entries
-function M.index_at(buf, row)
+--- @return unidiff.ListTarget?
+function M.target_at(buf, row)
   local state = M.state[buf]
-  return state and state.rows[row] or nil
+  local r = state and state.rows[row]
+  return r and r.target or nil
 end
 
---- The entry a row stands for, if it stands for one.
+--- The entry a row stands for, if it stands for a file.
 --- @param buf integer
 --- @param row integer 1-based
 --- @return unidiff.StatusEntry?
 function M.entry_at(buf, row)
-  local index = M.index_at(buf, row)
-  local state = M.state[buf]
-  return index and state.entries[index] or nil
-end
-
---- Where an entry is shown. The reverse of `index_at`, for moving the cursor to
---- a file chosen from somewhere other than the list itself.
---- @param buf integer
---- @param index integer into the entries
---- @return integer? row 1-based
-function M.row_of(buf, index)
-  local state = M.state[buf]
-  if not state then
+  local target = M.target_at(buf, row)
+  if not target or target.kind ~= 'file' then
     return nil
   end
-  for row, i in pairs(state.rows) do
-    if i == index then
+  return M.state[buf].entries[target.index]
+end
+
+--- Where a target is shown. The reverse of `target_at`, for moving the cursor
+--- to something chosen from outside the list.
+--- @param buf integer
+--- @param target unidiff.ListTarget?
+--- @return integer? row 1-based
+function M.row_of(buf, target)
+  local state = M.state[buf]
+  if not state or not target then
+    return nil
+  end
+  for row, r in ipairs(state.rows) do
+    if r.target and r.target.kind == target.kind and r.target.index == target.index then
       return row
     end
   end
   return nil
+end
+
+--- Whether two targets name the same thing. They are compared by value because
+--- each lookup builds a fresh table.
+--- @param a unidiff.ListTarget?
+--- @param b unidiff.ListTarget?
+--- @return boolean
+function M.same_target(a, b)
+  if not a or not b then
+    return a == nil and b == nil
+  end
+  return a.kind == b.kind and a.index == b.index
 end
 
 return M

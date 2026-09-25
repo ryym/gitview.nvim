@@ -30,10 +30,35 @@ local function with_session(setup, fn)
   end)
 end
 
+--- The file section of the list. The commit section below it, and the blank
+--- row separating the two, have tests of their own.
 --- @param s unidiff.Session
 --- @return string[]
 local function rows(s)
+  local out = {}
+  for _, r in ipairs(list.state[s.list_buf].rows) do
+    if r.header then
+      break
+    end
+    if r.text ~= '' then
+      out[#out + 1] = r.text
+    end
+  end
+  return out
+end
+
+--- Every row of the list, whatever it stands for.
+--- @param s unidiff.Session
+--- @return string[]
+local function rows_all(s)
   return vim.api.nvim_buf_get_lines(s.list_buf, 0, -1, false)
+end
+
+--- Which file is selected, for the tests that only care about that.
+--- @param s unidiff.Session
+--- @return integer?
+local function selected(s)
+  return s.selected and s.selected.index or nil
 end
 
 local function base(repo)
@@ -68,8 +93,8 @@ test('session: refreshing picks up changes made since', function()
   end)
 end)
 
--- A refresh usually shortens the list, and a cursor past the end of a buffer is
--- an error the next time anything reads it.
+-- A refresh usually shortens the file section, and the cursor must not be left
+-- past the end of the buffer, nor on one of the rows that stand for nothing.
 test('session: refreshing pulls the cursor back inside the list', function()
   with_session(base, function(s, repo)
     vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 })
@@ -191,7 +216,7 @@ end
 
 test('session: opens showing the first entry', function()
   with_session(two, function(s)
-    eq(1, s.selected)
+    eq(1, selected(s))
     local text = table.concat(diff_rows(s), '\n')
     assert(text:find('return 3', 1, true), text)
     -- one diff carries both layers, which is the whole point of the model
@@ -211,7 +236,7 @@ test('session: selecting another file redraws the same buffer', function()
   with_session(two, function(s)
     local buf = s.diff_buf
     session.select(s, 2)
-    eq(2, s.selected)
+    eq(2, selected(s))
     eq(buf, s.diff_buf)
     eq(buf, vim.api.nvim_win_get_buf(s.diff_win))
     eq({ 'b.lua', 'return 9' }, diff_rows(s))
@@ -223,7 +248,7 @@ test('session: moving the list cursor selects', function()
     vim.api.nvim_set_current_win(s.list_win)
     vim.api.nvim_win_set_cursor(s.list_win, { 2, 0 })
     vim.api.nvim_exec_autocmds('CursorMoved', { buffer = s.list_buf })
-    eq(2, s.selected)
+    eq(2, selected(s))
     eq({ 'b.lua', 'return 9' }, diff_rows(s))
   end)
 end)
@@ -231,10 +256,10 @@ end)
 test('session: selecting past either end stays on the last file', function()
   with_session(two, function(s)
     session.select(s, 99)
-    eq(2, s.selected)
+    eq(2, selected(s))
     eq(2, vim.api.nvim_win_get_cursor(s.list_win)[1])
     session.select(s, -5)
-    eq(1, s.selected)
+    eq(1, selected(s))
   end)
 end)
 
@@ -267,7 +292,7 @@ test('session: an empty repository says so in both panes', function()
     repo.commit('init')
   end, function(s)
     eq({ list.EMPTY_NOTICE }, diff_rows(s))
-    eq(nil, s.selected)
+    eq(nil, selected(s))
   end)
 end)
 
@@ -277,7 +302,7 @@ test('session: refreshing rebuilds the diff of the selected file', function()
   with_session(two, function(s, repo)
     repo.write('a.lua', { 'return 4' })
     session.refresh(s)
-    eq(1, s.selected)
+    eq(1, selected(s))
     local text = table.concat(diff_rows(s), '\n')
     assert(text:find('return 4', 1, true), text)
   end)
@@ -336,8 +361,8 @@ test('session: staging leaves the cursor on the same file', function()
   with_session(base, function(s)
     session.select(s, 2)
     press(s, 's')
-    eq(2, s.selected)
-    eq('loose.txt', s.entries[s.selected].path)
+    eq(2, selected(s))
+    eq('loose.txt', s.entries[selected(s)].path)
   end)
 end)
 
@@ -547,5 +572,196 @@ test('session: `u` in the list refuses a conflict, `s` resolves it', function()
     press(s, 's')
     eq('M  fight.txt\n', repo.git('status', '--short'))
     eq('', repo.git('ls-files', '-u'))
+  end)
+end)
+
+--- A repository with a history worth listing: two commits, and one uncommitted
+--- change so that the file section is not empty either.
+local function history(repo)
+  repo.write('a.lua', { 'return 1' })
+  repo.commit('first')
+  repo.write('a.lua', { 'return 2' })
+  repo.write('added.lua', { 'return 9' })
+  repo.commit('second')
+  repo.write('a.lua', { 'return 3' })
+end
+
+--- Put the cursor on a commit row and draw it. `sync_selection` defers a commit
+--- so that sweeping the list does not build one view per row; the tests assert
+--- what is drawn, not when.
+--- @param s unidiff.Session
+--- @param index integer into the commits
+local function show_commit(s, index)
+  local row = assert(list.row_of(s.list_buf, { kind = 'commit', index = index }))
+  vim.api.nvim_win_set_cursor(s.list_win, { row, 0 })
+  s.selected = { kind = 'commit', index = index }
+  session.show_selected(s)
+end
+
+test('session: lists the recent commits below the files', function()
+  with_session(history, function(s)
+    eq({ 'second', 'first' }, vim.tbl_map(function(c)
+      return c.subject
+    end, s.commits))
+    local rows = list.state[s.list_buf].rows
+    eq('a.lua', rows[1].text)
+    eq(list.COMMITS_HEADER, rows[3].text)
+    eq({ kind = 'commit', index = 1 }, rows[4].target)
+  end)
+end)
+
+-- A repository with no commit has no log to read, and `git log` fails there
+-- rather than printing nothing.
+test('session: a repository with no HEAD lists no commits', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'x' })
+  end, function(s)
+    eq({}, s.commits)
+    eq(false, s.has_head)
+  end)
+end)
+
+test('session: selecting a commit shows what it changed', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    local text = table.concat(diff_rows(s), '\n')
+    -- both sides come from the object database, so the working tree's
+    -- `return 3` must not appear
+    assert(text:find('return 1', 1, true), text)
+    assert(text:find('return 2', 1, true), text)
+    assert(not text:find('return 3', 1, true), text)
+    assert(text:find('added.lua', 1, true), text)
+  end)
+end)
+
+-- The root commit adds every file it lists, so it never names the parent it
+-- does not have.
+test('session: the root commit shows its files as additions', function()
+  with_session(history, function(s)
+    show_commit(s, 2)
+    local view = require('unidiff.diff.render').views[s.diff_buf]
+    assert(view, 'the root commit should have a view')
+    for _, l in ipairs(view.lines) do
+      if require('unidiff.diff.lines').source_kinds[l.kind] then
+        eq('add', l.kind)
+      end
+    end
+  end)
+end)
+
+-- Its line numbers are the commit's. Jumping would land on whatever now
+-- occupies that line in the working tree.
+test('session: a commit view is marked historical and is not mixed', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    local view = require('unidiff.diff.render').views[s.diff_buf]
+    eq(true, view.historical)
+    eq(nil, view.mixed)
+  end)
+end)
+
+-- Nothing about a commit is stageable, and the index contents a partial stage
+-- needs are never read for one.
+test('session: staging is refused while a commit is selected', function()
+  with_session(history, function(s, repo)
+    show_commit(s, 1)
+    -- Nothing was read for the index, so nothing can be written back to it.
+    eq(nil, s.index_lines)
+    local before = repo.git('status', '--short')
+    press(s, 's')
+    press(s, 'u')
+    eq(before, repo.git('status', '--short'))
+  end)
+end)
+
+-- Staging a file must not be confused by the commit section sitting below it.
+test('session: the selection survives a refresh that changes the file count', function()
+  with_session(history, function(s, repo)
+    show_commit(s, 2)
+    local sha = s.commits[2].sha
+    repo.write('later.lua', { 'return 0' })
+    session.refresh(s)
+    eq('commit', s.selected.kind)
+    eq(sha, s.commits[s.selected.index].sha)
+  end)
+end)
+
+test('session: looking into a commit lists the files it changed', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    session.enter(s)
+    eq('second', s.scope.commit.subject)
+    eq({ 'a.lua', 'added.lua' }, vim.tbl_map(function(c)
+      return c.path
+    end, s.scope.changes))
+    -- the header names the commit, and the files replace the whole list
+    eq({ s.commits[1].sha .. ' second', 'a.lua', 'added.lua' }, rows_all(s))
+    -- the first file is selected, so the pane shows it rather than nothing
+    eq({ kind = 'commit_file', index = 1 }, s.selected)
+  end)
+end)
+
+test('session: a file of a commit is shown by itself', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    session.enter(s)
+    session.show_selected(s)
+    local view = require('unidiff.diff.render').views[s.diff_buf]
+    eq(1, #view.files)
+    eq('a.lua', view.files[1].label)
+    eq(true, view.historical)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('return 1', 1, true), text)
+    assert(text:find('return 2', 1, true), text)
+    -- the working tree's version is not one of the two being compared
+    assert(not text:find('return 3', 1, true), text)
+  end)
+end)
+
+test('session: backing out returns to the commit that was looked into', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    local sha = s.commits[1].sha
+    session.enter(s)
+    session.leave(s)
+    eq(nil, s.scope)
+    eq({ 'a.lua' }, rows(s))
+    eq({ kind = 'commit', index = 1 }, s.selected)
+    eq(sha, s.commits[s.selected.index].sha)
+  end)
+end)
+
+test('session: backing out of nothing does nothing', function()
+  with_session(history, function(s)
+    session.select(s, 1)
+    session.leave(s)
+    eq(nil, s.scope)
+    eq({ kind = 'file', index = 1 }, s.selected)
+  end)
+end)
+
+-- A commit is immutable, so looking into one survives a refresh. What is
+-- re-read is the state underneath, which is what backing out goes back to.
+test('session: a refresh keeps the commit being looked into', function()
+  with_session(history, function(s, repo)
+    show_commit(s, 1)
+    session.enter(s)
+    repo.write('later.lua', { 'return 0' })
+    session.refresh(s)
+    eq('second', s.scope.commit.subject)
+    eq({ kind = 'commit_file', index = 1 }, s.selected)
+    session.leave(s)
+    eq({ 'a.lua', 'later.lua' }, rows(s))
+  end)
+end)
+
+test('session: staging is refused while a commit file is selected', function()
+  with_session(history, function(s, repo)
+    show_commit(s, 1)
+    session.enter(s)
+    local before = repo.git('status', '--short')
+    press(s, 's')
+    press(s, 'u')
+    eq(before, repo.git('status', '--short'))
   end)
 end)
