@@ -373,7 +373,6 @@ function M.show_selected(s)
     render.notice(s.diff_buf, ('%s   %s'):format(status.label(entry), no_view_reason(s)))
     return
   end
-  view.mixed = true
   view.note = note_of(s)
   render.draw(s.diff_buf, view)
   vlib.dispose(view)

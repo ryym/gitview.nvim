@@ -21,10 +21,14 @@ local M = {}
 function M.build(sources, rev, context, diff_opts)
   local lines, files, hunk_rows = {}, {}, {}
   local unchanged = {}
+  -- A third version is what makes a view mixed, so the sources say so and the
+  -- caller has nothing to add afterwards.
+  local is_mixed = false
 
   for _, src in ipairs(sources) do
     local flines, fhunks
     if src.index_lines then
+      is_mixed = true
       flines, fhunks =
         mixed.build(src.old_lines, src.index_lines, src.new_lines, context, diff_opts)
     else
@@ -75,6 +79,7 @@ function M.build(sources, rev, context, diff_opts)
     files = files,
     hunk_rows = hunk_rows,
     rev = rev,
+    mixed = is_mixed or nil,
   }, unchanged
 end
 

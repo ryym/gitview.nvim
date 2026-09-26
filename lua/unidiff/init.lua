@@ -132,7 +132,6 @@ function M.open_mixed(opts)
     end
     return
   end
-  view.mixed = true
   view.rev = 'HEAD, staged + unstaged'
   view.note = vlib.skipped_note(skipped, #unchanged)
   return open_in_tab(view, 'unidiff://mixed')
