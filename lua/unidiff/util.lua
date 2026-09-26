@@ -105,4 +105,14 @@ function M.scratch_buffer(filetype, states)
   return buf
 end
 
+--- Map normal-mode keys in one buffer, with every description carrying the
+--- plugin's prefix so that `:map` and which-key say where a key came from.
+--- @param buf integer
+--- @return fun(lhs: string, fn: fun(), desc: string, modes?: string[])
+function M.buf_mapper(buf)
+  return function(lhs, fn, desc, modes)
+    vim.keymap.set(modes or 'n', lhs, fn, { buffer = buf, desc = PREFIX .. desc })
+  end
+end
+
 return M

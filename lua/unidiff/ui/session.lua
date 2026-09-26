@@ -768,14 +768,15 @@ end
 --- whole change the cursor is in.
 --- @param s unidiff.Session
 local function set_diff_stage_keymaps(s)
+  local map = util.buf_mapper(s.diff_buf)
   for _, op in ipairs({ 'stage', 'unstage' }) do
     local lhs = op == 'stage' and 's' or 'u'
     for _, mode in ipairs({ 'n', 'x' }) do
-      vim.keymap.set(mode, lhs, function()
+      map(lhs, function()
         apply_to_rows(s, op, pressed_rows(mode == 'x'))
-      end, { buffer = s.diff_buf, desc = ('unidiff: %s the selected lines'):format(op) })
+      end, ('%s the selected lines'):format(op), { mode })
     end
-    vim.keymap.set('n', lhs:upper(), function()
+    map(lhs:upper(), function()
       local view = render.views[s.diff_buf]
       local first, last = index.hunk_at(view and view.lines or {}, vim.fn.line('.'))
       if not first then
@@ -783,7 +784,7 @@ local function set_diff_stage_keymaps(s)
         return
       end
       apply_to_rows(s, op, first, last)
-    end, { buffer = s.diff_buf, desc = ('unidiff: %s this hunk'):format(op) })
+    end, ('%s this hunk'):format(op))
   end
 end
 
@@ -791,38 +792,34 @@ end
 --- @param s unidiff.Session
 --- @param buf integer
 local function set_shared_keymaps(s, buf)
-  local map = function(lhs, fn, desc)
-    vim.keymap.set('n', lhs, fn, { buffer = buf, desc = desc })
-  end
+  local map = util.buf_mapper(buf)
   map('R', function()
     M.refresh(s)
-  end, 'unidiff: refresh')
+  end, 'refresh')
   map('q', function()
     M.close(s)
-  end, 'unidiff: close')
+  end, 'close')
 end
 
 --- What the keys do in the files pane.
 --- @param s unidiff.Session
 local function set_files_keymaps(s)
-  local map = function(lhs, fn, desc)
-    vim.keymap.set('n', lhs, fn, { buffer = s.files_buf, desc = desc })
-  end
+  local map = util.buf_mapper(s.files_buf)
   map('<CR>', function()
     vim.api.nvim_set_current_win(s.diff_win)
-  end, 'unidiff: focus the diff')
+  end, 'focus the diff')
   -- `s` and `u` rather than one key toggling: a file with changes on both sides
   -- has no obvious sense in which it is on or off, and a row here states that
   -- state rather than hiding it, so the direction is given explicitly.
   map('s', function()
     apply_to_selected(s, stage.stage)
-  end, 'unidiff: stage the file under the cursor')
+  end, 'stage the file under the cursor')
   map('u', function()
     apply_to_selected(s, stage.unstage)
-  end, 'unidiff: unstage the file under the cursor')
+  end, 'unstage the file under the cursor')
   map('o', function()
     M.edit_entry(s)
-  end, 'unidiff: edit the file under the cursor')
+  end, 'edit the file under the cursor')
   set_shared_keymaps(s, s.files_buf)
 end
 
@@ -835,9 +832,7 @@ end
 ---
 --- @param s unidiff.Session
 local function set_commits_keymaps(s)
-  local map = function(lhs, fn, desc)
-    vim.keymap.set('n', lhs, fn, { buffer = s.commits_buf, desc = desc })
-  end
+  local map = util.buf_mapper(s.commits_buf)
   map('<CR>', function()
     -- On a commit there is somewhere further in to go; on one of its files the
     -- row already names what the diff is showing.
@@ -846,17 +841,17 @@ local function set_commits_keymaps(s)
       return
     end
     M.enter(s)
-  end, 'unidiff: look into the commit or range, or focus the diff')
+  end, 'look into the commit or range, or focus the diff')
   map('<BS>', function()
     M.leave(s)
-  end, 'unidiff: back out of the commit')
+  end, 'back out of the commit')
   map('m', function()
     M.toggle_mark(s)
-  end, 'unidiff: mark this commit as the far end of a range')
+  end, 'mark this commit as the far end of a range')
   for _, lhs in ipairs({ 's', 'u' }) do
     map(lhs, function()
       util.info('only an uncommitted file can be staged')
-    end, 'unidiff: nothing to stage here')
+    end, 'nothing to stage here')
   end
   set_shared_keymaps(s, s.commits_buf)
 end
@@ -870,9 +865,9 @@ end
 --- @param s unidiff.Session
 local function set_whitespace_keymap(s)
   for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
-    vim.keymap.set('n', 'gw', function()
+    util.buf_mapper(buf)('gw', function()
       M.toggle_whitespace(s)
-    end, { buffer = buf, desc = 'unidiff: toggle ignoring whitespace' })
+    end, 'toggle ignoring whitespace')
   end
 end
 
