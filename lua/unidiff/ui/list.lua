@@ -194,17 +194,7 @@ end
 --- @return integer bufnr
 function M.create_buffer()
   M.setup_highlights()
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = 'nofile'
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = 'unidiffstatus'
-  vim.api.nvim_create_autocmd('BufWipeout', {
-    buffer = buf,
-    callback = function()
-      M.state[buf] = nil
-    end,
-  })
-  return buf
+  return util.scratch_buffer('unidiffstatus', M.state)
 end
 
 --- @param buf integer from `create_buffer`

@@ -130,19 +130,7 @@ end
 --- keystroke of a file list.
 --- @return integer bufnr
 function M.create_buffer()
-  local buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[buf].buftype = 'nofile'
-  vim.bo[buf].swapfile = false
-  vim.bo[buf].filetype = 'unidiff'
-  -- Registered here rather than in `draw`, where it would stack up one
-  -- subscription per redraw.
-  vim.api.nvim_create_autocmd('BufWipeout', {
-    buffer = buf,
-    callback = function()
-      M.views[buf] = nil
-    end,
-  })
-  return buf
+  return util.scratch_buffer('unidiff', M.views)
 end
 
 --- Replace whatever `buf` holds with `view`.
