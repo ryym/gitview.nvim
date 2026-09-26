@@ -42,8 +42,7 @@ end
 --- @param name string
 --- @return integer bufnr
 local function open_in_tab(view, name)
-  local buf = render.create_buffer()
-  render.draw(buf, view)
+  local buf = render.render(view)
   vlib.dispose(view)
 
   vim.api.nvim_buf_set_name(buf, unique_name(name))
