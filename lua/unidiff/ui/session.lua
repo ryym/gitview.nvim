@@ -882,7 +882,7 @@ local function set_diff_keymaps(s)
       -- moving between files there means scrolling within it rather than moving
       -- the list's cursor. Every other view holds one file.
       if t and t.kind == 'commit' then
-        keymap.jump(dir, 'files')
+        keymap.jump_files(dir)
         return
       end
       local kind = t and t.kind == 'commit_file' and 'commit_file' or 'file'

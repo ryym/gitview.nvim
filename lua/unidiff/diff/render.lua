@@ -23,7 +23,8 @@ M.views = {}
 --- @class unidiff.View
 --- @field lines unidiff.Line[]
 --- @field files unidiff.File[]
---- @field hunk_rows integer[]
+--- @field hunk_rows integer[] rows worth jumping between, ascending
+--- @field file_rows integer[] the rows of `files`' header lines, ascending
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
 --- @field mixed boolean? staged and unstaged changes in one view; see unidiff.diff.mixed

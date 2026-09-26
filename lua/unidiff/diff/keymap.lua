@@ -16,31 +16,47 @@ local M = {}
 --- @field goto_file fun(dir: 1|-1) what `]f` and `[f` do
 --- @field before_jump fun() run before `<CR>` opens the file the cursor is in
 
---- @param dir 1|-1
---- @param field 'hunk_rows'|'files'
-function M.jump(dir, field)
+--- The rows of the diff shown in the current window, or nothing when the buffer
+--- holds no diff.
+--- @param field 'hunk_rows'|'file_rows'
+--- @return integer[]
+local function rows_of(field)
   local view = render.views[vim.api.nvim_get_current_buf()]
-  if not view then
-    return
-  end
-  local rows = {}
-  for _, entry in ipairs(view[field]) do
-    rows[#rows + 1] = type(entry) == 'table' and entry.row or entry
-  end
+  return view and view[field] or {}
+end
 
+--- Rows are in ascending order, so each direction can stop at the first match:
+--- forwards from the start, backwards from the end.
+--- @param dir 1|-1
+--- @param rows integer[] the rows worth landing on, ascending
+function M.jump(dir, rows)
   local cur = vim.api.nvim_win_get_cursor(0)[1]
   local target
-  for _, r in ipairs(rows) do
-    if dir > 0 and r > cur then
-      target = r
-      break
-    elseif dir < 0 and r < cur then
-      target = r
+  if dir > 0 then
+    for _, r in ipairs(rows) do
+      if r > cur then
+        target = r
+        break
+      end
+    end
+  else
+    for i = #rows, 1, -1 do
+      if rows[i] < cur then
+        target = rows[i]
+        break
+      end
     end
   end
   if target then
     vim.api.nvim_win_set_cursor(0, { target, 0 })
   end
+end
+
+--- Move between the file headers of a multi-file diff, which is what `]f` means
+--- when the whole diff is in one buffer.
+--- @param dir 1|-1
+function M.jump_files(dir)
+  M.jump(dir, rows_of('file_rows'))
 end
 
 --- Open the file the cursor's row came from, at the line it stands for.
@@ -78,9 +94,7 @@ function M.tab_keys()
     close = function()
       vim.cmd.quit()
     end,
-    goto_file = function(dir)
-      M.jump(dir, 'files')
-    end,
+    goto_file = M.jump_files,
     before_jump = function()
       vim.cmd.tabclose()
     end,
@@ -93,10 +107,10 @@ function M.set(buf, keys)
   keys = vim.tbl_extend('force', M.tab_keys(), keys or {})
   local map = util.buf_mapper(buf)
   map(']h', function()
-    M.jump(1, 'hunk_rows')
+    M.jump(1, rows_of('hunk_rows'))
   end, 'next hunk')
   map('[h', function()
-    M.jump(-1, 'hunk_rows')
+    M.jump(-1, rows_of('hunk_rows'))
   end, 'previous hunk')
   map(']f', function()
     keys.goto_file(1)

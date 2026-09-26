@@ -19,7 +19,7 @@ local M = {}
 --- @return string[] unchanged labels of sources with no textual difference,
 ---         such as a pure rename or a mode change
 function M.build(sources, rev, context, diff_opts)
-  local lines, files, hunk_rows = {}, {}, {}
+  local lines, files, hunk_rows, file_rows = {}, {}, {}, {}
   local unchanged = {}
   -- A third version is what makes a view mixed, so the sources say so and the
   -- caller has nothing to add afterwards.
@@ -59,6 +59,7 @@ function M.build(sources, rev, context, diff_opts)
         lang = lang,
         row = offset,
       }
+      file_rows[#file_rows + 1] = offset
       local index = #files
 
       for _, l in ipairs(flines) do
@@ -78,6 +79,7 @@ function M.build(sources, rev, context, diff_opts)
     lines = lines,
     files = files,
     hunk_rows = hunk_rows,
+    file_rows = file_rows,
     rev = rev,
     mixed = is_mixed or nil,
   }, unchanged
