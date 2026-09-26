@@ -284,7 +284,7 @@ What holds today:
 
 - `status.entries` sets `conflicted` from the `U` status letter, which
   `git diff --diff-filter` documents as "unmerged". Both listings report it, and
-  `in_index` is false because there is no stage 0.
+  `status.in_index` is false because there is no stage 0.
 - The diff pane draws a notice instead of a view, which also means no rows exist
   to stage from. `apply_to_rows` checks the flag as well, as a backstop for when
   a merge view does make such a file renderable.

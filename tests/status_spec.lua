@@ -46,19 +46,19 @@ test('status: a staged rename edited again joins on the index path', function()
   local entries =
     status.entries({ change('R', 'new.txt', 'old.txt') }, { change('M', 'new.txt') }, {})
   eq({ 'RM new.txt <- old.txt' }, dump(entries))
-  eq(true, entries[1].in_index)
+  eq(true, status.in_index(entries[1]))
 end)
 
 test('status: a staged addition has no version in HEAD', function()
   local entries = status.entries({ change('A', 'a.txt') }, {}, {})
   eq(nil, entries[1].head_path)
-  eq(true, entries[1].in_index)
+  eq(true, status.in_index(entries[1]))
 end)
 
 test('status: a staged deletion leaves nothing in the index', function()
   local entries = status.entries({ change('D', 'a.txt') }, {}, {})
   eq('a.txt', entries[1].head_path)
-  eq(false, entries[1].in_index)
+  eq(false, status.in_index(entries[1]))
 end)
 
 test('status: a binary flag on either side marks the entry', function()
@@ -152,7 +152,7 @@ test('status: an unmerged path is marked conflicted and shown as UU', function()
   eq({ 'UU fight.txt' }, dump(entries))
   eq(true, entries[1].conflicted)
   -- There is no stage 0 to read the index version from.
-  eq(false, entries[1].in_index)
+  eq(false, status.in_index(entries[1]))
 end)
 
 test('status: an ordinary change is not conflicted', function()

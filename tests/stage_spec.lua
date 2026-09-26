@@ -12,7 +12,6 @@ local function entry(fields)
     head_path = 'a.txt',
     index_status = ' ',
     worktree_status = ' ',
-    in_index = true,
     binary = false,
   }, fields)
 end

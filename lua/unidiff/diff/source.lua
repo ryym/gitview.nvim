@@ -244,7 +244,7 @@ local function sources_of(entries, root)
       specs[#specs + 1] = 'HEAD:' .. e.head_path
       head_spec[i] = #specs
     end
-    if e.in_index then
+    if status.in_index(e) then
       specs[#specs + 1] = ':' .. e.path
       index_spec[i] = #specs
     end

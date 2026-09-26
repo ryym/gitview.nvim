@@ -29,7 +29,6 @@ local UNMERGED = 'U'
 --- @field head_path string? repo-relative in HEAD; nil for a file HEAD lacks
 --- @field index_status string one character, as `git status --short` prints X
 --- @field worktree_status string one character, as it prints Y
---- @field in_index boolean whether the index holds a version of the file
 --- @field binary boolean no diff can be shown
 --- @field conflicted boolean an unresolved merge; no diff can be shown either,
 ---        and writing to the index would discard the merge stages
@@ -62,10 +61,6 @@ function M.entries(staged, unstaged, untracked)
       head_path = c.status ~= 'A' and c.old_path or nil,
       index_status = c.status,
       worktree_status = UNCHANGED,
-      -- A staged deletion leaves the index with no version of the file, and an
-      -- unmerged path has the three merge stages but no stage 0, which is the
-      -- only one anything can be read from.
-      in_index = c.status ~= 'D' and c.status ~= UNMERGED,
       binary = c.binary,
       conflicted = c.status == UNMERGED,
     })
@@ -80,7 +75,6 @@ function M.entries(staged, unstaged, untracked)
         head_path = c.old_path,
         index_status = UNCHANGED,
         worktree_status = UNCHANGED,
-        in_index = true,
         binary = false,
         conflicted = false,
       })
@@ -96,7 +90,6 @@ function M.entries(staged, unstaged, untracked)
       head_path = nil,
       index_status = UNTRACKED,
       worktree_status = UNTRACKED,
-      in_index = false,
       binary = false,
       conflicted = false,
     })
@@ -132,6 +125,20 @@ end
 --- @return boolean
 function M.has_unstaged(e)
   return e.worktree_status ~= UNCHANGED
+end
+
+--- Whether the index holds a version of the file that can be read.
+---
+--- Derived from the letter rather than recorded alongside it, so that the two
+--- cannot disagree: a staged deletion leaves the index with no version, an
+--- untracked file was never in it, and an unmerged path has the three merge
+--- stages but no stage 0, which is the only one anything can be read from.
+---
+--- @param e unidiff.StatusEntry
+--- @return boolean
+function M.in_index(e)
+  local x = e.index_status
+  return x ~= 'D' and x ~= UNMERGED and x ~= UNTRACKED
 end
 
 --- How much of a file to look at before calling it text. This is git's own

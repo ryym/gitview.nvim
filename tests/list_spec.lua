@@ -13,7 +13,6 @@ local function entry(x, y, path, head_path)
     head_path = head_path or path,
     index_status = x,
     worktree_status = y,
-    in_index = true,
     binary = false,
   }
 end
