@@ -68,20 +68,17 @@ local function selection_id(s)
   if not t then
     return nil
   end
-  local named = ({
-    file = function()
-      local e = s.entries[t.index]
-      return e and e.path
-    end,
-    commit = function()
-      local c = s.commits[t.index]
-      return c and c.sha
-    end,
-    commit_file = function()
-      local c = s.scope and s.scope.changes[t.index]
-      return c and c.path
-    end,
-  })[t.kind]()
+  local named
+  if t.kind == 'file' then
+    local e = s.entries[t.index]
+    named = e and e.path
+  elseif t.kind == 'commit' then
+    local c = s.commits[t.index]
+    named = c and c.sha
+  else
+    local c = s.scope and s.scope.changes[t.index]
+    named = c and c.path
+  end
   return named and { kind = t.kind, id = named } or nil
 end
 
