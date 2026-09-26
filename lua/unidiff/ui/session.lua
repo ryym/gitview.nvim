@@ -561,6 +561,18 @@ function M.toggle_whitespace(s)
   M.show_selected(s)
 end
 
+--- The commit the cursor is on, or nil when it is not on a commit row.
+--- @param s unidiff.Session
+--- @return unidiff.Commit?
+--- @return unidiff.ListTarget?
+local function selected_commit(s)
+  local target = s.selected
+  if not target or target.kind ~= 'commit' then
+    return nil, nil
+  end
+  return s.commits[target.index], target
+end
+
 --- Mark the commit under the cursor, or clear the mark if it is already there.
 ---
 --- One mark rather than two: the far end is marked and the near end is wherever
@@ -570,8 +582,7 @@ end
 ---
 --- @param s unidiff.Session
 function M.toggle_mark(s)
-  local target = s.selected
-  local commit = target and target.kind == 'commit' and s.commits[target.index] or nil
+  local commit, target = selected_commit(s)
   if not commit then
     return
   end
@@ -587,8 +598,7 @@ end
 ---
 --- @param s unidiff.Session
 function M.enter(s)
-  local target = s.selected
-  local commit = target and target.kind == 'commit' and s.commits[target.index] or nil
+  local commit, target = selected_commit(s)
   if not commit then
     return
   end
