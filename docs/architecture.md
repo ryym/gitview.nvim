@@ -232,6 +232,35 @@ pressed. A whole commit is many files in one buffer, so they scroll within it; a
 single file — uncommitted or from a commit — is one of many rows, so they move
 the list's cursor.
 
+### Ignoring whitespace
+
+`gw` stops lines that differ only in whitespace from counting as changed, and
+turns it back on. It is session state rather than configuration — a way of
+looking at one thing, changed and changed back while reading — and the configured
+`ignore_whitespace` is only where it starts. `vim.diff` does the work; the option
+had to be threaded through `dlib.hunks`, which builds its options table key by
+key.
+
+Two things have to be said out loud, because the fold is otherwise invisible:
+
+- **The winbar reads `(whitespace ignored)`** for as long as it is on. A mode that
+  silently changes which lines count as different is a trap.
+- **A file whose only change is whitespace says `(no change outside whitespace)`**
+  rather than `(no textual change)`, which would be a lie in exactly the case
+  where the fold hides everything there was.
+
+And **the row-level staging keys refuse while it is on.** A folded line is drawn
+as `context`, which a mixed view reads from the index, so writing the shown rows
+back would leave that line at its index version while the working tree kept the
+other. Whole-file `s` is unaffected: it is `git add`, which reads no rows. The
+measurement and the alternative are in
+[staging.md](staging.md#ignoring-whitespace-and-the-rows-disagree).
+
+The toggle is the session's alone. `:Unidiff`, `:UnidiffAll` and `:UnidiffMixed`
+honour the configured value but cannot change it, because they render a snapshot
+and dispose of the sources; rebuilding one would mean giving a view the means to
+re-read itself.
+
 ### Changing the index
 
 Two modules write to the index, and both hand back what they decided rather than
@@ -465,6 +494,7 @@ everything still looks right.
 | Looking into a commit replaces the commits pane, not the files pane      | `list_spec`, `session_spec`                      |
 | The diff pane restarts at the top unless it is redrawing the same thing  | `session_spec`                                   |
 | Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
+| Rows are never written to the index while whitespace is ignored          | `session_spec`                                    |
 
 ## Deliberate omissions
 

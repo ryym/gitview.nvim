@@ -193,3 +193,18 @@ test('change_pairs still pairs within one file', function()
   }
   eq({ { 1, 2 }, { 3, 4 } }, dlib.change_pairs(lines))
 end)
+
+-- `vim.diff`'s own option, the equivalent of `git diff -w`. It has to be
+-- forwarded explicitly: the options table is built key by key.
+test('ignoring whitespace drops a hunk that is only whitespace', function()
+  local old = { 'one', 'two', 'three' }
+  local new = { 'one', '  two  ', 'three' }
+  eq(1, #dlib.hunks(old, new))
+  eq(0, #dlib.hunks(old, new, { ignore_whitespace = true }))
+end)
+
+test('ignoring whitespace keeps a hunk that is not', function()
+  local old = { 'one', 'two' }
+  local new = { 'one', '  TWO  ' }
+  eq(1, #dlib.hunks(old, new, { ignore_whitespace = true }))
+end)

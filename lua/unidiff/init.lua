@@ -56,7 +56,7 @@ local function open_in_tab(view, name)
 end
 
 --- Open a unified diff of the current buffer against `rev`.
---- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer}
+--- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer, ignore_whitespace?:boolean}
 --- @return integer? bufnr
 function M.open(opts)
   opts = config.resolve(opts)
@@ -77,7 +77,7 @@ function M.open(opts)
 end
 
 --- Open one buffer holding the diff of every file that changed against `rev`.
---- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer}
+--- @param opts? {rev?:string, context?:integer, algorithm?:string, linematch?:integer, ignore_whitespace?:boolean}
 --- @return integer? bufnr
 function M.open_all(opts)
   opts = config.resolve(opts)
@@ -109,7 +109,7 @@ end
 
 --- Experimental: every uncommitted change in one buffer, as HEAD -> working
 --- tree, with each changed line marked staged or unstaged.
---- @param opts? {context?:integer, algorithm?:string, linematch?:integer}
+--- @param opts? {context?:integer, algorithm?:string, linematch?:integer, ignore_whitespace?:boolean}
 --- @return integer? bufnr
 function M.open_mixed(opts)
   opts = config.resolve(opts)

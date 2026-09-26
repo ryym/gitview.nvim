@@ -300,6 +300,33 @@ of the three stages the index holds. Only the fact that the path is unmerged is
 recorded, so all of them are listed as `UU`. Reading the stages is what a merge
 view will need anyway, so both are one piece of work.
 
+### Ignoring whitespace and the rows disagree
+
+`:UnidiffStatus` can be told to stop counting lines that differ only in
+whitespace as changed. A line folded away by that is drawn as a `context` row,
+and a mixed view reads context from the index — so the row shows the index
+version while the working tree holds another.
+
+Writing the shown rows back would then leave that line at its index version, and
+the view, still ignoring whitespace, would go on showing nothing unstaged while
+`git status` reported the file as modified. Measured, with HEAD and the index at
+`a b c` and the working tree at `a "  b  " C`:
+
+| | index after staging every unstaged row |
+| --- | --- |
+| counting whitespace | `a` `  b  ` `C` — equals the working tree |
+| ignoring it | `a` `b` `C` — does not |
+
+So the row-level keys refuse while it is on. Whole-file `s` and `u` are
+unaffected, because they are porcelain commands that read no rows: `git add`
+takes the file as it is on disk, whitespace included. That is the same line drawn
+for an unmerged path, and for the same reason — the rows on display are not a
+faithful statement of the file.
+
+Comparing two alignments, one ignoring whitespace for display and one counting it
+for the index, would lift this. They do not correspond row for row, so it is not
+a small change.
+
 ### Modes other than a regular file
 
 `mode_from_disk` only ever answers `100644` or `100755`. A symlink (`120000`) or

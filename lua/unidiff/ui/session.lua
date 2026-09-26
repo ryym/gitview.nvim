@@ -30,6 +30,9 @@ local M = {}
 --- @field diff_buf integer drawn into repeatedly, never swapped out
 --- @field entries unidiff.StatusEntry[]
 --- @field commits unidiff.Commit[] the tail of the history, newest first
+--- @field ignore_whitespace boolean whether lines differing only in whitespace
+---        count as changed; starts from the configuration and is toggled while
+---        the session is open
 --- @field mark string? sha of the marked commit. While it is set the commits
 ---        pane compares it with whatever the cursor is on, rather than showing
 ---        one commit against its parent
@@ -80,6 +83,51 @@ local function selection_id(s)
     end,
   })[t.kind]()
   return named and { kind = t.kind, id = named } or nil
+end
+
+--- The diff options a view of this session is built with.
+---
+--- Ignoring whitespace is session state rather than configuration: it is a way
+--- of looking at one thing, turned on and off again while reading, and the
+--- configured value is only where it starts.
+--- @param s unidiff.Session
+--- @return {algorithm:string, linematch:integer, ignore_whitespace:boolean}
+local function diff_opts(s)
+  local opts = config.diff_opts(config.values)
+  opts.ignore_whitespace = s.ignore_whitespace
+  return opts
+end
+
+--- Everything the winbar should say about a view beyond what it compares.
+--- @param s unidiff.Session
+--- @param ... string? notes, in order, nils skipped
+--- @return string?
+local function note_of(s, ...)
+  local notes = {}
+  for i = 1, select('#', ...) do
+    local note = select(i, ...)
+    if note then
+      notes[#notes + 1] = note
+    end
+  end
+  -- A mode that silently changes which lines count as different would be a trap.
+  if s.ignore_whitespace then
+    notes[#notes + 1] = '(whitespace ignored)'
+  end
+  return #notes > 0 and table.concat(notes, '   ') or nil
+end
+
+--- Why there was nothing to draw, as far as the user needs to know.
+---
+--- With whitespace ignored, a file whose only change is whitespace yields no
+--- rows, and calling that "no textual change" would be a lie.
+--- @param s unidiff.Session
+--- @return string
+local function no_view_reason(s)
+  if s.ignore_whitespace then
+    return '(no change outside whitespace)'
+  end
+  return '(no textual change)'
 end
 
 --- Which pane a kind of target lives in. The sidebar holds two lists, and a
@@ -218,18 +266,15 @@ local function show_commit(s, commit, index)
   end
 
   local view, unchanged =
-    vlib.build(sources, label, config.values.context, config.diff_opts(config.values))
+    vlib.build(sources, label, config.values.context, diff_opts(s))
   if not view then
-    render.notice(s.diff_buf, label .. '   (no textual change)')
+    render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
     return
   end
   -- Its line numbers are the range's, not the working tree's, so jumping to the
   -- source would land on whatever now occupies that line.
   view.historical = true
-  local notes = { vlib.skipped_note(skipped, #unchanged), range_note(s, range, commit) }
-  view.note = #notes > 0 and table.concat(vim.tbl_filter(function(n)
-    return n ~= nil
-  end, notes), '   ') or nil
+  view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), range_note(s, range, commit))
   render.draw(s.diff_buf, view)
   vlib.dispose(view)
 end
@@ -255,14 +300,14 @@ local function show_commit_file(s, index)
   end
 
   local src = source.for_range_change(scope.range, change, s.root)
-  local view = src
-    and vlib.build({ src }, scope.label, config.values.context, config.diff_opts(config.values))
+  local view = src and vlib.build({ src }, scope.label, config.values.context, diff_opts(s))
   if not view then
     -- a pure rename or a mode change: a real change with no lines to show
-    render.notice(s.diff_buf, ('%s   (no textual change)'):format(label))
+    render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
     return
   end
   view.historical = true
+  view.note = note_of(s)
   render.draw(s.diff_buf, view)
   vlib.dispose(view)
 end
@@ -322,14 +367,14 @@ function M.show_selected(s)
   end
 
   local src = source.for_entry(entry, s.root)
-  local view = src
-    and vlib.build({ src }, REV, config.values.context, config.diff_opts(config.values))
+  local view = src and vlib.build({ src }, REV, config.values.context, diff_opts(s))
   if not view then
     -- a pure rename or a mode change: a real change with no lines to show
-    render.notice(s.diff_buf, ('%s   (no textual change)'):format(status.label(entry)))
+    render.notice(s.diff_buf, ('%s   %s'):format(status.label(entry), no_view_reason(s)))
     return
   end
   view.mixed = true
+  view.note = note_of(s)
   render.draw(s.diff_buf, view)
   vlib.dispose(view)
   s.index_lines = src.index_lines
@@ -511,6 +556,17 @@ function M.refresh(s)
   redraw_list(s, target_of_id(s, id))
 end
 
+--- Start counting lines that differ only in whitespace as changed again, or stop.
+---
+--- The view is rebuilt rather than redrawn, because which lines differ is what
+--- changed. The position in it is kept: it is the same file being read.
+--- @param s unidiff.Session
+function M.toggle_whitespace(s)
+  s.ignore_whitespace = not s.ignore_whitespace
+  s.generation = s.generation + 1
+  M.show_selected(s)
+end
+
 --- Mark the commit under the cursor, or clear the mark if it is already there.
 ---
 --- One mark rather than two: the far end is marked and the near end is wherever
@@ -667,6 +723,16 @@ local function apply_to_rows(s, op, first, last)
     util.warn(('%s has an unresolved conflict; resolve it first'):format(entry.path))
     return
   end
+  -- Ignoring whitespace folds a line that differs only in whitespace into a
+  -- context row, whose text is read from the index. Writing the shown rows back
+  -- would then leave that line at its index version while the working tree kept
+  -- the other, and the view — still ignoring whitespace — would go on showing
+  -- nothing unstaged. Whole-file `s` is unaffected: it is `git add`, and reads no
+  -- rows.
+  if s.ignore_whitespace then
+    util.warn('whitespace is being ignored; stage the whole file, or turn it off with gw')
+    return
+  end
   local rows = index.selection(view.lines, first, last, op)
   if #rows == 0 then
     util.info(('nothing to %s here'):format(op))
@@ -798,6 +864,18 @@ end
 --- Inside a session a diff is one pane of something larger: `q` gives up the
 --- whole session, and moving between files means moving the list's cursor
 --- rather than scrolling within one buffer.
+--- `gw` is mapped in every buffer of the session, since what it changes is what
+--- the diff pane shows wherever the cursor happens to be. It shadows the `gw`
+--- format operator, which means nothing in a buffer that cannot be modified.
+--- @param s unidiff.Session
+local function set_whitespace_keymap(s)
+  for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
+    vim.keymap.set('n', 'gw', function()
+      M.toggle_whitespace(s)
+    end, { buffer = buf, desc = 'unidiff: toggle ignoring whitespace' })
+  end
+end
+
 --- @param s unidiff.Session
 local function set_diff_keymaps(s)
   keymap.set(s.diff_buf, {
@@ -847,6 +925,7 @@ function M.open()
     entries = entries,
     commits = {},
     generation = 0,
+    ignore_whitespace = config.values.ignore_whitespace,
     has_head = git.has_head(root),
   }
   s.commits = read_commits(s)
@@ -880,6 +959,7 @@ function M.open()
   set_commits_keymaps(s)
   set_diff_keymaps(s)
   set_diff_stage_keymaps(s)
+  set_whitespace_keymap(s)
 
   for _, buf in ipairs({ s.files_buf, s.commits_buf }) do
     vim.api.nvim_create_autocmd({ 'CursorMoved', 'WinEnter' }, {

@@ -1035,3 +1035,105 @@ test('session: a refresh drops a mark that has left the list', function()
     eq(nil, s.mark)
   end)
 end)
+
+--- A file whose working tree differs from HEAD in whitespace on one line and in
+--- earnest on another.
+local function whitespace(repo)
+  repo.write('a.txt', { 'a', 'b', 'c' })
+  repo.commit('init')
+  repo.write('a.txt', { 'a', '  b  ', 'C' })
+end
+
+--- @param s unidiff.Session
+--- @return string[] the text of every row standing for a source line
+local function source_rows(s)
+  local view = assert(require('unidiff.diff.render').views[s.diff_buf], 'no view drawn')
+  local out = {}
+  for _, l in ipairs(view.lines) do
+    if require('unidiff.diff.lines').source_kinds[l.kind] then
+      out[#out + 1] = ('%s %s'):format(l.kind, l.text)
+    end
+  end
+  return out
+end
+
+test('session: ignoring whitespace folds a whitespace-only change away', function()
+  with_session(whitespace, function(s)
+    session.select(s, 1)
+    eq({ 'context a', 'del b', 'del c', 'add   b  ', 'add C' }, source_rows(s))
+    session.toggle_whitespace(s)
+    eq(true, s.ignore_whitespace)
+    eq({ 'context a', 'context b', 'del c', 'add C' }, source_rows(s))
+    session.toggle_whitespace(s)
+    eq({ 'context a', 'del b', 'del c', 'add   b  ', 'add C' }, source_rows(s))
+  end)
+end)
+
+-- A mode that changes which lines count as different has to say so, or the
+-- reader has no way to tell a folded change from no change.
+test('session: the winbar says when whitespace is being ignored', function()
+  with_session(whitespace, function(s)
+    session.select(s, 1)
+    assert(not diff_winbar(s):find('whitespace', 1, true), diff_winbar(s))
+    session.toggle_whitespace(s)
+    assert(diff_winbar(s):find('(whitespace ignored)', 1, true), diff_winbar(s))
+  end)
+end)
+
+-- Calling a file whose only change is whitespace "no textual change" would be a
+-- lie, and it is the one case where the fold hides everything there was.
+test('session: a change that is only whitespace says which it is', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'a', 'b' })
+    repo.commit('init')
+    repo.write('a.txt', { 'a', '  b  ' })
+  end, function(s)
+    session.select(s, 1)
+    session.toggle_whitespace(s)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('no change outside whitespace', 1, true), text)
+  end)
+end)
+
+-- Writing the shown rows back would leave the folded line at its index version
+-- while the working tree kept the other, and the view would go on showing
+-- nothing unstaged.
+test('session: staging by row is refused while whitespace is ignored', function()
+  with_session(whitespace, function(s, repo)
+    session.select(s, 1)
+    session.toggle_whitespace(s)
+    local before = repo.git('status', '--short')
+    press_diff(s, 's')
+    press_diff(s, 'S')
+    press_diff(s, 'u')
+    eq(before, repo.git('status', '--short'))
+  end)
+end)
+
+-- Whole-file staging is `git add` and reads no rows, so the fold cannot mislead
+-- it. That is what makes refusing only the row-level keys the right line.
+test('session: staging the whole file still works while whitespace is ignored', function()
+  with_session(whitespace, function(s, repo)
+    session.select(s, 1)
+    session.toggle_whitespace(s)
+    press(s, 's')
+    eq('M  a.txt\n', repo.git('status', '--short'))
+    -- and the whitespace went in with it, since git add took the file as it is
+    eq('', repo.git('diff'))
+  end)
+end)
+
+test('session: the toggle reaches a commit view too', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'a', 'b' })
+    repo.commit('init')
+    repo.write('a.txt', { 'a', '  b  ' })
+    repo.commit('whitespace only')
+  end, function(s)
+    show_commit(s, 1)
+    eq({ 'context a', 'del b', 'add   b  ' }, source_rows(s))
+    session.toggle_whitespace(s)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('no change outside whitespace', 1, true), text)
+  end)
+end)

@@ -162,6 +162,7 @@ history.
 | `<CR>`      | focus the diff    | look into the commit | jump to the source line       |
 | `<BS>`      |                   | back out of it       |                               |
 | `m`         |                   | mark, for a range    |                               |
+| `gw`        | ignore whitespace | ignore whitespace    | ignore whitespace             |
 | `s`         | stage the file    |                      | stage the line or selection   |
 | `u`         | unstage the file  |                      | unstage the line or selection |
 | `S` / `U`   |                   |                      | stage / unstage this hunk     |
@@ -188,11 +189,27 @@ Binary files and changes with no lines to them, such as a pure rename, are
 listed and say as much in place of a diff. Discarding changes and committing are
 not implemented.
 
+#### Ignoring whitespace
+
+`gw`, from any of the three windows, stops lines that differ only in whitespace
+from counting as changed. The winbar says `(whitespace ignored)` while it is on,
+and a file whose only change is whitespace says so rather than claiming to have
+no change at all. `gw` again puts it back.
+
+While it is on, `s` and `u` **in the diff** refuse: a folded line is drawn as
+context, taken from the index, so staging the rows on screen would write that
+version back and leave the file still modified. `s` and `u` in the files pane are
+unaffected — they run `git add`, which takes the file as it is.
+
+The toggle belongs to `:UnidiffStatus`. The other commands honour the configured
+value but have no key for it.
+
 ```lua
 require('unidiff').setup({
-  list_width = 30,    -- columns for the sidebar
-  commit_count = 20,  -- how many recent commits it lists
-  commit_ratio = 0.4, -- share of the sidebar height the commit list takes
+  list_width = 30,          -- columns for the sidebar
+  commit_count = 20,        -- how many recent commits it lists
+  commit_ratio = 0.4,       -- share of the sidebar height the commit list takes
+  ignore_whitespace = false, -- where every diff starts out
 })
 ```
 

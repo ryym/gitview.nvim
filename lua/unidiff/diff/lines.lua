@@ -39,9 +39,14 @@ end
 --- disagree with `git diff` on the same input: `a b c d e` -> `a b X Y d e`
 --- becomes "insert X" plus "c -> Y" instead of git's single "c -> X Y".
 ---
+--- `ignore_whitespace` is `vim.diff`'s own, the equivalent of `git diff -w`. It
+--- has four siblings there — `ignore_whitespace_change`,
+--- `ignore_whitespace_change_at_eol`, `ignore_blank_lines` and
+--- `ignore_cr_at_eol` — none of which is exposed yet.
+---
 --- @param old_lines string[]
 --- @param new_lines string[]
---- @param opts? {algorithm?:string, linematch?:integer}
+--- @param opts? {algorithm?:string, linematch?:integer, ignore_whitespace?:boolean}
 --- @return integer[][] hunks each is {old_start, old_count, new_start, new_count}
 function M.hunks(old_lines, new_lines, opts)
   opts = opts or {}
@@ -52,6 +57,7 @@ function M.hunks(old_lines, new_lines, opts)
     result_type = 'indices',
     algorithm = opts.algorithm or 'histogram',
     linematch = opts.linematch or 0,
+    ignore_whitespace = opts.ignore_whitespace or false,
   })
 end
 
