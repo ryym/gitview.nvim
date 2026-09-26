@@ -328,11 +328,14 @@ function M.winbar()
     return ''
   end
   local row = vim.api.nvim_win_get_cursor(win)[1]
+  -- Headers are in ascending order, so the last one at or above the cursor is
+  -- the file it is in and there is nothing after it worth looking at.
   local file = view.files[1]
   for _, f in ipairs(view.files) do
-    if f.row <= row then
-      file = f
+    if f.row > row then
+      break
     end
+    file = f
   end
   if not file then
     return ''
