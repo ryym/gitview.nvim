@@ -1,4 +1,5 @@
 local hl = require('unidiff.diff.highlight')
+local util = require('unidiff.util')
 local worddiff = require('unidiff.diff.worddiff')
 local dlib = require('unidiff.diff.lines')
 
@@ -32,13 +33,7 @@ M.views = {}
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
 --- also means the colorscheme is loaded by the time `DiffAdd` is read.
-local highlights_ready = false
-
-function M.setup_highlights()
-  local set = function(name, val)
-    vim.api.nvim_set_hl(0, name, vim.tbl_extend('keep', val, { default = true }))
-  end
-
+local highlights = util.highlights('unidiff.highlights', function(set)
   --- Diff groups are taken background-only. Colorschemes give DiffAdd/DiffDelete
   --- a foreground as well, and a line highlight that carries one would repaint
   --- every character, erasing the syntax colors we just replayed.
@@ -99,29 +94,12 @@ function M.setup_highlights()
   set('UnidiffNewLnum', { link = 'LineNr' })
   set('UnidiffSeparator', { link = 'Folded' })
   set('UnidiffFileHeader', { link = 'Title' })
+end)
 
-  if not highlights_ready then
-    highlights_ready = true
-    -- `:colorscheme` clears every group, so they have to be put back afterwards.
-    vim.api.nvim_create_autocmd('ColorScheme', {
-      group = vim.api.nvim_create_augroup('unidiff.highlights', { clear = true }),
-      callback = function()
-        M.setup_highlights()
-      end,
-    })
-  end
-end
-
-function M.ensure_highlights()
-  if not highlights_ready then
-    M.setup_highlights()
-  end
-end
-
+M.setup_highlights = highlights.apply
+M.ensure_highlights = highlights.ensure
 --- Testing hook: forget that the groups were ever defined.
-function M.ensure_highlights_reset()
-  highlights_ready = false
-end
+M.ensure_highlights_reset = highlights.forget
 
 local SIGN = { add = '+', del = '-', context = ' ' }
 local LINE_HL = {

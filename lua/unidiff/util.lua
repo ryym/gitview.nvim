@@ -1,5 +1,7 @@
---- Everything the user is told goes through here, so that messages carry one
---- prefix and a failed git command always reports its stderr the same way.
+--- The pieces every other module shares: how the user is told things, how
+--- highlight groups are defined, and how a buffer's keys are mapped. They live
+--- here so that the one prefix, the one fallback rule and the one reset path are
+--- not written twice.
 local M = {}
 
 local PREFIX = 'unidiff: '
@@ -36,6 +38,49 @@ function M.git_error(err)
     msg = msg .. '\n' .. table.concat(lines, '\n')
   end
   vim.notify(msg, vim.log.levels.ERROR)
+end
+
+--- Define a module's highlight groups.
+---
+--- The groups are described by a function rather than a table so that they are
+--- built against the colorscheme in force at the time: `:colorscheme` clears
+--- every group, and the ones derived from `DiffAdd` have to be read again rather
+--- than replayed from what was loaded at startup.
+---
+--- Every group is defined with `default = true`, so a user who sets one of them
+--- keeps it.
+---
+--- @param augroup string name for the ColorScheme subscription
+--- @param define fun(set: fun(name: string, val: table))
+--- @return {apply: fun(), ensure: fun(), forget: fun()} apply defines the groups
+---         now, ensure only if they have never been defined, forget is a testing
+---         hook that makes the next ensure define them again
+function M.highlights(augroup, define)
+  local ready = false
+  local function set(name, val)
+    vim.api.nvim_set_hl(0, name, vim.tbl_extend('keep', val, { default = true }))
+  end
+  local function apply()
+    define(set)
+    if not ready then
+      ready = true
+      vim.api.nvim_create_autocmd('ColorScheme', {
+        group = vim.api.nvim_create_augroup(augroup, { clear = true }),
+        callback = apply,
+      })
+    end
+  end
+  return {
+    apply = apply,
+    ensure = function()
+      if not ready then
+        apply()
+      end
+    end,
+    forget = function()
+      ready = false
+    end,
+  }
 end
 
 return M

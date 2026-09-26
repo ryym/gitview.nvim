@@ -5,6 +5,7 @@
 --- nothing else, so yanking a line gives a path that can be pasted somewhere
 --- useful, while the two status letters are painted by `'statuscolumn'`.
 local status = require('unidiff.status')
+local util = require('unidiff.util')
 
 local M = {}
 
@@ -131,36 +132,18 @@ function M.content(model)
   return rows
 end
 
-local highlights_ready = false
-
 --- Status letters are foreground colors, unlike the diff backgrounds, so they
 --- are taken from the groups Neovim already defines for exactly this: `Added`,
 --- `Changed` and `Comment`. Defining any of them yourself takes precedence.
-function M.setup_highlights()
-  local set = function(name, val)
-    vim.api.nvim_set_hl(0, name, vim.tbl_extend('keep', val, { default = true }))
-  end
+local highlights = util.highlights('unidiff.ui.highlights', function(set)
   set('UnidiffStatusStaged', { link = 'Added' })
   set('UnidiffStatusUnstaged', { link = 'Changed' })
   set('UnidiffStatusUntracked', { link = 'Comment' })
   set('UnidiffStatusHeader', { link = 'Title' })
   set('UnidiffStatusMark', { link = 'Special' })
+end)
 
-  if not highlights_ready then
-    highlights_ready = true
-    vim.api.nvim_create_autocmd('ColorScheme', {
-      group = vim.api.nvim_create_augroup('unidiff.ui.highlights', { clear = true }),
-      callback = function()
-        M.setup_highlights()
-      end,
-    })
-  end
-end
-
---- Testing hook: forget that the groups were ever defined.
-function M.ensure_highlights_reset()
-  highlights_ready = false
-end
+M.setup_highlights = highlights.apply
 
 --- Sessions by the buffer holding their list, so that `'statuscolumn'` can find
 --- what a screen line belongs to. Filled in by `ui.session`.
