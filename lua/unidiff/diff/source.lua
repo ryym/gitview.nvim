@@ -257,8 +257,8 @@ local function sources_of(entries, root)
     local index_lines = index_spec[i] and blobs[index_spec[i]] or {}
     -- an unchanged working tree is the index, which spares a read
     local work_lines = index_lines
-    if e.worktree_status ~= ' ' then
-      work_lines = e.worktree_status == 'D' and {} or M.working_lines(path)
+    if status.has_unstaged(e) then
+      work_lines = status.is_deleted(e) and {} or M.working_lines(path)
     end
     sources[#sources + 1] = {
       path = path,

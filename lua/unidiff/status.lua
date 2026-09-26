@@ -127,6 +127,21 @@ function M.has_unstaged(e)
   return e.worktree_status ~= UNCHANGED
 end
 
+--- Whether git is tracking the file at all.
+--- @param e unidiff.StatusEntry
+--- @return boolean
+function M.is_untracked(e)
+  return e.index_status == UNTRACKED
+end
+
+--- Whether the working tree no longer has the file, so its new version is no
+--- lines rather than something to read from disk.
+--- @param e unidiff.StatusEntry
+--- @return boolean
+function M.is_deleted(e)
+  return e.worktree_status == 'D'
+end
+
 --- Whether the index holds a version of the file that can be read.
 ---
 --- Derived from the letter rather than recorded alongside it, so that the two

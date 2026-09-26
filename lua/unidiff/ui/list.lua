@@ -59,7 +59,7 @@ local BLANK_GUTTER = '   '
 --- @param e unidiff.StatusEntry
 --- @return string
 local function gutter_of(e)
-  if e.index_status == '?' then
+  if status.is_untracked(e) then
     return '%#UnidiffStatusUntracked#?? '
   end
   return ('%%#UnidiffStatusStaged#%s%%#UnidiffStatusUnstaged#%s '):format(
