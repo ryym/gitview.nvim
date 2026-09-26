@@ -177,7 +177,7 @@ function M.list(root)
   local entries = M.entries(staged, unstaged, untracked)
   for _, e in ipairs(entries) do
     if e.index_status == UNTRACKED then
-      e.binary = M.looks_binary(root .. '/' .. e.path)
+      e.binary = M.looks_binary(vim.fs.joinpath(root, e.path))
     end
   end
   return entries

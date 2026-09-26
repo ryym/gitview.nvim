@@ -649,7 +649,7 @@ function M.edit_entry(s)
   if not entry then
     return
   end
-  local path = s.root .. '/' .. entry.path
+  local path = vim.fs.joinpath(s.root, entry.path)
   if vim.fn.filereadable(path) == 0 then
     util.warn(('%s is not in the working tree'):format(entry.path))
     return

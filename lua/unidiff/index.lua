@@ -140,7 +140,7 @@ local function drops_entry(op, entry, root)
   if op == 'unstage' then
     return entry.head_path == nil
   end
-  return vim.fn.filereadable(root .. '/' .. entry.path) == 0
+  return vim.fn.filereadable(vim.fs.joinpath(root, entry.path)) == 0
 end
 
 --- The mode to record for a path the index has no entry for yet. git keeps only
@@ -174,7 +174,7 @@ function M.write(op, entry, lines, root)
 
   -- Carrying the mode over matters for an executable file; a path the index does
   -- not hold yet has none to carry, so the working tree decides.
-  local mode = git.index_mode(path, root) or mode_from_disk(root .. '/' .. path)
+  local mode = git.index_mode(path, root) or mode_from_disk(vim.fs.joinpath(root, path))
   local content = #lines == 0 and '' or table.concat(lines, '\n') .. '\n'
   local sha, hash_err = git.hash_object(path, content, root)
   if not sha then

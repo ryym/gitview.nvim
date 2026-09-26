@@ -132,7 +132,7 @@ function M.for_rev(rev, root)
 
   local sources = {}
   for i, c in ipairs(wanted) do
-    local path = root .. '/' .. c.path
+    local path = vim.fs.joinpath(root, c.path)
     local old_lines = spec_of[i] and blobs[spec_of[i]]
     sources[#sources + 1] = {
       path = path,
@@ -177,7 +177,7 @@ local function range_sources(range, changes, root)
 
   local sources = {}
   for i, c in ipairs(changes) do
-    local path = root .. '/' .. c.path
+    local path = vim.fs.joinpath(root, c.path)
     sources[#sources + 1] = {
       path = path,
       label = status.change_label(c),
@@ -248,7 +248,7 @@ local function sources_of(entries, root)
 
   local sources = {}
   for i, e in ipairs(entries) do
-    local path = root .. '/' .. e.path
+    local path = vim.fs.joinpath(root, e.path)
     local index_lines = index_spec[i] and blobs[index_spec[i]] or {}
     -- an unchanged working tree is the index, which spares a read
     local work_lines = index_lines
