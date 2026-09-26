@@ -146,7 +146,6 @@ end
 --- @return table<integer, unidiff.Seg[]>
 local function collect_syntax(buf, rows)
   local by_row = {}
-  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
 
   --- The syntax item's own name is used rather than `synIDtrans()`'s resolved
   --- group: a syntax group is a highlight group, and extmarks follow `:hi link`
@@ -172,32 +171,38 @@ local function collect_syntax(buf, rows)
     end
     local synID = vim.fn.synID
 
-    for row = 0, #lines - 1 do
-      local text = lines[row + 1]
-      if #text > 0 and (rows == nil or rows[row]) then
-        local segs = {}
-        local start, prev = 0, synID(row + 1, 1, 1)
-        for byte = 1, #text do
-          -- -1 at the end of the line forces the last run to be flushed
-          local id = byte < #text and synID(row + 1, byte + 1, 1) or -1
-          if id ~= prev then
-            local name = prev ~= 0 and name_of(prev) or false
-            if name then
-              segs[#segs + 1] = {
-                row = row,
-                start_col = start,
-                end_col = byte,
-                hl_group = name,
-                -- same layer as Tree-sitter: above the diff background,
-                -- below the word-level highlights
-                priority = TS_PRIORITY,
-              }
+    -- Only the rows of interest are read. `row_ranges` turns the set into the
+    -- spans `nvim_buf_get_lines` takes, so a long file with a few changed lines
+    -- is not copied into Lua whole.
+    for _, range in ipairs(rows and row_ranges(rows) or { { 0, -1 } }) do
+      local lines = vim.api.nvim_buf_get_lines(buf, range[1], range[2], false)
+      for i, text in ipairs(lines) do
+        local row = range[1] + i - 1
+        if #text > 0 then
+          local segs = {}
+          local start, prev = 0, synID(row + 1, 1, 1)
+          for byte = 1, #text do
+            -- -1 at the end of the line forces the last run to be flushed
+            local id = byte < #text and synID(row + 1, byte + 1, 1) or -1
+            if id ~= prev then
+              local name = prev ~= 0 and name_of(prev) or false
+              if name then
+                segs[#segs + 1] = {
+                  row = row,
+                  start_col = start,
+                  end_col = byte,
+                  hl_group = name,
+                  -- same layer as Tree-sitter: above the diff background,
+                  -- below the word-level highlights
+                  priority = TS_PRIORITY,
+                }
+              end
+              start, prev = byte, id
             end
-            start, prev = byte, id
           end
-        end
-        if #segs > 0 then
-          by_row[row] = segs
+          if #segs > 0 then
+            by_row[row] = segs
+          end
         end
       end
     end
