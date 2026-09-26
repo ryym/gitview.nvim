@@ -123,4 +123,12 @@ function M.escape_statusline(text)
   return (text:gsub('%%', '%%%%'))
 end
 
+--- `n` of something, named in the plural unless there is one of it.
+--- @param n integer
+--- @param what string singular
+--- @return string
+function M.counted(n, what)
+  return ('%d %s%s'):format(n, what, n == 1 and '' or 's')
+end
+
 return M

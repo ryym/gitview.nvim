@@ -161,13 +161,6 @@ function M.statuscolumn()
   return row and row.gutter or BLANK_GUTTER
 end
 
---- @param n integer
---- @param what string singular
---- @return string
-local function counted(n, what)
-  return ('%d %s%s'):format(n, what, n == 1 and '' or 's')
-end
-
 --- What the pane is showing. The repository is named by the files pane alone,
 --- since both panes are the same repository and the name would only be read
 --- once.
@@ -180,13 +173,13 @@ function M.winbar()
   end
   local text
   if state.pane == 'files' then
-    text = (' %s   %s'):format(vim.fs.basename(state.root), counted(#state.entries, 'file'))
+    text = (' %s   %s'):format(vim.fs.basename(state.root), util.counted(#state.entries, 'file'))
   elseif state.scope then
     -- What is being looked into has no row of its own, so this is the only place
     -- it is named.
     text = ' ' .. state.scope.label
   else
-    text = ' ' .. counted(#state.commits, 'commit')
+    text = ' ' .. util.counted(#state.commits, 'commit')
   end
   return '%#UnidiffStatusHeader#' .. util.escape_statusline(text)
 end

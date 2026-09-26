@@ -1,3 +1,5 @@
+local util = require('unidiff.util')
+
 local M = {}
 
 --- A line of the rendered buffer. `context`, `add` and `del` carry source text
@@ -31,7 +33,7 @@ M.source_kinds = { context = true, add = true, del = true }
 --- @return string
 function M.gap_label(count)
   local dots = ('\u{00b7}'):rep(4)
-  return ('%s %d unchanged line%s %s'):format(dots, count, count == 1 and '' or 's', dots)
+  return ('%s %s %s'):format(dots, util.counted(count, 'unchanged line'), dots)
 end
 
 --- `linematch` is off by default. It is a Neovim-only post-pass that re-pairs
