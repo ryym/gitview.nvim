@@ -415,27 +415,55 @@ function M.log(count, cwd)
   return M.parse_log(res.stdout)
 end
 
---- What a commit changed, against its first parent.
+--- @class unidiff.Range the two revisions a view compares
+--- @field old string? nil when the new side has no parent, i.e. a root commit
+--- @field new string
+
+--- The range one commit stands for: its first parent to itself.
 ---
 --- A merge is compared with its first parent only, which is what `git show`
 --- does. `git diff-tree -m` would instead concatenate one diff per parent, and
 --- `--no-commit-id` removes the headers that would tell the blocks apart;
 --- `--first-parent` is a rev-list option that `diff-tree` rejects. Naming the
---- parent explicitly avoids the question.
----
---- The root commit has no parent to name, and is the one case that needs
---- `diff-tree --root`.
+--- parent explicitly avoids the question, and keeps the decision here rather
+--- than in everything that reads a range.
 ---
 --- @param commit unidiff.Commit
+--- @return unidiff.Range
+function M.commit_range(commit)
+  return { old = commit.parents[1], new = commit.sha }
+end
+
+--- What changed between the two sides of a range.
+---
+--- A root commit has no old side to name, and is the one case that needs
+--- `diff-tree --root`. Every other range, including one whose ends are merges,
+--- is an ordinary comparison of two trees.
+---
+--- @param range unidiff.Range
 --- @param cwd string
 --- @return unidiff.Change[]? changes
 --- @return string? err
-function M.changed_in(commit, cwd)
-  local parent = commit.parents[1]
-  if not parent then
-    return changes_of({ 'git', 'diff-tree', '--no-commit-id', '-r', '--root' }, { commit.sha }, cwd)
+function M.changed_between(range, cwd)
+  if not range.old then
+    return changes_of({ 'git', 'diff-tree', '--no-commit-id', '-r', '--root' }, { range.new }, cwd)
   end
-  return diff_changes({ parent, commit.sha }, cwd)
+  return diff_changes({ range.old, range.new }, cwd)
+end
+
+--- Whether `a` is an ancestor of `b`.
+---
+--- This is what tells a range that spans one line of history from one whose ends
+--- sit on branches that diverged. `git diff` compares the two trees either way,
+--- but only in the first case does the result read as "what happened between
+--- these two commits": across a fork it also undoes whatever the other side did.
+---
+--- @param a string
+--- @param b string
+--- @param cwd string
+--- @return boolean
+function M.is_ancestor(a, b, cwd)
+  return M.run({ 'git', 'merge-base', '--is-ancestor', a, b }, cwd).ok
 end
 
 --- Files git is not tracking and has not been told to ignore.

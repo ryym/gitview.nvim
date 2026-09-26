@@ -106,7 +106,7 @@ because the index differs from both:
 How the three versions are merged is described in
 [docs/architecture.md](docs/architecture.md#mixed-view).
 
-### The file list (work in progress)
+### The status tab (work in progress)
 
 `:UnidiffStatus` opens a tab with a sidebar on the left and the diff on the
 right. The sidebar is split in two: the uncommitted changes above, the recent
@@ -138,12 +138,30 @@ uncommitted changes above stay in view. `<BS>` comes back out, onto the commit y
 were looking at. `R` in there re-reads the uncommitted state; the commit itself
 cannot change.
 
-Comparing two commits with each other is not implemented yet.
+#### Comparing two commits
+
+`m` marks the commit under the cursor, and `>` appears in its gutter. While a
+mark is set, moving the cursor compares the mark with whatever it lands on, so a
+range is read by moving rather than by marking twice. `m` again on the marked
+commit clears it.
+
+Which end is the old one follows from the list rather than from the dates: the
+list is newest first, so the row further down is the older side. The cursor on
+the mark itself shows that one commit, as it would with no mark at all. `<CR>`
+works the same way, so a range can be opened a file at a time.
+
+A merge at either end of a range is nothing special — a range compares two
+trees, and only a commit shown on its own is compared with its first parent. What
+does need saying is a range whose ends are on branches that diverged: the diff
+then also undoes whatever the other branch did, and the winbar says
+`(diverged; not one line of history)` rather than passing it off as a stretch of
+history.
 
 | key         | in the files pane | in the commits pane  | in the diff                   |
 | ----------- | ----------------- | -------------------- | ----------------------------- |
 | `<CR>`      | focus the diff    | look into the commit | jump to the source line       |
 | `<BS>`      |                   | back out of it       |                               |
+| `m`         |                   | mark, for a range    |                               |
 | `s`         | stage the file    |                      | stage the line or selection   |
 | `u`         | unstage the file  |                      | unstage the line or selection |
 | `S` / `U`   |                   |                      | stage / unstage this hunk     |

@@ -8,17 +8,20 @@ local status = require('unidiff.status')
 
 local M = {}
 
---- @class unidiff.ListScope the commit the list is looking into, in place of
---- the uncommitted changes
---- @field commit unidiff.Commit
---- @field changes unidiff.Change[] what it changed
+--- @class unidiff.ListScope what the commits pane is looking into, in place of
+--- the commits themselves
+--- @field range unidiff.Range the two revisions being compared
+--- @field label string what to call it
+--- @field at string sha of the commit to put the cursor back on when backing out
+--- @field changes unidiff.Change[] what the range changed
 
 --- @class unidiff.ListModel what one pane of the sidebar is showing
 --- @field pane 'files'|'commits' which of the two it is
 --- @field root string repository root
 --- @field entries unidiff.StatusEntry[]? the files pane
 --- @field commits unidiff.Commit[]? the commits pane
---- @field scope unidiff.ListScope? the commits pane, looking into one commit
+--- @field mark string? sha of the marked commit, the far end of a range
+--- @field scope unidiff.ListScope? the commits pane, looking into a range
 
 --- @class unidiff.ListTarget what a row stands for
 --- @field kind 'file'|'commit'|'commit_file'
@@ -35,6 +38,10 @@ M.EMPTY_NOTICE = 'no uncommitted changes'
 
 --- Shown in the commits pane of a repository that has no commit yet.
 M.NO_COMMITS_NOTICE = 'no commits yet'
+
+--- Drawn in the gutter of the marked commit. A commit row has no status letters
+--- of its own, so the mark has the width to itself.
+local MARK_GUTTER = '%#UnidiffStatusMark#>  '
 
 --- Shown in place of the file list of a commit that changed nothing, which
 --- `git commit --allow-empty` makes.
@@ -117,6 +124,7 @@ function M.content(model)
   for i, c in ipairs(commits) do
     rows[i] = {
       text = ('%s %s'):format(c.sha, c.subject),
+      gutter = c.sha == model.mark and MARK_GUTTER or nil,
       target = { kind = 'commit', index = i },
     }
   end
@@ -136,6 +144,7 @@ function M.setup_highlights()
   set('UnidiffStatusUnstaged', { link = 'Changed' })
   set('UnidiffStatusUntracked', { link = 'Comment' })
   set('UnidiffStatusHeader', { link = 'Title' })
+  set('UnidiffStatusMark', { link = 'Special' })
 
   if not highlights_ready then
     highlights_ready = true
@@ -190,9 +199,9 @@ function M.winbar()
   if state.pane == 'files' then
     text = (' %s   %s'):format(vim.fs.basename(state.root), counted(#state.entries, 'file'))
   elseif state.scope then
-    -- The commit being looked into has no row of its own, so this is the only
-    -- place it is named.
-    text = (' %s %s'):format(state.scope.commit.sha, state.scope.commit.subject)
+    -- What is being looked into has no row of its own, so this is the only place
+    -- it is named.
+    text = ' ' .. state.scope.label
   else
     text = ' ' .. counted(#state.commits, 'commit')
   end
@@ -233,6 +242,7 @@ function M.draw(buf, model)
     root = model.root,
     entries = model.entries or {},
     commits = model.commits or {},
+    mark = model.mark,
     scope = model.scope,
     rows = rows,
   }

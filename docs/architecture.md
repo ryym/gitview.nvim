@@ -22,7 +22,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 | `diff/keymap.lua`    | What the keys do inside a diff buffer                   |
-| `ui/list.lua`        | The file list: its rows, its gutter, its winbar          |
+| `ui/list.lua`        | A sidebar pane: its rows, its gutter, its winbar         |
 | `ui/session.lua`     | One tab page's state, and redrawing it                   |
 
 The dependency direction is one-way: `init` uses everything, `source` uses
@@ -37,7 +37,7 @@ under `diff/` knows that `ui` exists.
 `source` is the only part that reads git and the editor. It hands `view` plain
 data, so assembling a view looks nothing up for itself.
 
-## The file list
+## The status tab
 
 `:UnidiffStatus` opens a tab page that outlives the moment it was opened in.
 That is the difference from the diff commands: those render a snapshot and
@@ -133,7 +133,7 @@ and nothing to mark as staged.
 
 Three things follow from both sides being committed:
 
-- **Neither side comes from the working tree.** `source.for_commit` reads both
+- **Neither side comes from the working tree.** `source.for_range` reads both
   from the object database, in one `git cat-file --batch` as everything else
   does. The working tree is not one of the versions being compared, and may no
   longer have the file.
@@ -149,16 +149,19 @@ on. A commit's diff is every file it touched, so without that, sweeping the
 cursor down the list would run the whole pipeline once per row passed over. A
 file row costs a single file's view and is still drawn at once.
 
-#### Which commit is compared with what
+#### What is compared with what
 
-`git log -z` gives the list, including each commit's parents, which is what
-decides how it can be compared at all:
+Everything downstream takes a `unidiff.Range`, an old revision and a new one,
+rather than a commit. The whole question of which parent a commit is compared
+with then lives in `git.commit_range` and nowhere else.
 
-| parents | compared with                              |
-| ------- | ------------------------------------------ |
-| none    | `git diff-tree --root`, against the empty tree |
-| one     | `git diff <parent> <sha>`                  |
-| several | the same, against the first parent         |
+`git log -z` gives each commit's parents, which is what decides that:
+
+| parents | the range of one commit                         |
+| ------- | ----------------------------------------------- |
+| none    | `git diff-tree --root`, against the empty tree  |
+| one     | that parent to the commit                       |
+| several | the **first** parent to the commit              |
 
 `git diff-tree -m` would have covered all three, but on a merge it concatenates
 one diff per parent and `--no-commit-id` removes the headers that would tell the
@@ -166,10 +169,42 @@ blocks apart. `--first-parent` is a rev-list option that `diff-tree` rejects.
 Naming the parent explicitly avoids the question, and both commands print the
 same `--name-status` and `--numstat` records, so one pair of parsers reads both.
 
+#### Two commits
+
+`m` marks the commit under the cursor, and while a mark is set the pane compares
+it with whatever the cursor is on. One mark rather than two: the far end is
+marked and the near end is wherever the cursor goes, so a range is read by moving
+rather than by a second key. The commits pane is short and a range is often long,
+which is what makes moving the better half to leave free.
+
+- **Which end is old follows from the list, not from the dates.** The list is
+  newest first, so the row further down is the older side. A rebase or a
+  cherry-pick can leave dates out of order, and the list is what is being read.
+- **The cursor on the mark itself is the one commit**, against its own first
+  parent, rather than a range of nothing.
+- **A merge at either end of a range is no special case.** A range compares two
+  trees; only a commit shown on its own needs a parent chosen for it. This is
+  the reason the range is the type everything takes.
+- **A mark that leaves the list is dropped on refresh.** It would otherwise go on
+  widening every range while no row showed where it was.
+
+A range whose ends sit on branches that diverged is compared all the same, and
+said to have done so: `git merge-base --is-ancestor` decides, and the winbar
+reads `(diverged; not one line of history)`. `git diff` compares the two trees
+either way, but across a fork the result also undoes whatever the other side did,
+which is not what "the changes between these two commits" sounds like. Naming it
+is better than refusing a comparison that was asked for.
+
+`git diff A...B`, which compares from the merge base instead, would have made
+that case read as "what B added since they forked". It is not used, because it
+would mean two rules for what a range means and the winbar could no longer state
+the comparison as a pair of revisions.
+
 #### Looking into one commit
 
-`<CR>` on a commit sets the session's `scope`, and the commits pane is
-**replaced** by the files that commit changed. The files pane above is left
+`<CR>` sets the session's `scope` to whatever the cursor compares — one commit
+or a marked range — and the commits pane is **replaced** by the files it
+changed. The files pane above is left
 alone, so what is uncommitted stays in view. Replacing rather than merging the
 two lists is what a commit's `unidiff.Change` and an uncommitted
 `unidiff.StatusEntry` being different shapes — one status letter against two, a
@@ -178,14 +213,16 @@ parent against three versions — makes right.
 Which commit is being looked into is named by the pane's `'winbar'`, so no row of
 the buffer stands for it and every row remains a file.
 
-- **The change list is read once, on the way in, and kept.** It is what the rows
-  stand for and what each file's two versions are then read against, so
-  selecting a file lists nothing again. `source.for_commit_change` reads one
-  entry of it the way `source.for_entry` reads one status entry.
+- **The change list is read once, on the way in, and kept**, along with the
+  range it was read for. It is what the rows stand for and what each file's two
+  versions are then read against, so selecting a file lists nothing again.
+  `source.for_range_change` reads one entry of it the way `source.for_entry`
+  reads one status entry.
 - **A commit is immutable, so a refresh leaves the scope alone.** What `R`
   re-reads is everything underneath, which is what backing out goes back to.
-- **`<BS>` backs out**, and the cursor lands on the commit that was being looked
-  into rather than wherever the row happens to fall. `q` still closes the
+- **`<BS>` backs out**, and the cursor lands on the commit it was on when going
+  in — the near end of a range, not the mark — rather than wherever the row
+  happens to fall. `q` still closes the
   session: a stack one level deep is not worth overloading it for.
 - **`<CR>` inside a commit focuses the diff**, which is what it does in the files
   pane, since the row already names what is being shown.
@@ -194,10 +231,6 @@ the buffer stands for it and every row remains a file.
 pressed. A whole commit is many files in one buffer, so they scroll within it; a
 single file — uncommitted or from a commit — is one of many rows, so they move
 the list's cursor.
-
-Comparing two commits with each other is not implemented. The listing and the
-two-sided blob read it needs are both here; what is missing is how the second
-commit is chosen.
 
 ### Changing the index
 
@@ -425,7 +458,8 @@ everything still looks right.
 | Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
 | Unstaging a rename leaves the index equal to HEAD                       | `stage_spec`                                     |
 | An unmerged path is never written to the index                           | `session_spec`                                   |
-| A merge is compared with its first parent only                          | `git_spec`                                       |
+| A merge is compared with its first parent only when shown alone           | `git_spec`, `session_spec`                        |
+| A range across a fork is compared, and said to be across one             | `git_spec`, `session_spec`                        |
 | A commit's view reads neither side from the working tree                | `session_spec`                                   |
 | Nothing is staged while a commit or one of its files is selected        | `session_spec`                                   |
 | Looking into a commit replaces the commits pane, not the files pane      | `list_spec`, `session_spec`                      |

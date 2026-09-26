@@ -30,8 +30,11 @@ local M = {}
 --- @field diff_buf integer drawn into repeatedly, never swapped out
 --- @field entries unidiff.StatusEntry[]
 --- @field commits unidiff.Commit[] the tail of the history, newest first
---- @field scope unidiff.ListScope? the commit being looked into, whose files
----        replace the list while it is set
+--- @field mark string? sha of the marked commit. While it is set the commits
+---        pane compares it with whatever the cursor is on, rather than showing
+---        one commit against its parent
+--- @field scope unidiff.ListScope? the range being looked into, whose files
+---        replace the commits pane while it is set
 --- @field selected unidiff.ListTarget? what the diff pane is showing
 --- @field shown unidiff.SelectionId? what it is currently showing, so that
 ---        redrawing the same thing can keep the scroll position
@@ -123,19 +126,91 @@ local function read_commits(s)
   return commits
 end
 
---- Draw one commit against its first parent.
+--- The commit with this sha, and where it sits in the list.
+--- @param s unidiff.Session
+--- @param sha string?
+--- @return unidiff.Commit?
+--- @return integer? index
+local function commit_by_sha(s, sha)
+  if not sha then
+    return nil, nil
+  end
+  for i, c in ipairs(s.commits) do
+    if c.sha == sha then
+      return c, i
+    end
+  end
+  return nil, nil
+end
+
+--- What the commits pane compares, given the commit under the cursor.
+---
+--- With no mark set that is the commit against its own first parent. With one
+--- set it is the stretch between the two, ordered by their place in the list
+--- rather than by date: the list is what the user is reading, and a rebase or a
+--- cherry-pick can leave dates out of order.
+---
+--- @param s unidiff.Session
+--- @param commit unidiff.Commit the one under the cursor
+--- @param index integer its place in the list
+--- @return unidiff.Range
+--- @return string label
+local function range_of(s, commit, index)
+  local marked, at = commit_by_sha(s, s.mark)
+  if not marked or at == index then
+    return git.commit_range(commit), ('%s %s'):format(commit.sha, commit.subject)
+  end
+  -- The list is newest first, so the further down it is, the older it is.
+  local older, newer = commit, marked
+  if at > index then
+    older, newer = marked, commit
+  end
+  return { old = older.sha, new = newer.sha }, ('%s..%s'):format(older.sha, newer.sha)
+end
+
+--- What to say in the winbar about a range beyond what it compares.
+---
+--- `git diff` compares the two trees whatever their history, but across a fork
+--- the result also undoes whatever the other side did, which is not what "the
+--- changes between these commits" sounds like. Saying so is better than refusing
+--- a comparison the user asked for.
+---
+--- @param s unidiff.Session
+--- @param range unidiff.Range
+--- @param commit unidiff.Commit the commit under the cursor
+--- @return string?
+local function range_note(s, range, commit)
+  if not range.old then
+    return nil
+  end
+  if range.new ~= commit.sha or range.old ~= git.commit_range(commit).old then
+    -- a range of two chosen commits
+    if not git.is_ancestor(range.old, range.new, s.root) then
+      return '(diverged; not one line of history)'
+    end
+    return nil
+  end
+  if #commit.parents > 1 then
+    return '(first parent)'
+  end
+  return nil
+end
+
+--- Draw what the commits pane's cursor compares: one commit against its first
+--- parent, or the stretch between it and the mark.
 ---
 --- This is a two-version view, the shape `:UnidiffAll` already produces: there
 --- is no index between the sides and so nothing to mark as staged.
 --- @param s unidiff.Session
 --- @param commit unidiff.Commit?
-local function show_commit(s, commit)
-  if not commit then
+--- @param index integer? its place in the list
+local function show_commit(s, commit, index)
+  if not commit or not index then
     render.notice(s.diff_buf, list.EMPTY_NOTICE)
     return
   end
-  local label = ('%s %s'):format(commit.sha, commit.subject)
-  local sources, skipped, err = source.for_commit(commit, s.root)
+  local range, label = range_of(s, commit, index)
+  local sources, skipped, err = source.for_range(range, s.root)
   if not sources then
     util.git_error(err)
     render.notice(s.diff_buf, label .. '   (could not be read)')
@@ -143,23 +218,23 @@ local function show_commit(s, commit)
   end
 
   local view, unchanged =
-    vlib.build(sources, commit.sha, config.values.context, config.diff_opts(config.values))
+    vlib.build(sources, label, config.values.context, config.diff_opts(config.values))
   if not view then
     render.notice(s.diff_buf, label .. '   (no textual change)')
     return
   end
-  -- Its line numbers are the commit's, not the working tree's, so jumping to
-  -- the source would land on whatever now occupies that line.
+  -- Its line numbers are the range's, not the working tree's, so jumping to the
+  -- source would land on whatever now occupies that line.
   view.historical = true
-  view.note = vlib.skipped_note(skipped, #unchanged)
-  if #commit.parents > 1 then
-    view.note = (view.note and view.note .. '   ' or '') .. '(first parent)'
-  end
+  local notes = { vlib.skipped_note(skipped, #unchanged), range_note(s, range, commit) }
+  view.note = #notes > 0 and table.concat(vim.tbl_filter(function(n)
+    return n ~= nil
+  end, notes), '   ') or nil
   render.draw(s.diff_buf, view)
   vlib.dispose(view)
 end
 
---- Draw one file of the commit being looked into.
+--- Draw one file of the range being looked into.
 ---
 --- This is the same two-version view `show_commit` draws, narrowed to one file:
 --- one entry of the change list the scope already holds, so nothing has to be
@@ -179,14 +254,9 @@ local function show_commit_file(s, index)
     return
   end
 
-  local src = source.for_commit_change(scope.commit, change, s.root)
+  local src = source.for_range_change(scope.range, change, s.root)
   local view = src
-    and vlib.build(
-      { src },
-      scope.commit.sha,
-      config.values.context,
-      config.diff_opts(config.values)
-    )
+    and vlib.build({ src }, scope.label, config.values.context, config.diff_opts(config.values))
   if not view then
     -- a pure rename or a mode change: a real change with no lines to show
     render.notice(s.diff_buf, ('%s   (no textual change)'):format(label))
@@ -227,7 +297,7 @@ function M.show_selected(s)
     return
   end
   if target.kind == 'commit' then
-    show_commit(s, s.commits[target.index])
+    show_commit(s, s.commits[target.index], target.index)
     return
   end
   if target.kind == 'commit_file' then
@@ -396,6 +466,7 @@ local function redraw_list(s, target)
     pane = 'commits',
     root = s.root,
     commits = s.commits,
+    mark = s.mark,
     scope = s.scope,
   })
   clamp_cursor(s.files_win)
@@ -432,7 +503,30 @@ function M.refresh(s)
   -- already spends. The log is re-read for the same reason.
   s.has_head = git.has_head(s.root)
   s.commits = read_commits(s)
+  -- A mark on a commit that has dropped off the end of the list would go on
+  -- widening every range while no row showed where it was.
+  if s.mark and not commit_by_sha(s, s.mark) then
+    s.mark = nil
+  end
   redraw_list(s, target_of_id(s, id))
+end
+
+--- Mark the commit under the cursor, or clear the mark if it is already there.
+---
+--- One mark rather than two: the far end is marked and the near end is wherever
+--- the cursor goes, so a range is read by moving rather than by a second key.
+--- The commits pane is short and a range is often long, which is what makes
+--- moving the better half to leave free.
+---
+--- @param s unidiff.Session
+function M.toggle_mark(s)
+  local target = s.selected
+  local commit = target and target.kind == 'commit' and s.commits[target.index] or nil
+  if not commit then
+    return
+  end
+  s.mark = s.mark ~= commit.sha and commit.sha or nil
+  redraw_list(s, target)
 end
 
 --- Look into the commit under the cursor: its files replace the list, and
@@ -448,12 +542,13 @@ function M.enter(s)
   if not commit then
     return
   end
-  local changes, err = git.changed_in(commit, s.root)
+  local range, label = range_of(s, commit, target.index)
+  local changes, err = git.changed_between(range, s.root)
   if not changes then
-    util.git_error({ what = 'git diff ' .. commit.sha, stderr = err or '' })
+    util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
     return
   end
-  s.scope = { commit = commit, changes = changes }
+  s.scope = { range = range, label = label, at = commit.sha, changes = changes }
   redraw_list(s, { kind = 'commit_file', index = 1 })
 end
 
@@ -466,7 +561,7 @@ function M.leave(s)
     return
   end
   s.scope = nil
-  redraw_list(s, target_of_id(s, { kind = 'commit', id = scope.commit.sha }))
+  redraw_list(s, target_of_id(s, { kind = 'commit', id = scope.at }))
 end
 
 --- @param s unidiff.Session
@@ -685,10 +780,13 @@ local function set_commits_keymaps(s)
       return
     end
     M.enter(s)
-  end, 'unidiff: look into the commit, or focus the diff')
+  end, 'unidiff: look into the commit or range, or focus the diff')
   map('<BS>', function()
     M.leave(s)
   end, 'unidiff: back out of the commit')
+  map('m', function()
+    M.toggle_mark(s)
+  end, 'unidiff: mark this commit as the far end of a range')
   for _, lhs in ipairs({ 's', 'u' }) do
     map(lhs, function()
       util.info('only an uncommitted file can be staged')

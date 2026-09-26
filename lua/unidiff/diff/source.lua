@@ -146,31 +146,30 @@ function M.for_rev(rev, root)
   return sources, skipped
 end
 
---- Read the two versions of every change a commit made: the file as its first
---- parent had it, and as the commit left it.
+--- Read the two versions of every change in a range: the file as the old side
+--- had it, and as the new side left it.
 ---
 --- Unlike `for_rev` neither side comes from the working tree. The working tree
 --- is not one of the versions being compared here, and it may no longer have
 --- the file at all.
 ---
---- @param commit unidiff.Commit
+--- @param range unidiff.Range
 --- @param changes unidiff.Change[] not binary; those have nothing to read
 --- @param root string repository root
 --- @return unidiff.Source[]
-local function commit_sources(commit, changes, root)
+local function range_sources(range, changes, root)
   -- As in `for_rev`, a version the file does not have is left out of the
   -- request rather than asked for under a spec that would resolve to something
-  -- else. The root commit adds every file it lists, so the parent it does not
+  -- else. A root commit adds every file it lists, so the old side it does not
   -- have is never named.
-  local parent = commit.parents[1]
   local specs, old_spec, new_spec = {}, {}, {}
   for i, c in ipairs(changes) do
-    if parent and c.status ~= 'A' then
-      specs[#specs + 1] = ('%s:%s'):format(parent, c.old_path)
+    if range.old and c.status ~= 'A' then
+      specs[#specs + 1] = ('%s:%s'):format(range.old, c.old_path)
       old_spec[i] = #specs
     end
     if c.status ~= 'D' then
-      specs[#specs + 1] = ('%s:%s'):format(commit.sha, c.path)
+      specs[#specs + 1] = ('%s:%s'):format(range.new, c.path)
       new_spec[i] = #specs
     end
   end
@@ -190,33 +189,33 @@ local function commit_sources(commit, changes, root)
   return sources
 end
 
---- Every file a commit changed, in one view.
---- @param commit unidiff.Commit
+--- Every file a range changed, in one view.
+--- @param range unidiff.Range
 --- @param root string repository root
 --- @return unidiff.Source[]? sources
 --- @return unidiff.Skipped skipped
 --- @return unidiff.GitError? err
-function M.for_commit(commit, root)
-  local changes, err = git.changed_in(commit, root)
+function M.for_range(range, root)
+  local changes, err = git.changed_between(range, root)
   if not changes then
     return nil,
       { binary = {}, conflicted = {} },
-      { what = 'git diff ' .. commit.sha, stderr = err or '' }
+      { what = 'git diff ' .. range.new, stderr = err or '' }
   end
   local wanted, skipped = partition_showable(changes)
-  return commit_sources(commit, wanted, root), skipped
+  return range_sources(range, wanted, root), skipped
 end
 
---- One change of a commit, for a view showing a single file.
---- @param commit unidiff.Commit
+--- One change of a range, for a view showing a single file.
+--- @param range unidiff.Range
 --- @param change unidiff.Change
 --- @param root string repository root
 --- @return unidiff.Source? source nil when there is nothing to read
-function M.for_commit_change(commit, change, root)
+function M.for_range_change(range, change, root)
   if change.binary then
     return nil
   end
-  return commit_sources(commit, { change }, root)[1]
+  return range_sources(range, { change }, root)[1]
 end
 
 --- Read the three versions of every entry: HEAD, the index and the working

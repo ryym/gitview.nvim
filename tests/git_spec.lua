@@ -170,7 +170,7 @@ test('lists what a root commit added', function()
     repo.commit('first')
 
     local commits = assert(git.log(1, repo.root))
-    local changes = assert(git.changed_in(commits[1], repo.root))
+    local changes = assert(git.changed_between(git.commit_range(commits[1]), repo.root))
     eq({ 'A', 'A' }, { changes[1].status, changes[2].status })
     eq({ 'a.txt', 'b.txt' }, { changes[1].path, changes[2].path })
   end)
@@ -192,10 +192,99 @@ test('compares a merge with its first parent only', function()
 
     local commits = assert(git.log(1, repo.root))
     eq(2, #commits[1].parents)
-    local changes = assert(git.changed_in(commits[1], repo.root))
+    local changes = assert(git.changed_between(git.commit_range(commits[1]), repo.root))
     -- Against the first parent only `side.txt` is new; `main.txt` would appear
     -- as well if the second parent were included.
     eq(1, #changes)
     eq('side.txt', changes[1].path)
+  end)
+end)
+
+-- A range whose ends are two chosen commits is an ordinary comparison of two
+-- trees, whatever either end is; only a single commit needs a parent chosen for
+-- it.
+test('lists what changed between two commits', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.write('b.txt', { 'two' })
+    repo.commit('second')
+    repo.write('c.txt', { 'three' })
+    repo.commit('third')
+
+    local commits = assert(git.log(3, repo.root))
+    local changes = assert(git.changed_between({
+      old = commits[3].sha,
+      new = commits[1].sha,
+    }, repo.root))
+    eq({ 'b.txt', 'c.txt' }, vim.tbl_map(function(c)
+      return c.path
+    end, changes))
+  end)
+end)
+
+--- A history that forks and merges: `side` and `main` are on branches that
+--- diverged, so neither is an ancestor of the other.
+--- @param repo unidiff.TestRepo
+--- @return table<string, string> sha by subject
+local function forked(repo)
+  repo.write('base.txt', { 'base' })
+  repo.commit('first')
+  repo.git('checkout', '-q', '-b', 'side')
+  repo.write('side.txt', { 'side' })
+  repo.commit('on side')
+  repo.git('checkout', '-q', '-')
+  repo.write('main.txt', { 'main' })
+  repo.commit('on main')
+  repo.git('merge', '-q', '--no-ff', 'side', '-m', 'merge side')
+
+  local by_subject = {}
+  for _, c in ipairs(assert(git.log(10, repo.root))) do
+    by_subject[c.subject] = c.sha
+  end
+  return by_subject
+end
+
+test('tells a range along one line of history from one across a fork', function()
+  helpers.with_repo(function(repo)
+    local sha = forked(repo)
+    eq(true, git.is_ancestor(sha['first'], sha['merge side'], repo.root))
+    eq(true, git.is_ancestor(sha['on side'], sha['merge side'], repo.root))
+    -- the two branch tips
+    eq(false, git.is_ancestor(sha['on side'], sha['on main'], repo.root))
+    eq(false, git.is_ancestor(sha['on main'], sha['on side'], repo.root))
+  end)
+end)
+
+-- Across a fork the comparison also undoes whatever the other side did, which
+-- is exactly why it is worth saying so rather than presenting it as a stretch
+-- of history.
+test('a range across a fork also undoes the other side', function()
+  helpers.with_repo(function(repo)
+    local sha = forked(repo)
+    local changes = assert(git.changed_between({
+      old = sha['on side'],
+      new = sha['on main'],
+    }, repo.root))
+    local status = {}
+    for _, c in ipairs(changes) do
+      status[c.path] = c.status
+    end
+    eq({ ['main.txt'] = 'A', ['side.txt'] = 'D' }, status)
+  end)
+end)
+
+-- A merge at either end is no special case: only a single commit has to have a
+-- parent chosen for it.
+test('a range ending at a merge needs no parent chosen', function()
+  helpers.with_repo(function(repo)
+    local sha = forked(repo)
+    local changes = assert(git.changed_between({
+      old = sha['first'],
+      new = sha['merge side'],
+    }, repo.root))
+    eq({ 'main.txt', 'side.txt' }, vim.tbl_map(function(c)
+      return c.path
+    end, changes))
   end)
 end)

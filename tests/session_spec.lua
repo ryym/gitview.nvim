@@ -716,7 +716,7 @@ test('session: looking into a commit lists the files it changed', function()
   with_session(history, function(s)
     show_commit(s, 1)
     session.enter(s)
-    eq('second', s.scope.commit.subject)
+    eq(s.commits[1].sha .. ' second', s.scope.label)
     eq({ 'a.lua', 'added.lua' }, vim.tbl_map(function(c)
       return c.path
     end, s.scope.changes))
@@ -774,7 +774,7 @@ test('session: a refresh keeps the commit being looked into', function()
     session.enter(s)
     repo.write('later.lua', { 'return 0' })
     session.refresh(s)
-    eq('second', s.scope.commit.subject)
+    eq(s.commits[1].sha .. ' second', s.scope.label)
     eq({ kind = 'commit_file', index = 1 }, s.selected)
     session.leave(s)
     eq({ 'a.lua', 'later.lua' }, rows(s))
@@ -873,5 +873,165 @@ test('session: the position survives a file moving in the list', function()
     eq(2, selected(s))
     eq('a.txt', s.entries[selected(s)].path)
     eq(25, diff_row(s))
+  end)
+end)
+
+--- A history that forks and merges, so that a range can be asked for across it.
+--- The commit list is newest first: merge side, on main, on side, first.
+local function forked_history(repo)
+  repo.write('base.txt', { 'base' })
+  repo.commit('first')
+  repo.git('checkout', '-q', '-b', 'side')
+  repo.write('side.txt', { 'side' })
+  repo.commit('on side')
+  repo.git('checkout', '-q', '-')
+  repo.write('main.txt', { 'main' })
+  repo.commit('on main')
+  repo.git('merge', '-q', '--no-ff', 'side', '-m', 'merge side')
+  repo.write('base.txt', { 'edited' })
+end
+
+--- Put the cursor on a commit row without drawing, so a test can mark it.
+--- @param s unidiff.Session
+--- @param index integer
+local function goto_commit(s, index)
+  local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = index }))
+  vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  s.selected = { kind = 'commit', index = index }
+end
+
+--- @param s unidiff.Session
+--- @return string
+local function diff_winbar(s)
+  vim.g.statusline_winid = s.diff_win
+  return (require('unidiff.diff.render').winbar():gsub('%%#%w+#', ''))
+end
+
+test('session: the marked commit is shown in the gutter', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 3)
+    session.toggle_mark(s)
+    eq(s.commits[3].sha, s.mark)
+    eq('%#UnidiffStatusMark#>  ', list.state[s.commits_buf].rows[3].gutter)
+    eq(nil, list.state[s.commits_buf].rows[2].gutter)
+  end)
+end)
+
+test('session: marking the marked commit again clears it', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 2)
+    session.toggle_mark(s)
+    session.toggle_mark(s)
+    eq(nil, s.mark)
+    eq(nil, list.state[s.commits_buf].rows[2].gutter)
+  end)
+end)
+
+-- The list is newest first, so which of the two is the old side follows from
+-- where they sit rather than from their dates.
+test('session: a mark and the cursor compare the stretch between them', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 4)
+    session.toggle_mark(s)
+    goto_commit(s, 1)
+    session.show_selected(s)
+    local label = ('%s..%s'):format(s.commits[4].sha, s.commits[1].sha)
+    assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
+    -- first -> merge side adds both branches' files
+    eq({ 'main.txt', 'side.txt' }, vim.tbl_map(function(f)
+      return f.label
+    end, require('unidiff.diff.render').views[s.diff_buf].files))
+  end)
+end)
+
+test('session: marking in the other direction gives the same range', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 1)
+    session.toggle_mark(s)
+    goto_commit(s, 4)
+    session.show_selected(s)
+    local label = ('%s..%s'):format(s.commits[4].sha, s.commits[1].sha)
+    assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
+  end)
+end)
+
+-- The cursor on the mark itself is not a range of nothing; it is the one commit.
+test('session: the cursor on the mark shows that commit alone', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 2)
+    session.toggle_mark(s)
+    session.show_selected(s)
+    local commit = s.commits[2]
+    assert(diff_winbar(s):find(commit.sha .. ' ' .. commit.subject, 1, true), diff_winbar(s))
+  end)
+end)
+
+-- `git diff` compares the two trees whatever their history, but across a fork
+-- the result also undoes what the other side did, so it is named rather than
+-- refused.
+test('session: a range across a fork says it is not one line of history', function()
+  with_session(forked_history, function(s)
+    -- 2 is `on main` and 3 is `on side`: the two branch tips
+    goto_commit(s, 3)
+    session.toggle_mark(s)
+    goto_commit(s, 2)
+    session.show_selected(s)
+    assert(diff_winbar(s):find('diverged', 1, true), diff_winbar(s))
+  end)
+end)
+
+test('session: a range along one line of history says nothing extra', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 4)
+    session.toggle_mark(s)
+    goto_commit(s, 2)
+    session.show_selected(s)
+    assert(not diff_winbar(s):find('diverged', 1, true), diff_winbar(s))
+  end)
+end)
+
+-- A merge on its own is still compared with its first parent, and says so.
+test('session: a merge on its own is still first parent', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 1)
+    session.show_selected(s)
+    assert(diff_winbar(s):find('first parent', 1, true), diff_winbar(s))
+    -- only the side branch's file, not main's
+    eq({ 'side.txt' }, vim.tbl_map(function(f)
+      return f.label
+    end, require('unidiff.diff.render').views[s.diff_buf].files))
+  end)
+end)
+
+test('session: looking into a range lists the files it changed', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 4)
+    session.toggle_mark(s)
+    goto_commit(s, 1)
+    session.show_selected(s)
+    session.enter(s)
+    eq(('%s..%s'):format(s.commits[4].sha, s.commits[1].sha), s.scope.label)
+    eq({ 'main.txt', 'side.txt' }, commit_rows(s))
+    session.show_selected(s)
+    eq('main.txt', require('unidiff.diff.render').views[s.diff_buf].files[1].label)
+    -- backing out returns to the commit the cursor was on, not to the mark
+    session.leave(s)
+    eq({ kind = 'commit', index = 1 }, s.selected)
+  end)
+end)
+
+-- A mark left pointing at a commit no longer listed would widen every range
+-- while no row showed where it was.
+test('session: a refresh drops a mark that has left the list', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 4)
+    session.toggle_mark(s)
+    local kept = require('unidiff.config').values.commit_count
+    require('unidiff.config').values.commit_count = 2
+    local ok, err = pcall(session.refresh, s)
+    require('unidiff.config').values.commit_count = kept
+    assert(ok, err)
+    eq(2, #s.commits)
+    eq(nil, s.mark)
   end)
 end)
