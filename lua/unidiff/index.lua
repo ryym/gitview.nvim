@@ -112,12 +112,16 @@ function M.apply(index_lines, rows)
   end
 
   local out = {}
+  local n = #index_lines
   -- One position past the end holds whatever was appended to the file.
-  for p = 1, #index_lines + 1 do
-    for _, text in ipairs(insert[p] or {}) do
-      out[#out + 1] = text
+  for p = 1, n + 1 do
+    local added = insert[p]
+    if added then
+      for _, text in ipairs(added) do
+        out[#out + 1] = text
+      end
     end
-    if p <= #index_lines and not drop[p] then
+    if p <= n and not drop[p] then
       out[#out + 1] = index_lines[p]
     end
   end
