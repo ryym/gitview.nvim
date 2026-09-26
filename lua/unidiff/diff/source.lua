@@ -59,6 +59,13 @@ end
 --- @field binary string[]
 --- @field conflicted string[]
 
+--- A `Skipped` with every group empty: what the error paths report, and what
+--- `partition_showable` starts from.
+--- @return unidiff.Skipped
+local function no_skipped()
+  return { binary = {}, conflicted = {} }
+end
+
 --- Split a change list into the files that can be shown and those that cannot.
 ---
 --- `conflicted` is only ever set on a `StatusEntry`; a plain change list has no
@@ -69,7 +76,7 @@ end
 --- @return T[] wanted
 --- @return unidiff.Skipped skipped
 local function partition_showable(entries)
-  local wanted, skipped = {}, { binary = {}, conflicted = {} }
+  local wanted, skipped = {}, no_skipped()
   for _, e in ipairs(entries) do
     local group = e.conflicted and skipped.conflicted or e.binary and skipped.binary
     if group then
@@ -113,7 +120,7 @@ end
 function M.for_rev(rev, root)
   local changes, err = git.changed(rev, root)
   if not changes then
-    return nil, { binary = {}, conflicted = {} }, { what = 'git diff ' .. rev, stderr = err or '' }
+    return nil, no_skipped(), { what = 'git diff ' .. rev, stderr = err or '' }
   end
   local wanted, skipped = partition_showable(changes)
 
@@ -198,9 +205,7 @@ end
 function M.for_range(range, root)
   local changes, err = git.changed_between(range, root)
   if not changes then
-    return nil,
-      { binary = {}, conflicted = {} },
-      { what = 'git diff ' .. range.new, stderr = err or '' }
+    return nil, no_skipped(), { what = 'git diff ' .. range.new, stderr = err or '' }
   end
   local wanted, skipped = partition_showable(changes)
   return range_sources(range, wanted, root), skipped
@@ -275,7 +280,7 @@ end
 function M.for_uncommitted(root)
   local entries, err = status.list(root)
   if not entries then
-    return nil, { binary = {}, conflicted = {} }, err
+    return nil, no_skipped(), err
   end
   local wanted, skipped = partition_showable(entries)
   return sources_of(wanted, root), skipped
