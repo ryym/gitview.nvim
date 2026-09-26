@@ -265,6 +265,28 @@ test('colors are defined by rendering, not by setup()', function()
   end
 end)
 
+-- A notice paints with `UnidiffSeparator`, so it is a first use of the groups
+-- just as much as a diff is: a session whose first selection has no view to show
+-- would otherwise draw it against a group nothing had defined yet. The computed
+-- groups are the evidence, since a plain `default link` survives on its own and
+-- so cannot tell whether the definition pass ran.
+test('a notice defines the colors as much as a diff does', function()
+  vim.api.nvim_create_augroup('unidiff.highlights', { clear = true })
+  render.ensure_highlights_reset()
+  vim.cmd.colorscheme('default')
+  for _, name in ipairs(COLOR_GROUPS) do
+    eq({}, vim.api.nvim_get_hl(0, { name = name }), name .. ' should start undefined')
+  end
+
+  local buf = render.create_buffer()
+  render.notice(buf, 'nothing to show')
+
+  for _, name in ipairs(COLOR_GROUPS) do
+    assert(next(vim.api.nvim_get_hl(0, { name = name })), name .. ' should be defined')
+  end
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
 test('add and delete backgrounds differ, and each differs from its word color', function()
   render.setup_highlights()
   local function bg(name)

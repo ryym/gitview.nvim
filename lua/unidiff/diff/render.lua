@@ -250,6 +250,11 @@ end
 --- @param buf integer from `create_buffer`
 --- @param text string
 function M.notice(buf, text)
+  -- A notice is painted with `UnidiffSeparator`, so it is a first use of the
+  -- groups just as much as `draw` is. Without this a session whose first
+  -- selection has no view to show - a clean repository, a binary file - would
+  -- draw the notice against a group nothing had defined yet.
+  M.ensure_highlights()
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
   vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
