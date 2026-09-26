@@ -438,11 +438,9 @@ local function select_nth(s, kind, index)
   if row then
     vim.api.nvim_win_set_cursor(win, { row, 0 })
   end
-  if not list.same_target(target, s.selected) then
-    s.selected = target
-    s.generation = s.generation + 1
-    M.show_selected(s)
-  end
+  -- The cursor now stands on the row that was asked for, so following it is all
+  -- that is left to do.
+  sync_selection(s, win)
 end
 
 --- Put the list's cursor on one of the uncommitted files and show it.
