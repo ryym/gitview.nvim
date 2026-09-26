@@ -210,13 +210,7 @@ end
 --- @param out string
 --- @return string[]
 function M.parse_paths(out)
-  local paths = {}
-  for _, path in ipairs(vim.split(out, '\0', { plain = true })) do
-    if path ~= '' then
-      paths[#paths + 1] = path
-    end
-  end
-  return paths
+  return vim.split(out, '\0', { plain = true, trimempty = true })
 end
 
 --- List a change set, whatever command names it.
@@ -382,17 +376,15 @@ local LOG_FORMAT = '%h%x1f%p%x1f%s%x1f%an%x1f%ar'
 --- @return unidiff.Commit[]
 function M.parse_log(out)
   local commits = {}
-  for _, rec in ipairs(vim.split(out, '\0', { plain = true })) do
-    if rec ~= '' then
-      local f = vim.split(rec, '\31', { plain = true })
-      commits[#commits + 1] = {
-        sha = f[1],
-        parents = (f[2] and f[2] ~= '') and vim.split(f[2], ' ', { plain = true }) or {},
-        subject = f[3] or '',
-        author = f[4] or '',
-        when = f[5] or '',
-      }
-    end
+  for _, rec in ipairs(vim.split(out, '\0', { plain = true, trimempty = true })) do
+    local f = vim.split(rec, '\31', { plain = true })
+    commits[#commits + 1] = {
+      sha = f[1],
+      parents = (f[2] and f[2] ~= '') and vim.split(f[2], ' ', { plain = true }) or {},
+      subject = f[3] or '',
+      author = f[4] or '',
+      when = f[5] or '',
+    }
   end
   return commits
 end
