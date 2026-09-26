@@ -193,13 +193,13 @@ end
 --- @return unidiff.Line[]? lines nil when none of the three versions differ
 --- @return integer[] hunk_rows
 function M.build(head, index, work, context, opts)
-  local lines = M.merge(head, index, work, opts)
-  for _, l in ipairs(lines) do
-    if l.kind ~= 'context' then
-      return M.trim(lines, context)
-    end
+  -- `trim` counts a hunk for every run of non-context lines, so an empty
+  -- `hunk_rows` is exactly "none of the three versions differ".
+  local out, hunk_rows = M.trim(M.merge(head, index, work, opts), context)
+  if #hunk_rows == 0 then
+    return nil, {}
   end
-  return nil, {}
+  return out, hunk_rows
 end
 
 return M
