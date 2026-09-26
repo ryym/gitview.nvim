@@ -22,7 +22,6 @@ end
 --- @field ok boolean
 --- @field stdout string
 --- @field stderr string what to show the user when `ok` is false
---- @field code integer
 
 --- Every subprocess goes through here, so that stderr is never thrown away and
 --- so that making these calls asynchronous later is one change rather than many.
@@ -38,7 +37,6 @@ function M.run(cmd, cwd, opts)
     ok = out.code == 0,
     stdout = out.stdout or '',
     stderr = vim.trim(out.stderr or ''),
-    code = out.code,
   }
 end
 

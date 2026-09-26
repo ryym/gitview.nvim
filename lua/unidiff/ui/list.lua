@@ -208,7 +208,6 @@ function M.draw(buf, model)
     root = model.root,
     entries = model.entries or {},
     commits = model.commits or {},
-    mark = model.mark,
     scope = model.scope,
     rows = rows,
   }
