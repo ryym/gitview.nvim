@@ -115,4 +115,12 @@ function M.buf_mapper(buf)
   end
 end
 
+--- Make text safe to put in a 'winbar' or 'statusline': a literal `%` there
+--- starts an item, so it has to be doubled.
+--- @param text string
+--- @return string
+function M.escape_statusline(text)
+  return (text:gsub('%%', '%%%%'))
+end
+
 return M

@@ -188,7 +188,7 @@ function M.winbar()
   else
     text = ' ' .. counted(#state.commits, 'commit')
   end
-  return '%#UnidiffStatusHeader#' .. text:gsub('%%', '%%%%')
+  return '%#UnidiffStatusHeader#' .. util.escape_statusline(text)
 end
 
 --- @return integer bufnr

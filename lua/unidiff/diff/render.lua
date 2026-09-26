@@ -344,7 +344,7 @@ function M.winbar()
   if view.note then
     text = text .. '   ' .. view.note
   end
-  return '%#UnidiffFileHeader#' .. text:gsub('%%', '%%%%')
+  return '%#UnidiffFileHeader#' .. util.escape_statusline(text)
 end
 
 --- @param win integer
