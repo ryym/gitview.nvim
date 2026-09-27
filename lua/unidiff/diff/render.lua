@@ -364,13 +364,15 @@ end
 --- @param win integer
 --- @param buf integer
 function M.configure_window(win, buf)
-  vim.wo[win].winbar = '%!v:lua.require("unidiff.diff.render").winbar()'
-  vim.wo[win].statuscolumn = '%!v:lua.require("unidiff.diff.render").statuscolumn()'
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].signcolumn = 'no'
-  vim.wo[win].wrap = false
-  vim.wo[win].cursorline = false
+  util.configure_window_options(win, {
+    winbar = '%!v:lua.require("unidiff.diff.render").winbar()',
+    statuscolumn = '%!v:lua.require("unidiff.diff.render").statuscolumn()',
+    number = false,
+    relativenumber = false,
+    signcolumn = 'no',
+    wrap = false,
+    cursorline = false,
+  })
 end
 
 return M

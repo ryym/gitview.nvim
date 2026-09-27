@@ -230,16 +230,18 @@ end
 --- @param width integer
 function M.configure_window(win, width)
   vim.api.nvim_win_set_width(win, width)
-  vim.wo[win].winbar = '%!v:lua.require("unidiff.ui.list").winbar()'
-  vim.wo[win].statuscolumn = '%!v:lua.require("unidiff.ui.list").statuscolumn()'
-  vim.wo[win].number = false
-  vim.wo[win].relativenumber = false
-  vim.wo[win].signcolumn = 'no'
-  vim.wo[win].wrap = false
-  vim.wo[win].cursorline = true
-  -- The diff beside it takes whatever is left, and keeps taking it when the
-  -- window is resized.
-  vim.wo[win].winfixwidth = true
+  util.configure_window_options(win, {
+    winbar = '%!v:lua.require("unidiff.ui.list").winbar()',
+    statuscolumn = '%!v:lua.require("unidiff.ui.list").statuscolumn()',
+    number = false,
+    relativenumber = false,
+    signcolumn = 'no',
+    wrap = false,
+    cursorline = true,
+    -- The diff beside it takes whatever is left, and keeps taking it when the
+    -- window is resized.
+    winfixwidth = true,
+  })
 end
 
 --- What a row stands for, if it stands for anything.

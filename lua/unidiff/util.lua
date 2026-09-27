@@ -83,6 +83,23 @@ function M.highlights(augroup, define)
   }
 end
 
+--- Give a window the options the plugin draws itself with.
+---
+--- Set for this window and buffer alone, which is what keeps them from spreading:
+--- a window remembers a window-local option per buffer, so the gutter and the
+--- winbar go away as soon as the window shows something else, and a `:tabnew`
+--- opened from here starts with the user's own values. `vim.wo` cannot be used
+--- for this, since it acts like `:set` for an option that is not global-local and
+--- so writes the global value too, which every later window would inherit.
+---
+--- @param win integer
+--- @param options table<string, any>
+function M.configure_window_options(win, options)
+  for name, value in pairs(options) do
+    vim.api.nvim_set_option_value(name, value, { scope = 'local', win = win })
+  end
+end
+
 --- A scratch buffer that forgets itself: when it is wiped out, whatever `states`
 --- held for it is dropped, so a module's per-buffer table cannot outlive its
 --- buffers.
