@@ -44,6 +44,8 @@ local M = {}
 --- @field generation integer bumped by every draw, so a deferred one can tell
 ---        whether it is still wanted
 --- @field has_head boolean whether the repository has a commit; re-read on refresh
+--- @field commits_stale boolean? whether `commits` is a list `git log` no longer
+---        agrees with, held open because the cursor is on a commit it dropped
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 
@@ -507,6 +509,7 @@ local function redraw_list(s, target)
     commits = s.commits,
     mark = s.mark,
     scope = s.scope,
+    stale = s.commits_stale,
   })
   clamp_cursor(s.files_win)
   clamp_cursor(s.commits_win)
@@ -523,6 +526,47 @@ local function redraw_list(s, target)
   sync_selection(s, win, true)
 end
 
+--- Re-read the commit list, unless replacing it would pull the selected commit
+--- out from under the cursor.
+---
+--- A commit the log no longer names — rewritten, reset away, or pushed off the
+--- end of the list — is still a readable object, so the diff pane goes on
+--- showing it. What cannot be done is to put a list without it in front of the
+--- cursor: the selection is re-derived from the row the cursor is on, so the
+--- commit that row now holds would silently be selected in its place. The old
+--- list is kept until the cursor leaves it, and the pane says so in its winbar.
+---
+--- @param s unidiff.Session
+--- @param id unidiff.SelectionId? what is selected, named before the re-read
+local function read_log(s, id)
+  -- Re-read rather than kept from `open`: the first commit can be made while
+  -- the session is open, and it is one process against the several `status.list`
+  -- already spends.
+  s.has_head = git.has_head(s.root)
+  local commits = read_commits(s)
+  if id and id.kind == 'commit' then
+    local found = false
+    for _, c in ipairs(commits) do
+      if c.sha == id.id then
+        found = true
+        break
+      end
+    end
+    if not found then
+      s.commits_stale = true
+      return
+    end
+  end
+  s.commits = commits
+  s.commits_stale = nil
+  -- A mark on a commit that has dropped off the end of the list would go on
+  -- widening every range while no row showed where it was. It is only ever
+  -- cleared along with the list it pointed into.
+  if s.mark and not commit_by_sha(s, s.mark) then
+    s.mark = nil
+  end
+end
+
 --- Re-read the repository and redraw both panes.
 ---
 --- A commit is immutable, so looking into one survives a refresh untouched. What
@@ -537,17 +581,37 @@ function M.refresh(s)
   end
   local id = selection_id(s)
   s.entries = entries
-  -- Re-read rather than kept from `open`: the first commit can be made while
-  -- the session is open, and it is one process against the several `status.list`
-  -- already spends. The log is re-read for the same reason.
-  s.has_head = git.has_head(s.root)
-  s.commits = read_commits(s)
-  -- A mark on a commit that has dropped off the end of the list would go on
-  -- widening every range while no row showed where it was.
-  if s.mark and not commit_by_sha(s, s.mark) then
-    s.mark = nil
+  -- While a range is being looked into, the commits pane shows its files and the
+  -- log behind them is off screen, so re-reading it would buy nothing. Backing
+  -- out is what reads it again.
+  if not s.scope then
+    read_log(s, id)
   end
   redraw_list(s, target_of_id(s, id))
+end
+
+--- Follow the list's cursor, replacing a held-back commit list first.
+---
+--- A list held open for a commit the log dropped is only in the way once the
+--- cursor has moved off that commit, which is the moment this is called. What the
+--- cursor has moved to is named before the list is replaced and found again
+--- afterwards, so the row it lands on is the one it chose rather than the one it
+--- happened to be on.
+---
+--- @param s unidiff.Session
+--- @param win integer the pane whose cursor decides the selection
+function M.follow_cursor(s, win)
+  if s.commits_stale then
+    local buf = vim.api.nvim_win_get_buf(win)
+    local target = list.target_at(buf, vim.api.nvim_win_get_cursor(win)[1])
+    if not list.same_target(target, s.selected) then
+      s.selected = target
+      read_log(s, nil)
+      redraw_list(s, target_of_id(s, selection_id(s)))
+      return
+    end
+  end
+  sync_selection(s, win)
 end
 
 --- Start counting lines that differ only in whitespace as changed again, or stop.
@@ -621,7 +685,12 @@ function M.leave(s)
     return
   end
   s.scope = nil
-  redraw_list(s, target_of_id(s, { kind = 'commit', id = scope.at }))
+  local id = { kind = 'commit', id = scope.at } --- @type unidiff.SelectionId
+  -- The log went unread while the range's files stood in front of it, and it may
+  -- have moved on since. Reading it here is also what decides whether the commit
+  -- being backed out onto is still in it.
+  read_log(s, id)
+  redraw_list(s, target_of_id(s, id))
 end
 
 --- @param s unidiff.Session
@@ -967,7 +1036,7 @@ function M.open()
         -- `WinEnter` as well as `CursorMoved`: moving between the two panes does
         -- not move either cursor, so nothing else would tell the diff that the
         -- selection is now the other pane's.
-        sync_selection(s, vim.api.nvim_get_current_win())
+        M.follow_cursor(s, vim.api.nvim_get_current_win())
       end,
     })
   end

@@ -23,6 +23,8 @@ local M = {}
 --- @field commits unidiff.Commit[]? the commits pane
 --- @field mark string? sha of the marked commit, the far end of a range
 --- @field scope unidiff.ListScope? the commits pane, looking into a range
+--- @field stale boolean? the commits pane, holding a list `git log` no longer
+---        agrees with; see `ui.session`
 
 --- @class unidiff.ListTarget what a row stands for
 --- @field kind 'file'|'commit'|'commit_file'
@@ -180,6 +182,11 @@ function M.winbar()
     text = ' ' .. state.scope.label
   else
     text = ' ' .. util.counted(#state.commits, 'commit')
+    if state.stale then
+      -- The list is being held open for a commit the log no longer names, so
+      -- what it shows is older than the repository.
+      text = text .. '   (history changed)'
+    end
   end
   return '%#UnidiffStatusHeader#' .. util.escape_statusline(text)
 end
@@ -209,6 +216,7 @@ function M.draw(buf, model)
     entries = model.entries or {},
     commits = model.commits or {},
     scope = model.scope,
+    stale = model.stale,
     rows = rows,
   }
 end

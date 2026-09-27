@@ -1020,19 +1020,68 @@ test('session: looking into a range lists the files it changed', function()
   end)
 end)
 
+--- Run `fn` with the commit list limited to `n`, so that a test can push a
+--- commit off the end of it.
+--- @param n integer
+--- @param fn fun()
+local function with_commit_count(n, fn)
+  local config = require('unidiff.config')
+  local kept = config.values.commit_count
+  config.values.commit_count = n
+  local ok, err = pcall(fn)
+  config.values.commit_count = kept
+  assert(ok, err)
+end
+
+--- @param s unidiff.Session
+--- @return string
+local function commits_winbar(s)
+  vim.g.statusline_winid = s.commits_win
+  return (list.winbar():gsub('%%#%w+#', ''))
+end
+
 -- A mark left pointing at a commit no longer listed would widen every range
 -- while no row showed where it was.
 test('session: a refresh drops a mark that has left the list', function()
   with_session(forked_history, function(s)
     goto_commit(s, 4)
     session.toggle_mark(s)
-    local kept = require('unidiff.config').values.commit_count
-    require('unidiff.config').values.commit_count = 2
-    local ok, err = pcall(session.refresh, s)
-    require('unidiff.config').values.commit_count = kept
-    assert(ok, err)
+    -- the cursor moves off the mark, so the list itself can be replaced
+    goto_commit(s, 1)
+    with_commit_count(2, function()
+      session.refresh(s)
+    end)
     eq(2, #s.commits)
     eq(nil, s.mark)
+  end)
+end)
+
+-- Replacing the list would put a different commit under the cursor and so switch
+-- the diff pane to it. The commit itself is still readable, so the list waits.
+test('session: a commit the log has dropped holds the list open', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 4)
+    local dropped = s.commits[4].sha
+    with_commit_count(2, function()
+      session.refresh(s)
+      eq(4, #s.commits)
+      eq(true, s.commits_stale)
+      eq({ kind = 'commit', index = 4 }, s.selected)
+      assert(commits_winbar(s):find('history changed', 1, true), commits_winbar(s))
+
+      -- moving off it is what lets the list through, onto the row chosen rather
+      -- than the row the cursor happened to be on
+      local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = 1 }))
+      vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+      session.follow_cursor(s, s.commits_win)
+      eq(2, #s.commits)
+      eq(nil, s.commits_stale)
+      eq({ kind = 'commit', index = 1 }, s.selected)
+      assert(not commits_winbar(s):find('history changed', 1, true), commits_winbar(s))
+      for _, c in ipairs(s.commits) do
+        assert(c.sha ~= dropped, 'the dropped commit should be gone from the list')
+      end
+    end)
   end)
 end)
 
