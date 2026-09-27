@@ -83,6 +83,52 @@ test('session: refreshing picks up changes made since', function()
   end)
 end)
 
+test('session: an automatic refresh picks up changes made since', function()
+  with_session(base, function(s, repo)
+    repo.write('third.txt', { 'more' })
+    session.refresh(s, { auto = true })
+    eq({ 'edit.txt', 'loose.txt', 'third.txt' }, rows(s))
+  end)
+end)
+
+-- `TabEnter` fires on every move between tab pages, so an automatic refresh has
+-- to be cheap to trigger. What the user asks for is never held back.
+test('session: an automatic refresh is throttled and a manual one is not', function()
+  with_session(base, function(s, repo)
+    session.refresh(s, { auto = true })
+    repo.write('third.txt', { 'more' })
+    session.refresh(s, { auto = true })
+    eq({ 'edit.txt', 'loose.txt' }, rows(s))
+    session.refresh(s)
+    eq({ 'edit.txt', 'loose.txt', 'third.txt' }, rows(s))
+  end)
+end)
+
+-- A refresh that fails would otherwise say so on every trigger, which is noise
+-- rather than news: the next trigger will come along regardless.
+test('session: only a manual refresh reports a git failure', function()
+  with_session(base, function(s)
+    local status = require('unidiff.status')
+    local list_entries, notify = status.list, vim.notify
+    local messages = {}
+    status.list = function()
+      return nil, { what = 'git diff', stderr = 'boom' }
+    end
+    vim.notify = function(msg)
+      messages[#messages + 1] = msg
+    end
+    local ok, err = pcall(function()
+      session.refresh(s, { auto = true })
+      eq({}, messages)
+      session.refresh(s)
+      eq(1, #messages)
+      assert(messages[1]:find('boom', 1, true), messages[1])
+    end)
+    status.list, vim.notify = list_entries, notify
+    assert(ok, err)
+  end)
+end)
+
 -- A refresh usually shortens the file section, and the cursor must not be left
 -- past the end of the buffer, nor on one of the rows that stand for nothing.
 test('session: refreshing pulls the cursor back inside the list', function()

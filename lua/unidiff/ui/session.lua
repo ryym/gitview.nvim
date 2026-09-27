@@ -46,6 +46,8 @@ local M = {}
 --- @field has_head boolean whether the repository has a commit; re-read on refresh
 --- @field commits_stale boolean? whether `commits` is a list `git log` no longer
 ---        agrees with, held open because the cursor is on a commit it dropped
+--- @field refreshed_at integer? when the repository was last re-read, in
+---        milliseconds, so that automatic refreshes can be throttled
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 
@@ -318,18 +320,28 @@ end
 --- `gap` row and is no longer there to be read back.
 ---
 --- @param s unidiff.Session
-function M.show_selected(s)
+--- @param keep_unchanged boolean? leave the pane as it is when it already shows
+---        what the selection names. Only for a caller that knows the contents
+---        cannot have changed; see `refresh`.
+function M.show_selected(s, keep_unchanged)
+  -- The comparison is by what is shown rather than by the target, because a
+  -- refresh can move a file to another index while it goes on being the same
+  -- file.
+  local id = selection_id(s)
+
+  -- A commit and a range are named by sha, so what they compare cannot have
+  -- changed and the view already drawn still stands. A file is named by its path
+  -- alone: the working tree moves under it, so the name says nothing about the
+  -- contents and it has to be built again.
+  if keep_unchanged and id and id.kind ~= 'file' and vim.deep_equal(id, s.shown) then
+    return
+  end
   s.index_lines = nil
 
   -- Redrawing the same thing keeps the position in it: that is what staging a
   -- hunk does, and being thrown back to the top on every `s` would make working
   -- down a diff impossible. Anything else is new contents in a reused buffer,
   -- where an inherited position means nothing.
-  --
-  -- The comparison is by what is shown rather than by the target, because a
-  -- refresh can move a file to another index while it goes on being the same
-  -- file.
-  local id = selection_id(s)
   if not vim.deep_equal(id, s.shown) then
     reset_view(s)
   end
@@ -394,7 +406,8 @@ local COMMIT_DELAY_MS = 60
 --- @param s unidiff.Session
 --- @param win integer the pane whose cursor decides the selection
 --- @param force boolean? draw even when the selection has not moved
-local function sync_selection(s, win, force)
+--- @param keep_unchanged boolean? passed on to `show_selected`
+local function sync_selection(s, win, force, keep_unchanged)
   local buf = vim.api.nvim_win_get_buf(win)
   local row = vim.api.nvim_win_get_cursor(win)[1]
   local target = list.target_at(buf, row)
@@ -409,13 +422,13 @@ local function sync_selection(s, win, force)
   -- A refresh is an explicit act rather than a cursor sweep, so it is not
   -- worth delaying even when a commit is selected.
   if force or not target or target.kind ~= 'commit' then
-    M.show_selected(s)
+    M.show_selected(s, keep_unchanged)
     return
   end
   local generation = s.generation
   vim.defer_fn(function()
     if s.generation == generation and vim.api.nvim_buf_is_valid(s.diff_buf) then
-      M.show_selected(s)
+      M.show_selected(s, keep_unchanged)
     end
   end, COMMIT_DELAY_MS)
 end
@@ -501,7 +514,8 @@ end
 ---
 --- @param s unidiff.Session
 --- @param target unidiff.ListTarget? where the cursor should end up
-local function redraw_list(s, target)
+--- @param keep_unchanged boolean? passed on to `show_selected`
+local function redraw_list(s, target, keep_unchanged)
   list.draw(s.files_buf, { pane = 'files', root = s.root, entries = s.entries })
   list.draw(s.commits_buf, {
     pane = 'commits',
@@ -522,8 +536,9 @@ local function redraw_list(s, target)
   end
 
   -- The row under the cursor may now be a different file, or the same file with
-  -- different contents, so the diff is rebuilt either way.
-  sync_selection(s, win, true)
+  -- different contents, so the diff is rebuilt either way unless the caller says
+  -- it knows better.
+  sync_selection(s, win, true, keep_unchanged)
 end
 
 --- Re-read the commit list, unless replacing it would pull the selected commit
@@ -567,16 +582,37 @@ local function read_log(s, id)
   end
 end
 
+--- How long an automatic refresh waits after the last one.
+---
+--- `TabEnter` fires on every move between tab pages, and a refresh is seven
+--- subprocesses and a view, so without this a session would re-read the
+--- repository on each one, including a glance at another tab page and straight
+--- back.
+local REFRESH_THROTTLE_MS = 300
+
 --- Re-read the repository and redraw both panes.
 ---
 --- A commit is immutable, so looking into one survives a refresh untouched. What
 --- is re-read is everything underneath it, which is what the list goes back to.
 ---
 --- @param s unidiff.Session
-function M.refresh(s)
+--- @param opts? {auto?:boolean} `auto` for a refresh nothing asked for. It is
+---        throttled, it says nothing when git fails, since the trigger will come
+---        again and a message per attempt would be noise, and it leaves the diff
+---        pane alone when what it shows cannot have changed.
+function M.refresh(s, opts)
+  local auto = opts and opts.auto or false
+  local now = math.floor(vim.uv.hrtime() / 1000000)
+  if auto and s.refreshed_at and now - s.refreshed_at < REFRESH_THROTTLE_MS then
+    return
+  end
+  s.refreshed_at = now
+
   local entries, err = status.list(s.root)
   if not entries then
-    util.git_error(err)
+    if not auto then
+      util.git_error(err)
+    end
     return
   end
   local id = selection_id(s)
@@ -587,7 +623,7 @@ function M.refresh(s)
   if not s.scope then
     read_log(s, id)
   end
-  redraw_list(s, target_of_id(s, id))
+  redraw_list(s, target_of_id(s, id), auto)
 end
 
 --- Follow the list's cursor, replacing a held-back commit list first.
@@ -969,6 +1005,42 @@ local function set_diff_keymaps(s)
   })
 end
 
+--- Whether the shared autocommands have been created.
+local hooks_set = false
+
+--- Re-read a session whenever the repository may have moved on behind it.
+---
+--- `TabEnter` catches whatever happened while another tab page was current, which
+--- covers the repository being changed from outside Neovim and then switched back
+--- to. It cannot catch a change made while the session's own tab page stays
+--- current; that is what `R` is still for.
+---
+--- `FocusGained` would catch coming back to Neovim without changing tab pages,
+--- but it needs the terminal to report focus, which tmux does not do unless
+--- `focus-events` is on. Hanging the feature on an event that silently never
+--- fires is worse than not having it.
+---
+--- This is a global event rather than a buffer one, so it is created once for the
+--- module instead of once per session, and it does nothing while no session is
+--- current. The session's own `tabnew` fires `TabEnter` before the session is
+--- registered, which is one such nothing.
+local function set_hooks()
+  if hooks_set then
+    return
+  end
+  hooks_set = true
+  vim.api.nvim_create_autocmd('TabEnter', {
+    group = vim.api.nvim_create_augroup('unidiff.ui.session', { clear = true }),
+    desc = 'unidiff: re-read the status tab page',
+    callback = function()
+      local s = M.current()
+      if s then
+        M.refresh(s, { auto = true })
+      end
+    end,
+  })
+end
+
 --- Open a tab page listing everything uncommitted.
 --- @return unidiff.Session?
 function M.open()
@@ -982,6 +1054,7 @@ function M.open()
     return
   end
 
+  set_hooks()
   vim.cmd.tabnew()
   local s = { --- @type unidiff.Session
     tab = vim.api.nvim_get_current_tabpage(),
