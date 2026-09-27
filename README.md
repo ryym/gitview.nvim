@@ -1,5 +1,11 @@
 # unidiff.nvim
 
+> [!WARNING]
+> **This README is out of date.** `:Unidiff`, `:UnidiffAll` and `:UnidiffMixed`
+> have been removed; `:UnidiffStatus` is now the only entry point, and every
+> feature is offered inside the tab page it opens. The sections below still
+> describe the old commands. [docs/](docs/) is up to date.
+
 A GitHub-style unified diff view for Neovim: deleted and added lines in one
 column, both syntax highlighted, and the buffer is still just text you can
 select, yank and search.

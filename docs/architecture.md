@@ -7,8 +7,8 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 
 | module               | responsibility                                          |
 | -------------------- | ------------------------------------------------------- |
-| `init.lua`           | Commands and the public API                             |
-| `config.lua`         | Defaults, and resolving a call's options against them   |
+| `init.lua`           | The `:UnidiffStatus` command, and `setup()`             |
+| `config.lua`         | Defaults, and the subset `vim.diff` takes               |
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `status.lua`         | What is uncommitted, as one entry per file               |
 | `stage.lua`          | Which git command moves a file into or out of the index  |
@@ -25,7 +25,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `ui/list.lua`        | A sidebar pane: its rows, its gutter, its winbar         |
 | `ui/session.lua`     | One tab page's state, and redrawing it                   |
 
-The dependency direction is one-way: `init` uses everything, `source` uses
+The dependency direction is one-way: `init` only opens a session, `source` uses
 `status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
 `git`, `view` uses `lines`, `mixed` and `highlight`, `render` uses `highlight`,
 `worddiff` and `lines`, and `config`, `util` and `git` depend on nothing but
@@ -112,9 +112,8 @@ Which of the two it is is decided by comparing what is shown — a kind and a pa
 or sha — rather than the selection itself, because a refresh can move a file to
 another index while it goes on being the same file.
 
-Each file is read as three versions and shown through `diff/mixed`, the same
-view `:UnidiffMixed` uses, so the choice between staged and unstaged never has
-to be made. Three things a view cannot express — a binary file, a change with no
+Each file is read as three versions and shown through `diff/mixed`, so the
+choice between staged and unstaged never has to be made. Three things a view cannot express — a binary file, a change with no
 lines, and nothing selected at all — are drawn by `render.notice`, which drops
 the view along with the text so that the gutter and winbar describe nothing
 rather than what was there before.
@@ -127,9 +126,9 @@ takes those three as callbacks instead of branching on where it is used.
 ### The commit list
 
 The lower pane lists the most recent commits, and selecting one draws what it
-changed. That view is the ordinary two-version one, the shape `:UnidiffAll`
-already produces: both sides are committed, so there is no index between them
-and nothing to mark as staged.
+changed. That view is the ordinary two-version one rather than a mixed view:
+both sides are committed, so there is no index between them and nothing to mark
+as staged.
 
 Three things follow from both sides being committed:
 
@@ -256,10 +255,9 @@ other. Whole-file `s` is unaffected: it is `git add`, which reads no rows. The
 measurement and the alternative are in
 [staging.md](staging.md#ignoring-whitespace-and-the-rows-disagree).
 
-The toggle is the session's alone. `:Unidiff`, `:UnidiffAll` and `:UnidiffMixed`
-honour the configured value but cannot change it, because they render a snapshot
-and dispose of the sources; rebuilding one would mean giving a view the means to
-re-read itself.
+The toggle lives on the session rather than in the configuration, because
+changing it means building every view again from the sources. `ignore_whitespace`
+in `setup()` only says where a session starts out.
 
 ### Changing the index
 
@@ -296,9 +294,10 @@ each pane keeps the row it was on, clamped to what was just drawn.
 
 For each file in the diff:
 
-1. **Read both versions.** The old side comes from git, the new side from the
-   file's loaded buffer if it has one and from disk otherwise. git is only ever
-   used to read blobs and to list what changed; the diff itself is `vim.diff`.
+1. **Read the versions.** `diff/source` reads each one: a committed version from
+   git, the index's from git, and the working tree's from the file's loaded
+   buffer if it has one and from disk otherwise. git is only ever used to read
+   blobs and to list what changed; the diff itself is `vim.diff`.
 2. **Diff.** `lines.hunks()` returns raw hunk indices; `lines.build()` turns them
    into a flat list of context/deleted/added lines with both line numbers
    attached.
@@ -404,9 +403,9 @@ scrolled off.
 
 ## Mixed view
 
-`:UnidiffMixed` (`init.open_mixed`) replaces step 2 of the pipeline with
-`mixed.build`, which takes three versions of each file instead of two. The rest
-of the pipeline is unchanged apart from a third ghost buffer for the index.
+An uncommitted file's diff replaces step 2 of the pipeline with `mixed.build`,
+which takes three versions of the file instead of two. The rest of the pipeline
+is unchanged apart from a third ghost buffer for the index.
 
 ### Aligning on the index
 

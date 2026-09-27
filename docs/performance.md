@@ -7,7 +7,7 @@ collection, and both scale with the number of files rather than the size of the
 diff, which is why a many-file view was once slow while a single large file was
 not.
 
-`:UnidiffAll` over 60 files of ~360 lines each, showing 1440 rows:
+One view over 60 changed files of ~360 lines each, showing 1440 rows:
 
 | phase                                    | time         | share |
 | ---------------------------------------- | ------------ | ----- |

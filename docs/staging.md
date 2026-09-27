@@ -288,7 +288,6 @@ What holds today:
 - The diff pane draws a notice instead of a view, which also means no rows exist
   to stage from. `apply_to_rows` checks the flag as well, as a backstop for when
   a merge view does make such a file renderable.
-- `:UnidiffMixed` leaves it out and counts it in the winbar note.
 - Whole-file `u` is refused, because `git restore --staged` would discard the
   merge.
 - **Whole-file `s` is allowed.** `git add` on an unmerged path marks the conflict
