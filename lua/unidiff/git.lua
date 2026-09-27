@@ -47,6 +47,16 @@ function M.root(cwd)
   return res.ok and vim.trim(res.stdout) or nil
 end
 
+--- @param cwd string
+--- @return string? dir absolute path of the directory git keeps the repository in
+function M.dir(cwd)
+  -- Neither the location nor the shape of the git directory follows from the
+  -- root: `.git` is a file pointing elsewhere in a worktree and in a submodule,
+  -- and `--git-dir` on its own answers relatively whenever it can.
+  local res = M.run({ 'git', 'rev-parse', '--absolute-git-dir' }, cwd)
+  return res.ok and vim.trim(res.stdout) or nil
+end
+
 --- Whether the repository has a commit yet.
 ---
 --- Before the first commit there is no HEAD to restore from, so the commands

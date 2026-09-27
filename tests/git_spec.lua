@@ -91,6 +91,29 @@ test('parses a NUL-separated path list', function()
   eq({}, git.parse_paths(''))
 end)
 
+test('resolves the git directory of a repository and of a worktree', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('init')
+    eq(repo.root .. '/.git', git.dir(repo.root))
+
+    -- A linked worktree has a `.git` file rather than a directory, and the
+    -- directory it names is the one its index lives in.
+    local tree = repo.root .. '/../unidiff-test-worktree'
+    vim.fn.delete(tree, 'rf')
+    repo.git('worktree', 'add', '-q', tree)
+    eq(repo.root .. '/.git/worktrees/unidiff-test-worktree', git.dir(tree))
+    vim.fn.delete(tree, 'rf')
+  end)
+end)
+
+test('reports no git directory outside a repository', function()
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, 'p')
+  eq(nil, git.dir(dir))
+  vim.fn.delete(dir, 'rf')
+end)
+
 test('tells a repository with a commit from one without', function()
   helpers.with_repo(function(repo)
     eq(false, git.has_head(repo.root))
