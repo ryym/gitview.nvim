@@ -59,20 +59,6 @@ function M.has_head(cwd)
   return M.run({ 'git', 'rev-parse', '--verify', '--quiet', 'HEAD' }, cwd).ok
 end
 
---- Read a blob. `nil` means the path does not exist in that revision, which is
---- how an added file is detected.
---- @param path string
---- @param rev string
---- @param cwd string
---- @return string[]?
-function M.show(path, rev, cwd)
-  local res = M.run({ 'git', 'show', ('%s:%s'):format(rev, path) }, cwd)
-  if not res.ok then
-    return nil
-  end
-  return blob_lines(res.stdout)
-end
-
 --- Parse the stream `git cat-file --batch` writes.
 ---
 --- Each object is a header line `<sha> <type> <size>` followed by exactly
@@ -251,15 +237,6 @@ end
 --- @return string? err why the command failed
 local function diff_changes(args, cwd)
   return changes_of({ 'git', 'diff' }, args, cwd)
-end
-
---- List everything that differs between `rev` and the working tree.
---- @param rev string
---- @param cwd string
---- @return unidiff.Change[]? changes
---- @return string? err
-function M.changed(rev, cwd)
-  return diff_changes({ rev }, cwd)
 end
 
 --- List everything that differs between HEAD and the index.

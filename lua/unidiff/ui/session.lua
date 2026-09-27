@@ -244,8 +244,8 @@ end
 --- Draw what the commits pane's cursor compares: one commit against its first
 --- parent, or the stretch between it and the mark.
 ---
---- This is a two-version view, the shape `:UnidiffAll` already produces: there
---- is no index between the sides and so nothing to mark as staged.
+--- This is a two-version view: there is no index between the sides and so
+--- nothing to mark as staged.
 --- @param s unidiff.Session
 --- @param commit unidiff.Commit?
 --- @param index integer? its place in the list

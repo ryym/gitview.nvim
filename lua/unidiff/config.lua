@@ -1,10 +1,9 @@
 --- Configuration lives in its own module so that anything building a view can
---- read it without depending on `init`, which depends on everything.
+--- read it without depending on `init`.
 local M = {}
 
 --- @class unidiff.Config
 --- @field context integer unchanged lines kept around each hunk
---- @field rev string default revision to diff against
 --- @field algorithm string vim.diff() algorithm
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
 --- @field ignore_whitespace boolean where a diff starts out; `:UnidiffStatus`
@@ -16,7 +15,6 @@ local M = {}
 --- @type unidiff.Config
 M.values = {
   context = 3,
-  rev = 'HEAD',
   algorithm = 'histogram',
   linematch = 0,
   ignore_whitespace = false,
@@ -28,14 +26,6 @@ M.values = {
 --- @param opts? unidiff.Config
 function M.set(opts)
   M.values = vim.tbl_extend('force', M.values, opts or {})
-end
-
---- Fill in whatever a single call did not override.
---- @generic T: table
---- @param opts T?
---- @return T
-function M.resolve(opts)
-  return vim.tbl_extend('keep', opts or {}, M.values)
 end
 
 --- The subset `vim.diff` takes. A fresh table each call, so a caller with state

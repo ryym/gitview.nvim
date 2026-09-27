@@ -103,9 +103,9 @@ function M.dispose(view)
   end
 end
 
---- What a view could not show, for its winbar. Dropping any of these silently
---- would hide a real change: a pure rename or a mode change produces no hunks,
---- and a binary or unmerged file has no versions that can be diffed.
+--- What a view could not show, for its winbar. Dropping either silently would
+--- hide a real change: a pure rename or a mode change produces no hunks, and a
+--- binary file has no versions that can be diffed.
 --- @param skipped unidiff.Skipped
 --- @param unchanged integer
 --- @return string?
@@ -117,7 +117,6 @@ function M.skipped_note(skipped, unchanged)
     end
   end
   add(#skipped.binary, 'binary')
-  add(#skipped.conflicted, 'unmerged')
   add(unchanged, 'without textual change')
   if #notes > 0 then
     return '(' .. table.concat(notes, ', ') .. ' not shown)'
