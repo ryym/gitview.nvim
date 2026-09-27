@@ -88,7 +88,8 @@ git rm --cached -f -q -- <path>
   then edited again (`AM`).
 
 The condition is the repository's, not the file's, so the session asks
-`git rev-parse --verify --quiet HEAD` once per refresh and keeps the answer.
+`git rev-parse --verify --quiet HEAD` alongside the commit list and keeps the
+answer.
 
 ## Part of a file: two plumbing commands
 

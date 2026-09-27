@@ -39,10 +39,10 @@ data, so assembling a view looks nothing up for itself.
 
 ## The status tab
 
-`:UnidiffStatus` opens a tab page that outlives the moment it was opened in.
-That is the difference from the diff commands: those render a snapshot and
-forget it, while a session keeps its repository root, its entries and the tail
-of the history so that all of them can be re-read.
+`:UnidiffStatus` opens a tab page that outlives the moment it was opened in. A
+session keeps its repository root, its entries and the tail of the history, so
+that all of them can be re-read — which is what lets it follow a repository that
+moves on while it is open.
 
 A session is registered against its tab page and dropped when that tab closes,
 however it closes. Its three buffers go with it.
@@ -184,8 +184,10 @@ which is what makes moving the better half to leave free.
 - **A merge at either end of a range is no special case.** A range compares two
   trees; only a commit shown on its own needs a parent chosen for it. This is
   the reason the range is the type everything takes.
-- **A mark that leaves the list is dropped on refresh.** It would otherwise go on
-  widening every range while no row showed where it was.
+- **A mark is dropped along with the list it pointed into.** A mark on a commit
+  no longer listed would go on widening every range while no row showed where it
+  was, so it is cleared whenever a re-read replaces the list without it — and only
+  then, since a list that was [held back](#refreshing) still has the row.
 
 A range whose ends sit on branches that diverged is compared all the same, and
 said to have done so: `git merge-base --is-ancestor` decides, and the winbar
@@ -217,8 +219,10 @@ the buffer stands for it and every row remains a file.
   versions are then read against, so selecting a file lists nothing again.
   `source.for_range_change` reads one entry of it the way `source.for_entry`
   reads one status entry.
-- **A commit is immutable, so a refresh leaves the scope alone.** What `R`
-  re-reads is everything underneath, which is what backing out goes back to.
+- **A commit is immutable, so a refresh leaves the scope alone.** What is
+  re-read is everything underneath, which is what backing out goes back to. The
+  log is not even read while a range is in front of it, since the commits pane is
+  showing the range's files; `<BS>` reads it on the way out.
 - **`<BS>` backs out**, and the cursor lands on the commit it was on when going
   in — the near end of a range, not the mark — rather than wherever the row
   happens to fall. `q` still closes the
@@ -275,8 +279,9 @@ holes. The parts that constrain the rest of the design are:
 - **The session keeps the selected file's `index_lines`.** A view is trimmed, so
   everything away from a change has been folded into a `gap` row; the index
   contents cannot be read back out of the buffer.
-- **Whether the repository has a HEAD is a session-level flag**, re-read on every
-  refresh, because it decides which unstaging command is even available.
+- **Whether the repository has a HEAD is a session-level flag**, re-read
+  whenever the log is, because it decides which unstaging command is even
+  available.
 - **An unmerged file is listed but not drawn.** It has no stage 0 to read a
   version from, and writing one over a conflict's three entries reports no error
   and discards them. It is refused everywhere but whole-file `s`, which is
@@ -289,6 +294,64 @@ all move together. The cursor follows what was selected rather than the row it
 was on, by path for a file and by sha for a commit, because a file added or
 committed away shifts every row below it. When the selection is gone altogether
 each pane keeps the row it was on, clamped to what was just drawn.
+
+### Refreshing
+
+A session re-reads the repository on `R`, after it has changed the index itself,
+and on its own on `TabEnter`. Entering the tab page picks up whatever happened
+while another one was current, whatever made it happen: another terminal, a tmux
+pane, another editor, a script. What it cannot pick up is a change made while the
+session's own tab page stays current, which is still `R`'s to catch.
+
+`FocusGained` would cover coming back to Neovim without changing tab pages, and
+is deliberately not used. It needs the terminal to report focus, which tmux does
+not do unless `focus-events` is on, so it would be a trigger that silently never
+fires for some of the people it was added for.
+
+The event is global rather than a buffer one, so it is created once for the module
+instead of once per session, and it acts on whichever session is current. A
+session's own `tabnew` fires `TabEnter` before the session is registered, and so
+does nothing.
+
+Being triggered rather than asked for changes what a refresh may do:
+
+- **It is throttled**, since `TabEnter` fires on every move between tab pages,
+  including a glance at another one and straight back. One refresh is seven
+  subprocesses and a view.
+- **It reports nothing when git fails.** The trigger will come again, so a
+  message per attempt would be noise rather than news. `R` still reports.
+- **It keeps a diff the selection cannot have changed.** A commit or a range is
+  named by sha, so what it compares is fixed; a file is named by its path alone,
+  the working tree moves under it, and its view has to be built again. This is
+  read from what is shown against `shown`, not from the target `sync_selection`
+  derives, because those are compared by list index and one new commit moves every
+  index below it.
+
+The line it must not cross is changing what the diff pane shows. Nothing the user
+did would account for it.
+
+#### A commit the log has dropped holds the list back
+
+Replacing the list is what would cross that line. The selection is re-derived
+from the row the cursor is on, so a list that no longer names the selected commit
+puts a different commit on that row and draws it instead.
+
+The commit itself is still readable — a rewritten or reset commit stays in the
+object database until it is pruned — so what is wrong is the list, not the view.
+The old list is kept, the commits pane says `(history changed)` in its winbar, and
+the first move off that commit lets the new list through, onto the row the cursor
+chose rather than the one it happened to be on.
+
+This only arises from a history rewrite or from a commit falling off the end of
+the list. A commit merely added leaves the selected sha in place, where following
+it by sha already finds it.
+
+#### The files pane is allowed to drift
+
+The same thing in the files pane is left alone. A file that has left the list has
+genuinely stopped having changes, so there is nothing to go on showing, and moving
+to the row that took its place is what a file manager does with a deleted file.
+With nothing left at all the pane holds its empty notice and the diff says so too.
 
 ## Pipeline
 

@@ -1,10 +1,9 @@
 --- One tab page showing a repository's uncommitted changes: the file list on
 --- the left, the selected file's diff on the right.
 ---
---- The session is what makes this different from the diff commands: those
---- render a snapshot and forget it, while this keeps enough state to be redrawn
---- when the repository changes underneath it, and to follow the cursor from one
---- file to the next.
+--- A session outlives the moment it was opened in. It keeps enough state to be
+--- redrawn when the repository changes underneath it — which it does by itself
+--- on entering its tab page — and to follow the cursor from one file to the next.
 local config = require('unidiff.config')
 local git = require('unidiff.git')
 local index = require('unidiff.index')
