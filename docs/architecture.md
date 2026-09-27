@@ -298,20 +298,37 @@ each pane keeps the row it was on, clamped to what was just drawn.
 ### Refreshing
 
 A session re-reads the repository on `R`, after it has changed the index itself,
-and on its own on `TabEnter`. Entering the tab page picks up whatever happened
-while another one was current, whatever made it happen: another terminal, a tmux
-pane, another editor, a script. What it cannot pick up is a change made while the
-session's own tab page stays current, which is still `R`'s to catch.
+and on its own from two triggers:
 
-`FocusGained` would cover coming back to Neovim without changing tab pages, and
-is deliberately not used. It needs the terminal to report focus, which tmux does
-not do unless `focus-events` is on, so it would be a trigger that silently never
-fires for some of the people it was added for.
+- **A poll on `<gitdir>/index`**, every second, which is what catches a change
+  made while the session's own tab page is the one being looked at. Every command
+  that changes what the tab shows writes that file, so one watcher covers them
+  all, whatever ran them: another terminal, a tmux pane, a script, another Neovim.
+- **`TabEnter`**, which picks up whatever happened while another tab page was
+  current, including the writes the poll passed over because nobody was looking
+  at the session.
 
-The event is global rather than a buffer one, so it is created once for the module
-instead of once per session, and it acts on whichever session is current. A
-session's own `tabnew` fires `TabEnter` before the session is registered, and so
-does nothing.
+Between them what is left for `R` is a change that writes neither the index nor a
+tab page: a file written by something that never went through git.
+
+`FocusGained` would be the obvious third, and is deliberately not used. It needs
+the terminal to report focus, which tmux does not do unless `focus-events` is on,
+so it would be a trigger that silently never fires for some of the people it was
+added for. The index poll covers what it was wanted for and does not wait for
+Neovim to be given focus back.
+
+The watcher polls rather than subscribing to filesystem events because git writes
+`index.lock` and renames it over the index. The inode is replaced on every write,
+so `fs_event` would be left holding a file nothing writes to again, while
+`fs_poll` stats the path by name. The git directory is asked for rather than
+assumed from the root, since `.git` is a file naming somewhere else in a worktree
+and in a submodule.
+
+`TabEnter` is global rather than a buffer event, so it is created once for the
+module instead of once per session, and it acts on whichever session is current.
+A session's own `tabnew` fires it before the session is registered, and so does
+nothing. The watcher is the other way round — one per session, started with the
+tab page and closed with it, since a poll handle is owned by nothing else.
 
 Being triggered rather than asked for changes what a refresh may do:
 
@@ -327,8 +344,16 @@ Being triggered rather than asked for changes what a refresh may do:
   derives, because those are compared by list index and one new commit moves every
   index below it.
 
-The line it must not cross is changing what the diff pane shows. Nothing the user
-did would account for it.
+The poll adds one more, because it is the only trigger that does not arrive at a
+break in what the user is doing:
+
+- **It waits for normal mode.** A redraw during a visual selection would take the
+  lines being staged away from the command about to stage them. Dropping the
+  refresh rather than deferring it costs nothing, since finishing that command
+  re-reads anyway.
+
+The line none of it may cross is changing what the diff pane shows. Nothing the
+user did would account for it.
 
 #### A commit the log has dropped holds the list back
 

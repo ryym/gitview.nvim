@@ -119,6 +119,12 @@ right. The sidebar is split in two: the uncommitted changes above, the recent
 commits below. Moving the cursor in either draws whatever it lands on, and moving
 between the two panes switches which list the diff follows.
 
+The tab keeps up with the repository on its own. Anything that writes the index
+— `git add` in another terminal, a commit from a tmux pane, a branch switch from
+a script — is noticed within a second and redrawn, and coming back to the tab
+page re-reads it as well. `R` re-reads it on demand, for the rest: a file written
+by something that never touched git.
+
 The upper pane has one row per file, with the two status letters
 `git status --short` prints. A file changed both in the index and in the working tree is still one
 row, and its diff is the mixed view above: what is staged and what is not, at
