@@ -47,6 +47,8 @@ local M = {}
 ---        agrees with, held open because the cursor is on a commit it dropped
 --- @field refreshed_at integer? when the repository was last re-read, in
 ---        milliseconds, so that automatic refreshes can be throttled
+--- @field watcher uv.uv_fs_poll_t? watches the index for writes; nil when the
+---        git directory could not be resolved
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 
@@ -1040,6 +1042,66 @@ local function set_hooks()
   })
 end
 
+--- How often the index is looked at to see whether it has been written.
+---
+--- Slower than the throttle on a refresh, so that a write and a tab page change
+--- landing together are still one re-read rather than two.
+local INDEX_POLL_MS = 1000
+
+--- Re-read a session whenever another process writes the repository's index.
+---
+--- This is what `TabEnter` cannot do: catch a change while the session's own tab
+--- page is the one being looked at. `git add`, `git commit`, `git checkout` and
+--- the rest all write `<gitdir>/index`, so watching that one file covers them
+--- whatever ran them — another terminal, a tmux pane, a script, another Neovim.
+---
+--- It polls rather than subscribing to filesystem events because git does not
+--- write the index in place: it writes `index.lock` and renames it over. The
+--- inode is replaced on every write, so an `fs_event` watcher would be left
+--- holding the file nobody writes to again, while `fs_poll` stats the path by
+--- name and follows the replacement.
+---
+--- @param s unidiff.Session
+local function watch_index(s)
+  local dir = git.dir(s.root)
+  if not dir then
+    return
+  end
+  local watcher = vim.uv.new_fs_poll()
+  if not watcher then
+    return
+  end
+  s.watcher = watcher
+  watcher:start(
+    vim.fs.joinpath(dir, 'index'),
+    INDEX_POLL_MS,
+    vim.schedule_wrap(function(err)
+      if err or M.current() ~= s then
+        return
+      end
+      -- Every other trigger fires at a break in what the user is doing. This one
+      -- fires whenever another process happens to write, so it has to find the
+      -- break itself: a redraw during a visual selection would take the lines
+      -- being staged out from under the command about to stage them. Dropping
+      -- the refresh costs nothing, since finishing that command redraws anyway.
+      if vim.fn.mode() ~= 'n' then
+        return
+      end
+      M.refresh(s, { auto = true })
+    end)
+  )
+end
+
+--- Give up the index watcher, which outlives the tab page otherwise.
+--- @param s unidiff.Session
+local function unwatch_index(s)
+  if s.watcher then
+    s.watcher:stop()
+    s.watcher:close()
+    s.watcher = nil
+  end
+end
+
 --- Open a tab page listing everything uncommitted.
 --- @return unidiff.Session?
 function M.open()
@@ -1114,12 +1176,14 @@ function M.open()
   end
 
   M.sessions[s.tab] = s
+  watch_index(s)
   vim.api.nvim_create_autocmd('TabClosed', {
     group = vim.api.nvim_create_augroup('unidiff.ui.session.' .. s.tab, { clear = true }),
     callback = function()
       -- TabClosed does not say which tab went, so this checks its own.
       if not vim.api.nvim_tabpage_is_valid(s.tab) then
         M.sessions[s.tab] = nil
+        unwatch_index(s)
         for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
           if vim.api.nvim_buf_is_valid(buf) then
             vim.api.nvim_buf_delete(buf, { force = true })

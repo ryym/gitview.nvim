@@ -104,6 +104,19 @@ test('session: an automatic refresh is throttled and a manual one is not', funct
   end)
 end)
 
+-- A poll handle is not owned by the tab page it was started for, so a session
+-- that forgot to give it up would go on stating the index of a repository nobody
+-- is looking at, once for every tab page ever opened.
+test('session: the index watcher is given up with the tab page', function()
+  local closed
+  with_session(base, function(s)
+    closed = s
+    assert(s.watcher, 'no index watcher was started')
+    eq(false, s.watcher:is_closing())
+  end)
+  eq(nil, closed.watcher)
+end)
+
 -- A refresh that fails would otherwise say so on every trigger, which is noise
 -- rather than news: the next trigger will come along regardless.
 test('session: only a manual refresh reports a git failure', function()
