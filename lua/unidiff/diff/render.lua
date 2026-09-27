@@ -295,13 +295,18 @@ local STAGE_MARK = { staged = 'S', index = 'I' }
 function M.statuscolumn()
   local win = vim.g.statusline_winid
   local view = M.views[vim.api.nvim_win_get_buf(win)]
-  local blank = view and view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER
+  -- A window that inherited 'statuscolumn' from a diff window is showing another
+  -- buffer, which has no gutter: drawing blanks would leave it an empty column.
+  if not view then
+    return ''
+  end
+  local blank = view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER
   -- 'statuscolumn' is evaluated for every screen line, so a wrapped line must
   -- not repeat the numbers of the buffer line it continues.
   if vim.v.virtnum ~= 0 then
     return blank
   end
-  local l = view and view.lines[vim.v.lnum]
+  local l = view.lines[vim.v.lnum]
   -- separators, file headers and the blanks between files stand for no source
   -- line and so have no numbers to show
   if not l or not dlib.source_kinds[l.kind] then

@@ -156,7 +156,12 @@ M.state = {}
 function M.statuscolumn()
   local win = vim.g.statusline_winid
   local state = M.state[vim.api.nvim_win_get_buf(win)]
-  if vim.v.virtnum ~= 0 or not state then
+  -- A window that inherited 'statuscolumn' from a list window is showing another
+  -- buffer, which has no gutter: drawing blanks would leave it an empty column.
+  if not state then
+    return ''
+  end
+  if vim.v.virtnum ~= 0 then
     return BLANK_GUTTER
   end
   local row = state.rows[vim.v.lnum]
