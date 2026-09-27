@@ -301,15 +301,27 @@ A session re-reads the repository on `R`, after it has changed the index itself,
 and on its own from two triggers:
 
 - **A poll on `<gitdir>/index`**, every second, which is what catches a change
-  made while the session's own tab page is the one being looked at. Every command
-  that changes what the tab shows writes that file, so one watcher covers them
-  all, whatever ran them: another terminal, a tmux pane, a script, another Neovim.
+  made while the session's own tab page is the one being looked at. `git add`,
+  `git commit` and `git checkout` all write that file, so one watcher covers them
+  whatever ran them: another terminal, a tmux pane, a script, another Neovim.
 - **`TabEnter`**, which picks up whatever happened while another tab page was
   current, including the writes the poll passed over because nobody was looking
   at the session.
 
-Between them what is left for `R` is a change that writes neither the index nor a
-tab page: a file written by something that never went through git.
+Two kinds of change fall between them, and are what `R` is left for:
+
+- **A file written by something that never went through git**, by an external
+  editor or a script. Neither the index nor HEAD moves. Watching the working tree
+  instead is not on offer: `fs_event` does not recurse on Linux, and a watcher per
+  directory of a repository is not worth what it would catch.
+- **A command that moves HEAD without writing the index**: `git reset --soft`, an
+  amend of nothing but the message, `git update-ref`. Watching `HEAD` as well
+  would not settle this, since on a branch it is `refs/heads/<name>` that moves
+  while `HEAD` holds still. In practice such a command is nearly always followed
+  by one that does write the index, which is the next line redrawn.
+
+Both are only a gap while the tab page stays current; entering it re-reads
+regardless.
 
 `FocusGained` would be the obvious third, and is deliberately not used. It needs
 the terminal to report focus, which tmux does not do unless `focus-events` is on,

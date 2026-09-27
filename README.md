@@ -121,9 +121,12 @@ between the two panes switches which list the diff follows.
 
 The tab keeps up with the repository on its own. Anything that writes the index
 — `git add` in another terminal, a commit from a tmux pane, a branch switch from
-a script — is noticed within a second and redrawn, and coming back to the tab
-page re-reads it as well. `R` re-reads it on demand, for the rest: a file written
-by something that never touched git.
+a script — is noticed within a second and redrawn, and coming back to the tab page
+re-reads it as well.
+
+`R` re-reads it on demand, for what those two miss while you stay on the tab page:
+a file written by something that never touched git, and the few commands that move
+HEAD without writing the index, such as `git reset --soft`.
 
 The upper pane has one row per file, with the two status letters
 `git status --short` prints. A file changed both in the index and in the working tree is still one

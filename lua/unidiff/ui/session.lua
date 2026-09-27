@@ -1051,9 +1051,17 @@ local INDEX_POLL_MS = 1000
 --- Re-read a session whenever another process writes the repository's index.
 ---
 --- This is what `TabEnter` cannot do: catch a change while the session's own tab
---- page is the one being looked at. `git add`, `git commit`, `git checkout` and
---- the rest all write `<gitdir>/index`, so watching that one file covers them
---- whatever ran them — another terminal, a tmux pane, a script, another Neovim.
+--- page is the one being looked at. `git add`, `git commit` and `git checkout`
+--- all write `<gitdir>/index`, so watching that one file covers them whatever ran
+--- them — another terminal, a tmux pane, a script, another Neovim.
+---
+--- What it does not cover is a command that moves HEAD without writing the index:
+--- `git reset --soft`, an amend of nothing but the message, `git update-ref`.
+--- They change what the panes should show and go unnoticed here. Watching `HEAD`
+--- as well would not settle it either, since on a branch it is `refs/heads/<name>`
+--- that moves and `HEAD` itself holds still. The case is narrow — such a command
+--- is nearly always followed by one that does write the index — and `TabEnter`
+--- and `R` are both still there, so it is left alone rather than chased.
 ---
 --- It polls rather than subscribing to filesystem events because git does not
 --- write the index in place: it writes `index.lock` and renames it over. The
