@@ -8,8 +8,19 @@ local M = {}
 local ns_syntax = vim.api.nvim_create_namespace('unidiff.syntax')
 local ns_diff = vim.api.nvim_create_namespace('unidiff.diff')
 
+--- Kept off `M` on purpose. The window options call into this module as
+--- `v:lua.require(...).fn()`, which converts `M` into a Vim value on every call:
+--- a view reachable from it would be copied once per line on each redraw, and
+--- once per line per line whenever 'foldexpr' reevaluates the whole buffer.
 --- @type table<integer, unidiff.View>
-M.views = {}
+local views = {}
+
+--- The view `buf` is showing, if it is showing one.
+--- @param buf integer
+--- @return unidiff.View?
+function M.view_of(buf)
+  return views[buf]
+end
 
 --- @class unidiff.File
 --- @field path string absolute path in the working tree
@@ -140,7 +151,7 @@ end
 --- keystroke of a file list.
 --- @return integer bufnr
 function M.create_buffer()
-  return util.scratch_buffer('unidiff', M.views)
+  return util.scratch_buffer('unidiff', views)
 end
 
 --- Whether the header's fold is open, in each window showing `buf` whose view
@@ -154,7 +165,7 @@ end
 --- @param buf integer
 --- @return table<integer, boolean> open by window
 local function header_fold_states(buf)
-  local old = M.views[buf]
+  local old = views[buf]
   local open = {}
   if old and old.header_rows then
     for _, win in ipairs(vim.fn.win_findbuf(buf)) do
@@ -196,7 +207,7 @@ function M.draw(buf, view)
   end
   -- 'foldexpr' is evaluated while the lines are being replaced, so the view it
   -- reads has to be the new one by then.
-  M.views[buf] = view
+  views[buf] = view
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
   if view.header_rows then
     restore_header_folds(header_open)
@@ -331,7 +342,7 @@ function M.notice(buf, text)
   vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
   vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
   -- before the lines, so that 'foldexpr' does not fold them by the old view
-  M.views[buf] = nil
+  views[buf] = nil
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
   vim.api.nvim_buf_set_extmark(buf, ns_diff, 0, 0, {
     end_row = 1,
@@ -367,7 +378,7 @@ local STAGE_MARK = { staged = 'S', index = 'I' }
 --- @return string
 function M.statuscolumn()
   local win = vim.g.statusline_winid
-  local view = M.views[vim.api.nvim_win_get_buf(win)]
+  local view = views[vim.api.nvim_win_get_buf(win)]
   -- A window that inherited 'statuscolumn' from a diff window is showing another
   -- buffer, which has no gutter: drawing blanks would leave it an empty column.
   if not view then
@@ -406,7 +417,7 @@ end
 --- @return string
 function M.winbar()
   local win = vim.g.statusline_winid
-  local view = M.views[vim.api.nvim_win_get_buf(win)]
+  local view = views[vim.api.nvim_win_get_buf(win)]
   if not view then
     return ''
   end
@@ -436,7 +447,7 @@ end
 --- @return string
 function M.foldexpr()
   -- Evaluated with the window being folded made current, whichever it is.
-  local view = M.views[vim.api.nvim_get_current_buf()]
+  local view = views[vim.api.nvim_get_current_buf()]
   local n = view and view.header_rows
   local lnum = vim.v.lnum
   if not n or lnum > n then
@@ -448,7 +459,7 @@ end
 --- A folded header reads as its subject and how much the commit changed.
 --- @return string|[string, string][]
 function M.foldtext()
-  local view = M.views[vim.api.nvim_get_current_buf()]
+  local view = views[vim.api.nvim_get_current_buf()]
   if not view or not view.header_rows then
     return vim.fn.foldtext()
   end

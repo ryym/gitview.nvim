@@ -846,7 +846,7 @@ end
 local function apply_to_rows(s, op, first, last)
   local target = s.selected
   local entry = target and target.kind == 'file' and s.entries[target.index] or nil
-  local view = render.views[s.diff_buf]
+  local view = render.view_of(s.diff_buf)
   if not entry or not view or not s.index_lines then
     return
   end
@@ -913,7 +913,7 @@ local function set_diff_stage_keymaps(s)
       end, ('%s the selected lines'):format(op), { mode })
     end
     map(lhs:upper(), function()
-      local view = render.views[s.diff_buf]
+      local view = render.view_of(s.diff_buf)
       local first, last = index.hunk_at(view and view.lines or {}, vim.fn.line('.'))
       if not first then
         util.info('not inside a change')

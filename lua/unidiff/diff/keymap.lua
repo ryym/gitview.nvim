@@ -21,7 +21,7 @@ local M = {}
 --- @param field 'hunk_rows'|'file_rows'
 --- @return integer[]
 local function rows_of(field)
-  local view = render.views[vim.api.nvim_get_current_buf()]
+  local view = render.view_of(vim.api.nvim_get_current_buf())
   return view and view[field] or {}
 end
 
@@ -63,7 +63,7 @@ end
 --- @param before_jump fun() gives up whatever the diff was being shown in
 function M.goto_source(before_jump)
   local buf = vim.api.nvim_get_current_buf()
-  local view = render.views[buf]
+  local view = render.view_of(buf)
   if not view then
     return
   end

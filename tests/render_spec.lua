@@ -171,9 +171,18 @@ end)
 
 test('the view is dropped when the buffer goes away', function()
   local buf = build()
-  assert(render.views[buf], 'view should be registered')
+  assert(render.view_of(buf), 'view should be registered')
   vim.api.nvim_buf_delete(buf, { force = true })
-  eq(nil, render.views[buf])
+  eq(nil, render.view_of(buf))
+end)
+
+-- `v:lua.require(...).fn()` converts the whole module into a Vim value on every
+-- call, so a table on it would be copied each time a window option is evaluated.
+test('the module holds no table for window options to copy', function()
+  build()
+  for key, value in pairs(render) do
+    assert(type(value) ~= 'table', ('render.%s is a table'):format(key))
+  end
 end)
 
 test('the gutter is numbered for source lines and blank for the rest', function()
@@ -368,7 +377,7 @@ test('draw replaces the previous view entirely', function()
   vim.api.nvim_buf_delete(new_buf, { force = true })
 
   eq({ 'local z = 1' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
-  eq(view, render.views[buf])
+  eq(view, render.view_of(buf))
   -- Marks of the discarded view would sit on rows that no longer exist.
   for _, ns in ipairs({ 'unidiff.syntax', 'unidiff.diff' }) do
     local id = vim.api.nvim_get_namespaces()[ns]

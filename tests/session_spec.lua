@@ -270,7 +270,7 @@ test('session: opens showing the first entry', function()
     assert(text:find('return 3', 1, true), text)
     -- one diff carries both layers, which is the whole point of the model
     local stages = {}
-    for _, l in ipairs(require('unidiff.diff.render').views[s.diff_buf].lines) do
+    for _, l in ipairs(require('unidiff.diff.render').view_of(s.diff_buf).lines) do
       if l.stage then
         stages[l.stage] = true
       end
@@ -319,7 +319,7 @@ test('session: a change with no lines says so instead of showing nothing', funct
     repo.git('mv', 'doc.md', 'guide.md')
   end, function(s)
     eq({ 'doc.md -> guide.md   (no textual change)' }, diff_rows(s))
-    eq(nil, require('unidiff.diff.render').views[s.diff_buf])
+    eq(nil, require('unidiff.diff.render').view_of(s.diff_buf))
   end)
 end)
 
@@ -482,7 +482,7 @@ end
 --- @param text string
 --- @return integer
 local function changed_row(s, text)
-  local view = assert(require('unidiff.diff.render').views[s.diff_buf], 'no view drawn')
+  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
   for i, l in ipairs(view.lines) do
     if l.text == text and l.stage then
       return i
@@ -548,7 +548,7 @@ test('session: staging in the diff redraws the pane as staged', function()
   with_session(partial, function(s)
     put_cursor(s, changed_row(s, 'six'))
     press_diff(s, 's')
-    local view = require('unidiff.diff.render').views[s.diff_buf]
+    local view = require('unidiff.diff.render').view_of(s.diff_buf)
     eq('staged', view.lines[changed_row(s, 'six')].stage)
   end)
 end)
@@ -556,7 +556,7 @@ end)
 test('session: a row with nothing to stage leaves the index alone', function()
   with_session(partial, function(s, repo)
     -- `three` is unchanged in all three versions, so it is a context row.
-    local view = require('unidiff.diff.render').views[s.diff_buf]
+    local view = require('unidiff.diff.render').view_of(s.diff_buf)
     local row
     for i, l in ipairs(view.lines) do
       if l.text == 'three' then
@@ -724,7 +724,7 @@ end)
 test('session: the root commit shows its files as additions', function()
   with_session(history, function(s)
     show_commit(s, 2)
-    local view = require('unidiff.diff.render').views[s.diff_buf]
+    local view = require('unidiff.diff.render').view_of(s.diff_buf)
     assert(view, 'the root commit should have a view')
     for _, l in ipairs(view.lines) do
       if require('unidiff.diff.lines').source_kinds[l.kind] then
@@ -739,7 +739,7 @@ end)
 test('session: a commit view is marked historical and is not mixed', function()
   with_session(history, function(s)
     show_commit(s, 1)
-    local view = require('unidiff.diff.render').views[s.diff_buf]
+    local view = require('unidiff.diff.render').view_of(s.diff_buf)
     eq(true, view.historical)
     eq(nil, view.mixed)
   end)
@@ -791,7 +791,7 @@ test('session: a file of a commit is shown by itself', function()
     show_commit(s, 1)
     session.enter(s)
     session.show_selected(s)
-    local view = require('unidiff.diff.render').views[s.diff_buf]
+    local view = require('unidiff.diff.render').view_of(s.diff_buf)
     eq(1, #view.files)
     eq('a.lua', view.files[1].label)
     eq(true, view.historical)
@@ -907,7 +907,7 @@ test('session: staging keeps the position in the diff', function()
     local row = changed_row(s, 'again 20')
     put_cursor(s, row)
     press_diff(s, 's')
-    eq('staged', require('unidiff.diff.render').views[s.diff_buf].lines[row].stage)
+    eq('staged', require('unidiff.diff.render').view_of(s.diff_buf).lines[row].stage)
     eq(row, diff_row(s))
   end)
 end)
@@ -999,7 +999,7 @@ test('session: a mark and the cursor compare the stretch between them', function
     -- first -> merge side adds both branches' files
     eq({ 'main.txt', 'side.txt' }, vim.tbl_map(function(f)
       return f.label
-    end, require('unidiff.diff.render').views[s.diff_buf].files))
+    end, require('unidiff.diff.render').view_of(s.diff_buf).files))
   end)
 end)
 
@@ -1058,7 +1058,7 @@ test('session: a merge on its own is still first parent', function()
     -- only the side branch's file, not main's
     eq({ 'side.txt' }, vim.tbl_map(function(f)
       return f.label
-    end, require('unidiff.diff.render').views[s.diff_buf].files))
+    end, require('unidiff.diff.render').view_of(s.diff_buf).files))
   end)
 end)
 
@@ -1072,7 +1072,7 @@ test('session: looking into a range lists the files it changed', function()
     eq(('%s..%s'):format(s.commits[4].sha, s.commits[1].sha), s.scope.label)
     eq({ 'main.txt', 'side.txt' }, commit_rows(s))
     session.show_selected(s)
-    eq('main.txt', require('unidiff.diff.render').views[s.diff_buf].files[1].label)
+    eq('main.txt', require('unidiff.diff.render').view_of(s.diff_buf).files[1].label)
     -- backing out returns to the commit the cursor was on, not to the mark
     session.leave(s)
     eq({ kind = 'commit', index = 1 }, s.selected)
@@ -1155,7 +1155,7 @@ end
 --- @param s unidiff.Session
 --- @return string[] the text of every row standing for a source line
 local function source_rows(s)
-  local view = assert(require('unidiff.diff.render').views[s.diff_buf], 'no view drawn')
+  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
   local out = {}
   for _, l in ipairs(view.lines) do
     if require('unidiff.diff.lines').source_kinds[l.kind] then
@@ -1261,7 +1261,7 @@ end
 --- @param s unidiff.Session
 --- @return unidiff.View
 local function diff_view(s)
-  return assert(require('unidiff.diff.render').views[s.diff_buf])
+  return assert(require('unidiff.diff.render').view_of(s.diff_buf))
 end
 
 --- @param s unidiff.Session
