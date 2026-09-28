@@ -11,7 +11,7 @@ local M = {}
 local TS_PRIORITY = 100
 
 --- Whether Tree-sitter can highlight `lang`, and so whether the ghost buffer
---- needs a filetype at all.
+--- needs a syntax file at all.
 --- @param lang string
 --- @return boolean
 function M.has_parser(lang)
@@ -27,10 +27,13 @@ end
 --- Load a whole file version into a scratch buffer so the highlighter sees full
 --- context (multi-line strings, injections, ...) instead of a hunk fragment.
 ---
---- Setting 'filetype' fires FileType, which loads the ftplugin and the syntax
---- file for every ghost buffer. That is only worth paying for when the legacy
---- `:syntax` path will actually be used: `vim.treesitter.get_parser()` takes the
---- language explicitly and does not care what the buffer's filetype is.
+--- Only the legacy `:syntax` path needs anything set: `vim.treesitter.get_parser()`
+--- takes the language explicitly and does not care what the buffer is. Even then
+--- the buffer gets 'syntax' rather than 'filetype'. The syntax file is all the
+--- legacy path reads, and 'filetype' would also set off ftplugins and every
+--- FileType autocommand of the user's, language servers included, for a buffer
+--- that lives a moment. See docs/performance.md for what that cost and for how
+--- the colors may differ from the file's own.
 ---
 --- @param lines string[]
 --- @param filetype string `''` leaves the buffer without any highlighting
@@ -41,7 +44,7 @@ function M.ghost_buffer(lines, filetype, lang)
   vim.bo[buf].bufhidden = 'hide'
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   if filetype ~= '' and not (lang and M.has_parser(lang)) then
-    vim.bo[buf].filetype = filetype
+    vim.bo[buf].syntax = filetype
   end
   return buf
 end

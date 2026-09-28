@@ -158,16 +158,19 @@ test('has_parser tells the two highlight paths apart', function()
   eq(false, hl.has_parser(''))
 end)
 
-test('a ghost buffer skips filetype when treesitter can highlight it', function()
-  -- Setting it would load an ftplugin and a syntax file for nothing.
+test('a ghost buffer loads no syntax when treesitter can highlight it', function()
+  -- It would load a syntax file for nothing.
   local buf = hl.ghost_buffer({ 'local x = 1' }, 'lua', 'lua')
   eq('', vim.bo[buf].filetype)
+  eq('', vim.bo[buf].syntax)
   assert(hl.collect(buf, 'lua')[0], 'highlights should still be collected')
 end)
 
-test('a ghost buffer sets filetype when the legacy path is needed', function()
+test('a ghost buffer sets syntax alone when the legacy path is needed', function()
+  -- 'filetype' would also run ftplugins and FileType autocommands.
   local buf = hl.ghost_buffer(PERL, 'perl', 'perl')
-  eq('perl', vim.bo[buf].filetype)
+  eq('perl', vim.bo[buf].syntax)
+  eq('', vim.bo[buf].filetype)
   assert(next(hl.collect(buf, 'perl')), 'legacy highlights should still work')
 end)
 

@@ -50,7 +50,7 @@ altered the output:
 | change                                                    | effect                      |
 | --------------------------------------------------------- | --------------------------- |
 | Query only the displayed rows                             | Rendering 741 ms → 112 ms   |
-| Skip `filetype` when Tree-sitter can highlight            | Ghost buffers 159 ms → 6 ms |
+| Load no syntax file when Tree-sitter can highlight        | Ghost buffers 159 ms → 6 ms |
 | One `git cat-file --batch` instead of `git show` per file | Blob reads 221 ms → 11 ms   |
 
 The commit above took 36 s, almost all of it inside `nvim_buf_set_lines`, until
@@ -68,12 +68,51 @@ captures, against 0.27 ms and 150 captures for the three ranges actually
 displayed. The _parse_ still covers the whole buffer — that is what preserves
 context — only the query is narrowed.
 
-### Skip `filetype` when Tree-sitter can highlight
+### Keep ghost buffers away from `FileType`
 
-Assigning `'filetype'` fires `FileType`, which loads an ftplugin and a syntax
-file for each of the two ghost buffers per file. None of it is used when
-Tree-sitter does the highlighting, since `get_parser()` takes the language
-explicitly.
+A ghost buffer never gets `'filetype'`. Tree-sitter needs nothing set, since
+`get_parser()` takes the language explicitly. A language without a parser gets
+`'syntax'` alone, which loads the syntax file the legacy path reads and nothing
+else. `'filetype'` would also run ftplugins and every `FileType` autocommand of
+the user's configuration, language servers included, for a buffer that lives a
+moment.
+
+What that cost, for a commit with eight scss files (sixteen ghost buffers) in a
+real configuration:
+
+| ghost buffers get           | per buffer | the commit's view |
+| --------------------------- | ---------- | ----------------- |
+| `'filetype'`                | ~40 ms     | 630 ms            |
+| `'syntax'`                  | ~20 ms     | 345 ms            |
+| nothing (`no_highlight`)    | —          | ~0 ms             |
+
+Under `--clean` the same syntax file loads in ~3.5 ms. What the rest depends on
+is the configuration, not the file:
+
+- **Highlight groups.** Every `:hi` and `:syn` line a syntax file runs costs more
+  the more groups are defined. With 3000 extra groups, scss took 10.4 ms instead
+  of 3.6 ms; a configuration with a colorscheme, Tree-sitter and semantic tokens
+  easily has that many.
+- **`'runtimepath'`.** A syntax file that includes others runs `:runtime!`, which
+  searches every entry. With 150 extra entries, scss took 7.0 ms.
+
+A language without a parser therefore pays this once per ghost buffer, and a view
+of many such files is slow however small they are. Installing the parser removes
+the cost; `no_highlight` removes it along with the colors.
+
+#### How the colors may differ
+
+Loading the syntax file without the ftplugin can color some text differently
+from the file's own buffer:
+
+- A syntax file may depend on what an ftplugin sets, most likely `'iskeyword'`,
+  which decides what `syn keyword` and `\k` count as a word.
+- Syntax a user adds from a `FileType` autocommand is not applied. Additions in
+  `after/syntax/` still are, since they load with the syntax file.
+
+A comparison of `synID()` over every byte of a sample in 13 languages (perl, sh,
+scss, css, make, ruby, python, javascript, html, yaml, lisp, clojure, vim) found
+no difference under `--clean`, so this is a possibility rather than a known case.
 
 ### Batch the blob reads
 
