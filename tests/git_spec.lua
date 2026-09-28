@@ -223,6 +223,63 @@ test('compares a merge with its first parent only', function()
   end)
 end)
 
+test('reads the whole message of a commit and its stat', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.write('a.txt', { 'two' })
+    repo.write('b.txt', { 'new' })
+    repo.git('add', '-A')
+    repo.git('commit', '-qm', 'second\n\nwhy it changed\n\nand more\n')
+
+    local commits = assert(git.log(1, repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root))
+    eq('test <test@example.com>', detail.author)
+    assert(detail.date ~= '', 'the date should be read')
+    -- the trailing newline git keeps after the body is not a line of it
+    eq({ 'second', '', 'why it changed', '', 'and more' }, detail.message)
+    eq({
+      ' a.txt | 2 +-',
+      ' b.txt | 1 +',
+      ' 2 files changed, 2 insertions(+), 1 deletion(-)',
+    }, detail.stat)
+  end)
+end)
+
+-- `color.ui = always` colors a stat even when it is not going to a terminal,
+-- and a root commit has no parent to compare against.
+test('reads the stat of a root commit without colors', function()
+  helpers.with_repo(function(repo)
+    repo.git('config', 'color.ui', 'always')
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+
+    local commits = assert(git.log(1, repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root))
+    eq({ 'first' }, detail.message)
+    eq({ ' a.txt | 1 +', ' 1 file changed, 1 insertion(+)' }, detail.stat)
+  end)
+end)
+
+-- The stat has to describe the same comparison as the diff under it.
+test('reads the stat of a merge against its first parent', function()
+  helpers.with_repo(function(repo)
+    repo.write('base.txt', { 'base' })
+    repo.commit('first')
+    repo.git('checkout', '-b', 'side')
+    repo.write('side.txt', { 'side' })
+    repo.commit('on side')
+    repo.git('checkout', '-')
+    repo.write('main.txt', { 'main' })
+    repo.commit('on main')
+    repo.git('merge', '--no-ff', 'side', '-m', 'merge side')
+
+    local commits = assert(git.log(1, repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root))
+    eq({ ' side.txt | 1 +', ' 1 file changed, 1 insertion(+)' }, detail.stat)
+  end)
+end)
+
 -- A range whose ends are two chosen commits is an ordinary comparison of two
 -- trees, whatever either end is; only a single commit needs a parent chosen for
 -- it.

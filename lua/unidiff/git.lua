@@ -411,6 +411,26 @@ function M.commit_range(commit)
   return { old = commit.parents[1], new = commit.sha }
 end
 
+--- The command that compares the two sides of a range, before its options.
+--- Both print the same records for the same options, so whatever is asked of a
+--- range is asked the same way of a root commit.
+---
+--- @param range unidiff.Range
+--- @return string[]
+local function range_command(range)
+  if not range.old then
+    return { 'git', 'diff-tree', '--no-commit-id', '-r', '--root' }
+  end
+  return { 'git', 'diff' }
+end
+
+--- What `range_command` compares, after its options.
+--- @param range unidiff.Range
+--- @return string[]
+local function range_args(range)
+  return range.old and { range.old, range.new } or { range.new }
+end
+
 --- What changed between the two sides of a range.
 ---
 --- A root commit has no old side to name, and is the one case that needs
@@ -422,10 +442,57 @@ end
 --- @return unidiff.Change[]? changes
 --- @return string? err
 function M.changed_between(range, cwd)
-  if not range.old then
-    return changes_of({ 'git', 'diff-tree', '--no-commit-id', '-r', '--root' }, { range.new }, cwd)
+  return changes_of(range_command(range), range_args(range), cwd)
+end
+
+--- @class unidiff.CommitDetail what a commit says beyond its row in the log
+--- @field author string name and email
+--- @field date string the author date, as `git show` prints it
+--- @field message string[] the subject, then the body as it was written
+--- @field stat string[] `--stat` of the commit's range: a row per file, then a
+---        summary
+
+--- Read the whole message of a commit and the stat of its range.
+---
+--- The stat is git's own rather than one counted from the view: it covers the
+--- binary files and the renames the view leaves out, and it describes the
+--- commit rather than how the view happens to be drawn, so ignoring whitespace
+--- does not change it.
+---
+--- @param commit unidiff.Commit
+--- @param cwd string
+--- @return unidiff.CommitDetail? detail
+--- @return unidiff.GitError? err
+function M.commit_detail(commit, cwd)
+  -- `log.showSignature` would put the signature check in front of the format.
+  local log = M.run({
+    'git',
+    'log',
+    '-1',
+    '--no-show-signature',
+    '--format=%an <%ae>%x1f%ad%x1f%B',
+    commit.sha,
+  }, cwd)
+  if not log.ok then
+    return nil, { what = 'git log ' .. commit.sha, stderr = log.stderr }
   end
-  return diff_changes({ range.old, range.new }, cwd)
+  local f = vim.split(log.stdout, '\31', { plain = true })
+
+  local range = M.commit_range(commit)
+  local cmd = range_command(range)
+  -- `color.ui = always` colors output that is not going to a terminal as well.
+  vim.list_extend(cmd, { '--stat', '--no-color', '--find-renames' })
+  local stat = M.run(vim.list_extend(cmd, range_args(range)), cwd)
+  if not stat.ok then
+    return nil, { what = 'git diff --stat ' .. commit.sha, stderr = stat.stderr }
+  end
+
+  return {
+    author = f[1] or '',
+    date = f[2] or '',
+    message = vim.split((f[3] or ''):gsub('%s+$', ''), '\n', { plain = true }),
+    stat = vim.split(stat.stdout:gsub('\n$', ''), '\n', { plain = true, trimempty = true }),
+  }
 end
 
 --- Whether `a` is an ancestor of `b`.
