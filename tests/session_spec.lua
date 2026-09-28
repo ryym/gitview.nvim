@@ -1245,3 +1245,175 @@ test('session: the toggle reaches a commit view too', function()
     assert(text:find('no change outside whitespace', 1, true), text)
   end)
 end)
+
+--- A history whose newer commit has a body, written with more than one blank
+--- line after its subject.
+local function described_history(repo)
+  repo.write('a.lua', { 'return 1' })
+  repo.commit('first')
+  repo.write('a.lua', { 'return 2' })
+  repo.write('b.lua', { 'return 3', 'return 4' })
+  repo.git('add', '-A')
+  repo.git('commit', '-qm', 'second\n\n\nwhy\n\nmore')
+  repo.write('a.lua', { 'return 5' })
+end
+
+--- @param s unidiff.Session
+--- @return unidiff.View
+local function diff_view(s)
+  return assert(require('unidiff.diff.render').views[s.diff_buf])
+end
+
+--- @param s unidiff.Session
+--- @return integer? first row of the closed fold over row 1, nil when open
+local function header_closed(s)
+  return vim.api.nvim_win_call(s.diff_win, function()
+    local row = vim.fn.foldclosed(1)
+    return row ~= -1 and vim.fn.foldclosedend(1) or nil
+  end)
+end
+
+test('session: a commit is introduced by its message and stat', function()
+  with_session(described_history, function(s)
+    show_commit(s, 1)
+    local got = diff_rows(s)
+    eq('second', got[1])
+    assert(got[2]:find('^test <test@example.com>   '), got[2])
+    eq({
+      '',
+      'why',
+      '',
+      'more',
+      '',
+      ' a.lua | 2 +-',
+      ' b.lua | 2 ++',
+      ' 2 files changed, 3 insertions(+), 1 deletion(-)',
+      '',
+      'a.lua',
+    }, vim.list_slice(got, 3, 12))
+
+    -- every row the view points at has moved down past the header
+    local view = diff_view(s)
+    eq(10, view.header_rows)
+    eq({ 12, 16 }, view.file_rows)
+    eq(12, view.files[1].row)
+    local dlib = require('unidiff.diff.lines')
+    for _, r in ipairs(view.hunk_rows) do
+      assert(dlib.source_kinds[view.lines[r].kind], 'hunk row ' .. r)
+    end
+  end)
+end)
+
+test('session: the stat graph is colored as git colors it', function()
+  with_session(described_history, function(s)
+    show_commit(s, 1)
+    local ns = vim.api.nvim_create_namespace('unidiff.diff')
+    -- ' a.lua | 2 +-' is row 8
+    local marks = vim.api.nvim_buf_get_extmarks(s.diff_buf, ns, { 7, 0 }, { 7, -1 }, {
+      details = true,
+    })
+    local got = {}
+    for _, m in ipairs(marks) do
+      got[#got + 1] = { m[3], m[4].end_col, m[4].hl_group }
+    end
+    table.sort(got, function(a, b)
+      return a[1] < b[1]
+    end)
+    eq({ { 11, 12, 'UnidiffStatAdd' }, { 12, 13, 'UnidiffStatDelete' } }, got)
+  end)
+end)
+
+-- The diff pane is not the current window when a commit is drawn, and
+-- 'foldexpr' still has to read the diff's view rather than the current
+-- window's.
+test('session: the header starts folded, and reads as its subject', function()
+  with_session(described_history, function(s)
+    show_commit(s, 1)
+    assert(vim.api.nvim_get_current_win() ~= s.diff_win)
+    eq(10, header_closed(s))
+    local text = vim.api.nvim_win_call(s.diff_win, function()
+      return require('unidiff.diff.render').foldtext()
+    end)
+    eq({
+      { '\u{25b8} second', 'UnidiffCommitSubject' },
+      { '   2 files', 'UnidiffCommitAuthor' },
+      { ' +3', 'UnidiffStatAdd' },
+      { ' -1', 'UnidiffStatDelete' },
+    }, text)
+  end)
+end)
+
+-- Replacing the lines under an open fold closes it or not depending on how its
+-- extent changed, so what the reader chose is carried over explicitly.
+test('session: an opened header stays open from one commit to the next', function()
+  with_session(described_history, function(s)
+    show_commit(s, 1)
+    vim.api.nvim_win_call(s.diff_win, function()
+      vim.cmd('normal! zo')
+    end)
+    -- the root commit's header is shorter
+    show_commit(s, 2)
+    eq(nil, header_closed(s))
+    show_commit(s, 1)
+    eq(nil, header_closed(s))
+
+    vim.api.nvim_win_call(s.diff_win, function()
+      vim.cmd('normal! zc')
+    end)
+    show_commit(s, 2)
+    eq(5, header_closed(s))
+  end)
+end)
+
+-- A mark on a commit's own parent compares exactly what the commit alone does,
+-- so that is a single commit too.
+test('session: only a single commit has a header', function()
+  with_session(function(repo)
+    described_history(repo)
+    repo.write('c.lua', { 'return 6' })
+    repo.commit('third')
+    repo.write('c.lua', { 'return 7' })
+  end, function(s)
+    -- an uncommitted file
+    session.select(s, 1)
+    eq(nil, diff_view(s).header_rows)
+
+    -- a range of two commits: third, second, first
+    goto_commit(s, 3)
+    session.toggle_mark(s)
+    goto_commit(s, 1)
+    session.show_selected(s)
+    eq(nil, diff_view(s).header_rows)
+    eq('a.lua', diff_rows(s)[1])
+    -- nothing is folded where there is no header
+    eq(nil, header_closed(s))
+
+    goto_commit(s, 2)
+    session.show_selected(s)
+    eq(10, diff_view(s).header_rows)
+
+    -- the cursor on the mark is the one commit again
+    goto_commit(s, 3)
+    session.show_selected(s)
+    eq(5, diff_view(s).header_rows)
+
+    -- one file of a commit
+    session.toggle_mark(s)
+    show_commit(s, 1)
+    session.enter(s)
+    session.show_selected(s)
+    eq(nil, diff_view(s).header_rows)
+  end)
+end)
+
+-- Above the first file is no file, so the winbar names the commit alone.
+test('session: the winbar names the commit over its header', function()
+  with_session(described_history, function(s)
+    show_commit(s, 1)
+    local commit = s.commits[1]
+    vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
+    eq((' %s %s   [2 files]'):format(commit.sha, commit.subject), diff_winbar(s))
+    vim.api.nvim_win_set_cursor(s.diff_win, { 12, 0 })
+    assert(diff_winbar(s):find('^ a.lua @ '), diff_winbar(s))
+  end)
+end)

@@ -142,6 +142,12 @@ view: both sides are committed, so nothing there is staged or unstaged. A merge
 is compared with its first parent, the way `git show` does, and the winbar says
 so.
 
+Above the diff is what `git show --stat` would print before it: the subject, the
+author and date, the body, and the stat. It starts folded into a single line
+with the subject and the size of the commit; `zo` opens it, and a header opened
+stays open as the cursor moves on to other commits. A range of two commits has
+no one message and shows no header.
+
 A commit row states its own sha and subject, so yanking one gives something that
 names the commit elsewhere. Two keys mean less there and say so rather than
 acting: `s` and `u` have nothing to stage, and `<CR>` in the diff has no

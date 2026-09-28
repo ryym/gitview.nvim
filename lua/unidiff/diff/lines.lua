@@ -4,12 +4,13 @@ local M = {}
 
 --- A line of the rendered buffer. `context`, `add` and `del` carry source text
 --- and are the only kinds with a place in one of the two versions; `gap`, `file`
---- and `blank` are structural lines the view inserts, and carry neither line
---- numbers nor a `side`/`row`/`file` to look their syntax up by.
+--- and `blank` are structural lines the view inserts, and `subject`, `author`,
+--- `body` and `stat` make up a commit's header. None of those carry line numbers
+--- or a `side`/`row`/`file` to look their syntax up by.
 ---
 --- @class unidiff.Line
 --- @field text string source text without any gutter
---- @field kind 'context'|'add'|'del'|'gap'|'file'|'blank'
+--- @field kind 'context'|'add'|'del'|'gap'|'file'|'blank'|'subject'|'author'|'body'|'stat'
 --- @field old_lnum integer? 1-based line number in the old version
 --- @field new_lnum integer? 1-based line number in the new version
 --- @field side 'old'|'new'|'index'? which version `text` came from; `index`

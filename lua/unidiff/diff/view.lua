@@ -85,6 +85,64 @@ function M.build(sources, rev, context, diff_opts)
   }, unchanged
 end
 
+--- The lines that introduce a commit: its subject, who wrote it and when, the
+--- body, and the stat. Blank lines part them, and the body's own blank lines are
+--- kept as written.
+--- @param detail unidiff.CommitDetail
+--- @return unidiff.Line[]
+function M.commit_header(detail)
+  local out = {}
+  local function add(text, kind)
+    out[#out + 1] = { text = text, kind = kind }
+  end
+  add(detail.message[1] or '', 'subject')
+  add(('%s   %s'):format(detail.author, detail.date), 'author')
+
+  -- A message has a blank line after its subject by convention only, and some
+  -- are written with more than one; the header puts exactly one there.
+  local first, last = 2, #detail.message
+  while first <= last and vim.trim(detail.message[first]) == '' do
+    first = first + 1
+  end
+  if first <= last then
+    add('', 'blank')
+    for i = first, last do
+      add(detail.message[i], 'body')
+    end
+  end
+
+  if #detail.stat > 0 then
+    add('', 'blank')
+    for _, text in ipairs(detail.stat) do
+      add(text, 'stat')
+    end
+  end
+  return out
+end
+
+--- Put a header above everything a view shows.
+---
+--- A blank line parts it from the first file, as one parts two files, and is
+--- not part of the header: it stays in view while the header is folded.
+--- @param view unidiff.View
+--- @param header unidiff.Line[]
+function M.prepend(view, header)
+  local shift = #header + 1
+  local lines = vim.list_extend({}, header)
+  lines[#lines + 1] = { text = '', kind = 'blank' }
+  view.lines = vim.list_extend(lines, view.lines)
+  for i, r in ipairs(view.hunk_rows) do
+    view.hunk_rows[i] = r + shift
+  end
+  for i, r in ipairs(view.file_rows) do
+    view.file_rows[i] = r + shift
+  end
+  for _, f in ipairs(view.files) do
+    f.row = f.row + shift
+  end
+  view.header_rows = #header
+end
+
 --- Free the ghost buffers. They exist only to be read by `highlight.collect`,
 --- which has already run by the time a view has been drawn; the highlights now
 --- live in the diff buffer as extmarks and do not refer back.

@@ -148,6 +148,32 @@ on. A commit's diff is every file it touched, so without that, sweeping the
 cursor down the list would run the whole pipeline once per row passed over. A
 file row costs a single file's view and is still drawn at once.
 
+#### The commit header
+
+A commit shown on its own starts with what `git show --stat` prints before the
+diff: subject, author and date, body, and stat. A range of two commits has no one
+message and gets none, and neither does a file of a commit, whose commit the
+pane's winbar already names. A mark on a commit's own parent is the same
+comparison as the commit alone, and gets the header too.
+
+- **It is buffer text**, for the same reasons as the file headers: it can be
+  searched and yanked, and `virt_lines` cannot go above the first line anyway.
+  Its kinds are outside `dlib.source_kinds`, so the gutter, highlight collection
+  and `<CR>` pass over it without being told about it.
+- **The stat is git's own**, from `git.commit_detail`, rather than counted from
+  the view. It covers the binary files and renames the view leaves out, and it
+  describes the commit rather than how the view is drawn, so `gw` leaves it
+  alone. It compares the same range as the diff, so a merge's stat is against
+  its first parent.
+- **The message and stat are read once per sha** and kept in the session, since
+  a commit cannot change.
+- **It folds as one**, through `'foldexpr'` reading `header_rows`, and starts
+  closed. An expression rather than manual folds, because a manual fold would be
+  lost every time the lines are replaced. Replacing them under an open fold
+  leaves it open or closes it depending on how its extent changed, so
+  `render.draw` records whether it was open in each window and restores that;
+  `'foldlevel'` only decides for a header appearing where there was none.
+
 #### What is compared with what
 
 Everything downstream takes a `unidiff.Range`, an old revision and a new one,
@@ -448,10 +474,12 @@ Everything one diff buffer needs, stored in `render.views[bufnr]` and dropped on
   the 1-based row of its header line
 - `hunk_rows` — 1-based rows to jump between with `]h` / `[h`
 - `rev`, `note` — shown in the winbar
+- `header_rows` — how many rows at the top are a commit's header; `nil` when
+  there is none
 
 Rows in `hunk_rows` and `files` are absolute in the combined buffer. Assembling
 several files means concatenating each file's lines and shifting its rows by the
-running offset.
+running offset, and `view.prepend` shifts them all once more for a header.
 
 ### Line kinds
 
@@ -464,6 +492,8 @@ one of the two versions:
 | `gap`                    | `···· N unchanged lines ····` | no            |
 | `file`                   | the file's label           | no               |
 | `blank`                  | empty, separates two files | no               |
+| `subject`, `author`      | a commit's header          | no               |
+| `body`, `stat`           | a commit's header          | no               |
 
 `dlib.source_kinds` is the test for the first group. Anything that looks a line
 up in a ghost buffer, prints a gutter, or jumps to the source has to check it
@@ -479,7 +509,7 @@ Everything drawn is an extmark, ordered by priority:
 | priority | layer                                        |
 | -------- | -------------------------------------------- |
 | 10       | Added/deleted line background, with `hl_eol` |
-| 100      | Replayed syntax highlighting                 |
+| 100      | Replayed syntax highlighting, the stat graph |
 | 200      | Word-level change highlights                 |
 
 The ordering is the point: the line background has to sit under the syntax

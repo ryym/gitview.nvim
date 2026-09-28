@@ -86,6 +86,23 @@ shown above the top of the buffer that way. This is one reason separators and
 file headers here are ordinary buffer lines: a leading gap count and the first
 file's header have nowhere to hang otherwise.
 
+### `'foldexpr'` is evaluated while the lines are being replaced
+
+`nvim_buf_set_lines` recomputes expression folds before it returns, in every
+window showing the buffer, not at the next redraw. Whatever the expression reads
+has to describe the new lines before they are written; set afterwards, the folds
+describe the old ones until something else changes the buffer. The expression is
+evaluated with the window being folded made current, so it can find its buffer
+with `nvim_get_current_buf()` even when another window has focus.
+
+### Replacing the lines under a fold does not keep it open or closed
+
+After `nvim_buf_set_lines` replaces every line, an expression fold that was open
+stays open if the new fold is at least as long, and comes back closed if it is
+shorter. A fold appearing where there was none follows `'foldlevel'`. Keeping
+what the reader chose means reading `foldclosed()` before the replacement and
+applying `:foldopen` or `:foldclose` after it.
+
 ### `'statuscolumn'` is evaluated for every screen line
 
 Return blanks when `vim.v.virtnum ~= 0`, or a wrapped line repeats the numbers of

@@ -30,6 +30,8 @@ M.views = {}
 --- @field mixed boolean? staged and unstaged changes in one view; see unidiff.diff.mixed
 --- @field historical boolean? the versions compared are both committed, so the
 ---        line numbers are not the working tree's
+--- @field header_rows integer? how many rows at the top introduce the view rather
+---        than belong to a file: a commit's message and stat. They fold as one.
 
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
@@ -95,6 +97,10 @@ local highlights = util.highlights('unidiff.highlights', function(set)
   set('UnidiffNewLnum', { link = 'LineNr' })
   set('UnidiffSeparator', { link = 'Folded' })
   set('UnidiffFileHeader', { link = 'Title' })
+  set('UnidiffCommitSubject', { link = 'Title' })
+  set('UnidiffCommitAuthor', { link = 'Comment' })
+  set('UnidiffStatAdd', { link = 'Added' })
+  set('UnidiffStatDelete', { link = 'Removed' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -108,8 +114,11 @@ local LINE_HL = {
   del = 'UnidiffDelete',
   gap = 'UnidiffSeparator',
   file = 'UnidiffFileHeader',
+  subject = 'UnidiffCommitSubject',
+  author = 'UnidiffCommitAuthor',
 }
 local TEXT_HL = { add = 'UnidiffAddText', del = 'UnidiffDeleteText' }
+local STAT_HL = { ['%++'] = 'UnidiffStatAdd', ['%-+'] = 'UnidiffStatDelete' }
 local STAGED_LINE_HL = { add = 'UnidiffStagedAdd', del = 'UnidiffStagedDelete' }
 local STAGED_TEXT_HL = { add = 'UnidiffStagedAddText', del = 'UnidiffStagedDeleteText' }
 
@@ -134,6 +143,40 @@ function M.create_buffer()
   return util.scratch_buffer('unidiff', M.views)
 end
 
+--- Whether the header's fold is open, in each window showing `buf` whose view
+--- has a header to fold.
+---
+--- Replacing the lines under a fold opens or closes it depending on how its
+--- extent changed, so a header opened on one commit would be found open or
+--- closed on the next more or less at random. What the reader chose is carried
+--- over instead, and 'foldlevel' only decides for a header appearing where there
+--- was none.
+--- @param buf integer
+--- @return table<integer, boolean> open by window
+local function header_fold_states(buf)
+  local old = M.views[buf]
+  local open = {}
+  if old and old.header_rows then
+    for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+      open[win] = vim.api.nvim_win_call(win, function()
+        return vim.fn.foldclosed(1) == -1
+      end)
+    end
+  end
+  return open
+end
+
+--- @param open table<integer, boolean> from `header_fold_states`
+local function restore_header_folds(open)
+  for win, was_open in pairs(open) do
+    -- A window the buffer was moved into keeps its own folding, and has no fold
+    -- here to open or close.
+    pcall(vim.api.nvim_win_call, win, function()
+      vim.cmd(was_open and '1foldopen' or '1foldclose')
+    end)
+  end
+end
+
 --- Replace whatever `buf` holds with `view`.
 --- @param buf integer from `create_buffer`
 --- @param view unidiff.View
@@ -145,11 +188,19 @@ function M.draw(buf, view)
   vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
   vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
 
+  local header_open = header_fold_states(buf)
+
   local texts = {}
   for i, l in ipairs(view.lines) do
     texts[i] = l.text
   end
+  -- 'foldexpr' is evaluated while the lines are being replaced, so the view it
+  -- reads has to be the new one by then.
+  M.views[buf] = view
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
+  if view.header_rows then
+    restore_header_folds(header_open)
+  end
 
   -- Only a fraction of each version ends up on screen. The legacy syntax path
   -- probes byte by byte, so telling it which rows matter keeps that bounded by
@@ -236,9 +287,30 @@ function M.draw(buf, view)
     end
   end
 
+  -- 4. the `+` and `-` graph of each stat row, colored as git colors it
+  --    A path can hold a `|` of its own, so the graph is looked for after the
+  --    last one; a binary file's `Bin 0 -> 3 bytes` has no graph to color.
+  for row0, l in ipairs(view.lines) do
+    local bar = l.kind == 'stat' and l.text:find('|[^|]*$')
+    local at, graph
+    if bar then
+      at, graph = l.text:match('^|%s*%d+ ()([+-]+)$', bar)
+    end
+    if graph then
+      for pattern, group in pairs(STAT_HL) do
+        for s, e in graph:gmatch('()' .. pattern .. '()') do
+          vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, at + s - 2, {
+            end_col = at + e - 2,
+            hl_group = group,
+            priority = 100,
+          })
+        end
+      end
+    end
+  end
+
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
-  M.views[buf] = view
 end
 
 --- Replace whatever `buf` holds with a single line of text.
@@ -258,6 +330,8 @@ function M.notice(buf, text)
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
   vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
+  -- before the lines, so that 'foldexpr' does not fold them by the old view
+  M.views[buf] = nil
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })
   vim.api.nvim_buf_set_extmark(buf, ns_diff, 0, 0, {
     end_row = 1,
@@ -268,7 +342,6 @@ function M.notice(buf, text)
   })
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
-  M.views[buf] = nil
 end
 
 --- Make a buffer and draw a view in it. Callers that keep a buffer of their own
@@ -339,19 +412,17 @@ function M.winbar()
   end
   local row = vim.api.nvim_win_get_cursor(win)[1]
   -- Headers are in ascending order, so the last one at or above the cursor is
-  -- the file it is in and there is nothing after it worth looking at.
-  local file = view.files[1]
+  -- the file it is in and there is nothing after it worth looking at. Above the
+  -- first one is a commit's header, which is in no file.
+  local file
   for _, f in ipairs(view.files) do
     if f.row > row then
       break
     end
     file = f
   end
-  if not file then
-    return ''
-  end
 
-  local text = (' %s @ %s'):format(file.label, view.rev)
+  local text = file and (' %s @ %s'):format(file.label, view.rev) or (' ' .. view.rev)
   if #view.files > 1 then
     text = text .. ('   [%d files]'):format(#view.files)
   end
@@ -361,9 +432,53 @@ function M.winbar()
   return '%#UnidiffFileHeader#' .. util.escape_statusline(text)
 end
 
+--- Folds a commit's header into one line, and nothing else.
+--- @return string
+function M.foldexpr()
+  -- Evaluated with the window being folded made current, whichever it is.
+  local view = M.views[vim.api.nvim_get_current_buf()]
+  local n = view and view.header_rows
+  local lnum = vim.v.lnum
+  if not n or lnum > n then
+    return '0'
+  end
+  return lnum == 1 and '>1' or '1'
+end
+
+--- A folded header reads as its subject and how much the commit changed.
+--- @return string|[string, string][]
+function M.foldtext()
+  local view = M.views[vim.api.nvim_get_current_buf()]
+  if not view or not view.header_rows then
+    return vim.fn.foldtext()
+  end
+  local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'UnidiffCommitSubject' } }
+  -- the summary git ends a stat with
+  local last = view.lines[view.header_rows]
+  if last.kind == 'stat' then
+    local files = tonumber(last.text:match('(%d+) files? changed'))
+    if files then
+      chunks[#chunks + 1] = { '   ' .. util.counted(files, 'file'), 'UnidiffCommitAuthor' }
+    end
+    local ins = last.text:match('(%d+) insertions?')
+    if ins then
+      chunks[#chunks + 1] = { ' +' .. ins, 'UnidiffStatAdd' }
+    end
+    local del = last.text:match('(%d+) deletions?')
+    if del then
+      chunks[#chunks + 1] = { ' -' .. del, 'UnidiffStatDelete' }
+    end
+  end
+  return chunks
+end
+
 --- @param win integer
 --- @param buf integer
 function M.configure_window(win, buf)
+  -- The folded header is padded with 'fillchars' fold, a row of dots by
+  -- default. The rest of the user's choices are kept: a later key overrides an
+  -- earlier one.
+  local fillchars = vim.api.nvim_get_option_value('fillchars', { win = win })
   util.configure_window_options(win, {
     winbar = '%!v:lua.require("unidiff.diff.render").winbar()',
     statuscolumn = '%!v:lua.require("unidiff.diff.render").statuscolumn()',
@@ -372,6 +487,14 @@ function M.configure_window(win, buf)
     signcolumn = 'no',
     wrap = false,
     cursorline = false,
+    foldmethod = 'expr',
+    foldexpr = 'v:lua.require("unidiff.diff.render").foldexpr()',
+    foldtext = 'v:lua.require("unidiff.diff.render").foldtext()',
+    foldenable = true,
+    -- a commit's header starts folded: the diff is what is being read
+    foldlevel = 0,
+    foldcolumn = '0',
+    fillchars = (fillchars == '' and '' or fillchars .. ',') .. 'fold: ',
   })
 end
 

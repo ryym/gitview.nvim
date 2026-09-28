@@ -51,6 +51,8 @@ local M = {}
 ---        git directory could not be resolved
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
+--- @field details table<string, unidiff.CommitDetail> commits' messages and
+---        stats by sha, read once: a commit never changes
 
 --- @type table<integer, unidiff.Session>
 M.sessions = {}
@@ -246,6 +248,23 @@ local function range_note(s, range, commit)
   return nil
 end
 
+--- The message and stat of a commit, read on first use.
+--- @param s unidiff.Session
+--- @param commit unidiff.Commit
+--- @return unidiff.CommitDetail?
+local function commit_detail(s, commit)
+  if not s.details[commit.sha] then
+    local detail, err = git.commit_detail(commit, s.root)
+    if not detail then
+      -- the diff under it is still worth showing
+      util.git_error(assert(err))
+      return nil
+    end
+    s.details[commit.sha] = detail
+  end
+  return s.details[commit.sha]
+end
+
 --- Draw what the commits pane's cursor compares: one commit against its first
 --- parent, or the stretch between it and the mark.
 ---
@@ -277,6 +296,13 @@ local function show_commit(s, commit, index)
   -- source would land on whatever now occupies that line.
   view.historical = true
   view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), range_note(s, range, commit))
+  -- A range between two commits has no one message to show.
+  if vim.deep_equal(range, git.commit_range(commit)) then
+    local detail = commit_detail(s, commit)
+    if detail then
+      vlib.prepend(view, vlib.commit_header(detail))
+    end
+  end
   render.draw(s.diff_buf, view)
   vlib.dispose(view)
 end
@@ -1135,6 +1161,7 @@ function M.open()
     entries = entries,
     commits = {},
     generation = 0,
+    details = {},
     ignore_whitespace = config.values.ignore_whitespace,
     has_head = git.has_head(root),
   }
