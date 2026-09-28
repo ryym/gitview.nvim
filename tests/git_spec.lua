@@ -261,6 +261,21 @@ test('reads the stat of a root commit without colors', function()
   end)
 end)
 
+test('keeps the stat graph short', function()
+  helpers.with_repo(function(repo)
+    local lines = {}
+    for i = 1, 100 do
+      lines[i] = tostring(i)
+    end
+    repo.write('a.txt', lines)
+    repo.commit('first')
+
+    local commits = assert(git.log(1, repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root))
+    eq(' a.txt | 100 ' .. ('+'):rep(30), detail.stat[1])
+  end)
+end)
+
 -- The stat has to describe the same comparison as the diff under it.
 test('reads the stat of a merge against its first parent', function()
   helpers.with_repo(function(repo)

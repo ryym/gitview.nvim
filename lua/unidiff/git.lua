@@ -481,7 +481,9 @@ function M.commit_detail(commit, cwd)
   local range = M.commit_range(commit)
   local cmd = range_command(range)
   -- `color.ui = always` colors output that is not going to a terminal as well.
-  vim.list_extend(cmd, { '--stat', '--no-color', '--find-renames' })
+  -- The graph would otherwise take up to 40 columns, which is a lot of `+` to
+  -- read past above the diff that shows the same lines.
+  vim.list_extend(cmd, { '--stat', '--stat-graph-width=30', '--no-color', '--find-renames' })
   local stat = M.run(vim.list_extend(cmd, range_args(range)), cwd)
   if not stat.ok then
     return nil, { what = 'git diff --stat ' .. commit.sha, stderr = stat.stderr }
