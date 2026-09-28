@@ -284,6 +284,11 @@ end
 --- on screen before the colors are. A step finding that `buf` no longer shows
 --- the view gives up: the view has been replaced, and its colors would land on
 --- someone else's rows.
+---
+--- The screen is redrawn explicitly, before the first step and after each one.
+--- Neovim puts off its own redraw while an event is already waiting to run, and
+--- a step's timer always is by then, so the text would otherwise appear only
+--- together with the last of the colors.
 --- @param buf integer
 --- @param view unidiff.View
 local function fill_syntax(buf, view)
@@ -310,6 +315,7 @@ local function fill_syntax(buf, view)
       fill_file(buf, view, file, rows[file], want[file])
       next_file = next_file + 1
     until next_file > #order or vim.uv.hrtime() >= deadline
+    vim.cmd.redraw()
     if next_file > #order then
       vlib.dispose(view)
     else
@@ -319,6 +325,7 @@ local function fill_syntax(buf, view)
       vim.defer_fn(step, 0)
     end
   end
+  vim.cmd.redraw()
   vim.defer_fn(step, 0)
 end
 

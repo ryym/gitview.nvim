@@ -169,6 +169,11 @@ Some details keep it correct:
   queue also runs whatever is scheduled while it is being drained, so chained
   `vim.schedule` calls ran back to back: the longest pause without a chance to
   take a keystroke was 250 ms against 40 ms with a timer.
+- The screen is redrawn explicitly before the first step and after each one.
+  Neovim puts off its own redraw while an event is already waiting, and the next
+  step's timer always is, so without it the text showed up only with the last
+  of the colors. A headless benchmark cannot see this: it has to call `redraw`
+  itself to measure anything, which hides the problem.
 - Small views stay synchronous. They are the ones redrawn constantly, such as a
   file being staged hunk by hunk, where colors arriving a moment late would
   flicker on every keystroke.
