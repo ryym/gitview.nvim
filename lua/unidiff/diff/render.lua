@@ -2,6 +2,7 @@ local hl = require('unidiff.diff.highlight')
 local util = require('unidiff.util')
 local worddiff = require('unidiff.diff.worddiff')
 local dlib = require('unidiff.diff.lines')
+local vlib = require('unidiff.diff.view')
 
 local M = {}
 
@@ -188,7 +189,143 @@ local function restore_header_folds(open)
   end
 end
 
+--- A view with more rows than this is shown before its syntax is collected, and
+--- the syntax is filled in afterwards. Collecting is most of the cost of a large
+--- view, but colors appearing a moment late would only flicker on the small
+--- views that are redrawn all the time, such as a file being staged hunk by
+--- hunk.
+local PROGRESSIVE_ROWS = 1000
+
+--- How long one step of filling in the syntax may run before it yields to the
+--- editor. A file is never split, so a step overruns by up to one file.
+local STEP_BUDGET_MS = 10
+
+--- The rows each file occupies, and the rows of each version they show.
+---
+--- Only a fraction of each version ends up on screen. The legacy syntax path
+--- probes byte by byte, so telling it which rows matter keeps that bounded by
+--- the size of the diff rather than the size of the file.
+--- @param view unidiff.View
+--- @return integer[][] rows 1-based rows of the view, by file
+--- @return table<string, table<integer, true>>[] want rows of each version, by file
+local function rows_by_file(view)
+  local rows, want = {}, {}
+  for i = 1, #view.files do
+    rows[i] = {}
+    want[i] = { old = {}, new = {}, index = {} }
+  end
+  for row, l in ipairs(view.lines) do
+    if dlib.source_kinds[l.kind] then
+      table.insert(rows[l.file], row)
+      want[l.file][l.side][l.row] = true
+    end
+  end
+  return rows, want
+end
+
+--- Collect one file's syntax from its ghost buffers and replay it onto `buf`.
+--- @param buf integer
+--- @param view unidiff.View
+--- @param file integer index into `view.files`
+--- @param rows integer[] from `rows_by_file`
+--- @param want table<string, table<integer, true>> from `rows_by_file`
+local function fill_file(buf, view, file, rows, want)
+  local f = view.files[file]
+  local segs = {
+    old = hl.collect(f.old_buf, f.lang, want.old),
+    new = hl.collect(f.new_buf, f.lang, want.new),
+    index = f.index_buf and hl.collect(f.index_buf, f.lang, want.index),
+  }
+  for _, row in ipairs(rows) do
+    local l = view.lines[row]
+    for _, s in ipairs(segs[l.side][l.row] or {}) do
+      -- `end_col == -1` marks a capture that continues past this row
+      local end_col = s.end_col < 0 and #l.text or math.min(s.end_col, #l.text)
+      if s.start_col < end_col then
+        vim.api.nvim_buf_set_extmark(buf, ns_syntax, row - 1, s.start_col, {
+          end_col = end_col,
+          hl_group = s.hl_group,
+          priority = s.priority,
+        })
+      end
+    end
+  end
+end
+
+--- The files in the order their syntax is filled in: the one the cursor is in,
+--- then those below it, then those above. That puts what is on screen first
+--- without asking the window what it shows, which it does not know until it has
+--- been redrawn.
+--- @param buf integer
+--- @param view unidiff.View
+--- @return integer[]
+local function fill_order(buf, view)
+  local win = vim.fn.win_findbuf(buf)[1]
+  local cursor = win and vim.api.nvim_win_get_cursor(win)[1] or 1
+  local at = 1
+  for i, f in ipairs(view.files) do
+    if f.row <= cursor then
+      at = i
+    end
+  end
+  local order = {}
+  for i = at, #view.files do
+    order[#order + 1] = i
+  end
+  for i = at - 1, 1, -1 do
+    order[#order + 1] = i
+  end
+  return order
+end
+
+--- Replay the syntax of every file onto `buf`, then free the ghost buffers.
+---
+--- A large view gets it in steps scheduled after the draw, so that its text is
+--- on screen before the colors are. A step finding that `buf` no longer shows
+--- the view gives up: the view has been replaced, and its colors would land on
+--- someone else's rows.
+--- @param buf integer
+--- @param view unidiff.View
+local function fill_syntax(buf, view)
+  local rows, want = rows_by_file(view)
+  local order = fill_order(buf, view)
+
+  if #view.lines <= PROGRESSIVE_ROWS then
+    for _, file in ipairs(order) do
+      fill_file(buf, view, file, rows[file], want[file])
+    end
+    vlib.dispose(view)
+    return
+  end
+
+  local next_file = 1
+  local function step()
+    if views[buf] ~= view then
+      vlib.dispose(view)
+      return
+    end
+    local deadline = vim.uv.hrtime() + STEP_BUDGET_MS * 1e6
+    repeat
+      local file = order[next_file]
+      fill_file(buf, view, file, rows[file], want[file])
+      next_file = next_file + 1
+    until next_file > #order or vim.uv.hrtime() >= deadline
+    if next_file > #order then
+      vlib.dispose(view)
+    else
+      -- A timer rather than `vim.schedule`: the event queue runs whatever is
+      -- scheduled while it is being drained, so a chain of `vim.schedule`d
+      -- steps would run back to back without letting a keystroke in.
+      vim.defer_fn(step, 0)
+    end
+  end
+  vim.defer_fn(step, 0)
+end
+
 --- Replace whatever `buf` holds with `view`.
+---
+--- The view's ghost buffers are this function's to free from here on: its
+--- syntax may still be being collected from them after it returns.
 --- @param buf integer from `create_buffer`
 --- @param view unidiff.View
 function M.draw(buf, view)
@@ -213,43 +350,8 @@ function M.draw(buf, view)
     restore_header_folds(header_open)
   end
 
-  -- Only a fraction of each version ends up on screen. The legacy syntax path
-  -- probes byte by byte, so telling it which rows matter keeps that bounded by
-  -- the size of the diff rather than the size of the file.
-  local want = {}
-  for i = 1, #view.files do
-    want[i] = { old = {}, new = {}, index = {} }
-  end
-  for _, l in ipairs(view.lines) do
-    if dlib.source_kinds[l.kind] then
-      want[l.file][l.side][l.row] = true
-    end
-  end
-
-  local segs = {}
-  for i, f in ipairs(view.files) do
-    segs[i] = {
-      old = hl.collect(f.old_buf, f.lang, want[i].old),
-      new = hl.collect(f.new_buf, f.lang, want[i].new),
-      index = f.index_buf and hl.collect(f.index_buf, f.lang, want[i].index),
-    }
-  end
-
-  -- 1. syntax, replayed from the ghost buffers
-  for row0, l in ipairs(view.lines) do
-    local row = row0 - 1
-    for _, s in ipairs(dlib.source_kinds[l.kind] and segs[l.file][l.side][l.row] or {}) do
-      -- `end_col == -1` marks a capture that continues past this row
-      local end_col = s.end_col < 0 and #l.text or math.min(s.end_col, #l.text)
-      if s.start_col < end_col then
-        vim.api.nvim_buf_set_extmark(buf, ns_syntax, row, s.start_col, {
-          end_col = end_col,
-          hl_group = s.hl_group,
-          priority = s.priority,
-        })
-      end
-    end
-  end
+  -- 1. syntax, replayed from the ghost buffers: last, since it may be left for
+  --    later. See `fill_syntax`.
 
   -- 2. full-line backgrounds: the diff colors, and the separator and file
   --    header lines, which are ordinary buffer lines so that a selection across
@@ -322,6 +424,8 @@ function M.draw(buf, view)
 
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
+
+  fill_syntax(buf, view)
 end
 
 --- Replace whatever `buf` holds with a single line of text.

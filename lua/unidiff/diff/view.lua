@@ -143,9 +143,9 @@ function M.prepend(view, header)
   view.header_rows = #header
 end
 
---- Free the ghost buffers. They exist only to be read by `highlight.collect`,
---- which has already run by the time a view has been drawn; the highlights now
---- live in the diff buffer as extmarks and do not refer back.
+--- Free the ghost buffers. They exist only to be read by `highlight.collect`, and
+--- a view handed to `render.draw` is freed by it once its syntax has been
+--- replayed onto the diff buffer, which may be some time after the draw.
 ---
 --- The handles are cleared as well, so that a later attempt to read a version
 --- fails outright rather than addressing some unrelated buffer.

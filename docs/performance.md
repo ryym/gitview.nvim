@@ -37,6 +37,11 @@ as 8300 rows into a configured diff window:
 `vim.diff` accounts for a few percent at most. Anyone optimising this should
 look at highlight collection first and subprocesses second.
 
+That total is not what the reader waits for. A view of more than 1000 rows is
+shown before its highlights are collected, which leaves the commit above on
+screen after ~120 ms and fully colored after ~370 ms; see
+[Fill large views progressively](#fill-large-views-progressively).
+
 ## What made it fast
 
 The working-tree view above took 1137 ms before three changes, none of which
@@ -102,6 +107,33 @@ The views and the list states now live in file-local tables read through
 neither module holds a table. Anything a window option can reach through
 `require` has to stay small; new per-buffer state belongs in a local table.
 
+### Fill large views progressively
+
+A view of more than 1000 rows gets its text, diff colors and word highlights at
+once, and its syntax afterwards: one file at a time, in steps of about 10 ms,
+starting with the file the cursor is in and then those below it. The total is
+unchanged; what changes is that the reader is not waiting on files that are not
+on screen.
+
+| commit rows | shown  | fully colored |
+| ----------- | ------ | ------------- |
+| 1513        | 52 ms  | 99 ms         |
+| 8300        | 121 ms | 371 ms        |
+
+Some details keep it correct:
+
+- `render.draw` owns the ghost buffers from the moment it is called and frees
+  them once the last file is filled. A step that finds the buffer showing
+  another view frees them and stops, so a view replaced mid-fill never colors
+  the rows of the one after it.
+- Steps are chained with `vim.defer_fn(fn, 0)`, not `vim.schedule`. The event
+  queue also runs whatever is scheduled while it is being drained, so chained
+  `vim.schedule` calls ran back to back: the longest pause without a chance to
+  take a keystroke was 250 ms against 40 ms with a timer.
+- Small views stay synchronous. They are the ones redrawn constantly, such as a
+  file being staged hunk by hunk, where colors arriving a moment late would
+  flicker on every keystroke.
+
 ## Measuring it again
 
 Use `vim.uv.hrtime()` around each phase and print a breakdown; the phases above
@@ -125,16 +157,13 @@ and the query dominates.
 
 In rough order of value against effort:
 
-- **Fill progressively.** Show the buffer at once and add highlights in
-  `vim.schedule`d chunks, starting with the file under the cursor. Total time is
-  unchanged, perceived time is not. The session's draw generation already tells
-  a stale chunk to stop; the ghost buffers have to live until the last chunk
-  has run.
-- **Collect per file, lazily.** Building the buffer text is nearly free, so the
-  buffer could be filled immediately and each file's highlights collected the
-  first time it scrolls into view. Removes the ceiling entirely; costs a piece of
-  state tracking what has been collected, and ghost buffers kept for the life of
-  the view.
+- **Fill the visible files synchronously.** A large view is shown uncolored for
+  a moment. Filling the first file or two of the fill order before `draw`
+  returns would put colors on screen with the text, for a few milliseconds more.
+- **Collect per file, lazily.** Rather than filling every file in the
+  background, collect each one only when it first scrolls into view. Saves the
+  work for files never looked at; costs state tracking what has been collected,
+  and ghost buffers kept for the life of the view.
 - **Start the subprocesses together.** A commit runs five one after another,
   but only the blob read depends on another's output. Starting the rest at once
   and waiting afterwards could save a few tens of milliseconds.

@@ -304,7 +304,6 @@ local function show_commit(s, commit, index)
     end
   end
   render.draw(s.diff_buf, view)
-  vlib.dispose(view)
 end
 
 --- Draw one file of the range being looked into.
@@ -337,7 +336,6 @@ local function show_commit_file(s, index)
   view.historical = true
   view.note = note_of(s)
   render.draw(s.diff_buf, view)
-  vlib.dispose(view)
 end
 
 --- Draw whatever is selected, or say why there is nothing to draw.
@@ -413,7 +411,6 @@ function M.show_selected(s, keep_unchanged)
   end
   view.note = note_of(s)
   render.draw(s.diff_buf, view)
-  vlib.dispose(view)
   s.index_lines = src.index_lines
 end
 

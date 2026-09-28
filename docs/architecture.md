@@ -440,6 +440,12 @@ Then once for the whole view:
    layer diff backgrounds, word-level highlights, headers and separators on top.
 6. **Discard the ghost buffers.** They exist only for step 4.
 
+A large view is shown before steps 4 and 6 run: its text and diff colors go on
+screen at once, and the syntax is collected and replayed a few files at a time
+afterwards, starting from the file the cursor is in. `render.draw` owns the
+ghost buffers from the moment it is called, and a step that finds its view
+replaced frees them and stops.
+
 Step 3 is what makes a line deleted from the middle of a multi-line string come
 out as a string: the fragment alone carries no such information.
 

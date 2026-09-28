@@ -59,8 +59,6 @@ local function build(context)
     },
   }
   local buf = render.render(view)
-  vim.api.nvim_buf_delete(old_buf, { force = true })
-  vim.api.nvim_buf_delete(new_buf, { force = true })
   return buf, view
 end
 
@@ -351,17 +349,21 @@ end)
 --- @param text string
 --- @return unidiff.View
 local function tiny_view(text)
-  local old_buf = hl.ghost_buffer({}, 'lua')
-  local new_buf = hl.ghost_buffer({ text }, 'lua')
-  local view = {
+  return {
     lines = { { text = text, kind = 'add', new_lnum = 1, side = 'new', row = 0, file = 1 } },
     hunk_rows = { 1 },
     rev = 'HEAD',
     files = {
-      { path = '/tmp/y.lua', label = 'y.lua', old_buf = old_buf, new_buf = new_buf, lang = 'lua', row = 1 },
+      {
+        path = '/tmp/y.lua',
+        label = 'y.lua',
+        old_buf = hl.ghost_buffer({}, 'lua'),
+        new_buf = hl.ghost_buffer({ text }, 'lua'),
+        lang = 'lua',
+        row = 1,
+      },
     },
   }
-  return view, old_buf, new_buf
 end
 
 -- The file-list UI keeps one diff buffer and draws each selected file into it,
@@ -371,10 +373,8 @@ test('draw replaces the previous view entirely', function()
   local before = vim.api.nvim_buf_line_count(buf)
   assert(before > 1, 'fixture should be several rows')
 
-  local view, old_buf, new_buf = tiny_view('local z = 1')
+  local view = tiny_view('local z = 1')
   render.draw(buf, view)
-  vim.api.nvim_buf_delete(old_buf, { force = true })
-  vim.api.nvim_buf_delete(new_buf, { force = true })
 
   eq({ 'local z = 1' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
   eq(view, render.view_of(buf))
@@ -386,5 +386,77 @@ test('draw replaces the previous view entirely', function()
     end
   end
   eq(false, vim.bo[buf].modifiable)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+--- A view of several Lua files with every line changed: enough rows that its
+--- syntax is filled in after the draw rather than during it.
+--- @return unidiff.View
+local function large_view()
+  local sources = {}
+  for i = 1, 3 do
+    local old, new = {}, {}
+    for n = 1, 300 do
+      old[n] = ('local v%d = %d'):format(n, n)
+      new[n] = ('local v%d = "%d"'):format(n, n)
+    end
+    sources[i] = {
+      path = ('/tmp/f%d.lua'):format(i),
+      label = ('f%d.lua'):format(i),
+      ft = 'lua',
+      old_lines = old,
+      new_lines = new,
+    }
+  end
+  local view = require('unidiff.diff.view').build(sources, 'HEAD', 3, { algorithm = 'histogram' })
+  return assert(view)
+end
+
+--- Whether every ghost buffer of `view` has been freed, which is the last thing
+--- filling in its syntax does.
+--- @param view unidiff.View
+--- @return boolean
+local function disposed(view)
+  for _, f in ipairs(view.files) do
+    if f.old_buf or f.new_buf then
+      return false
+    end
+  end
+  return true
+end
+
+test('a large view is shown first and its syntax filled in afterwards', function()
+  local view = large_view()
+  local ghosts = { view.files[1].old_buf, view.files[3].new_buf }
+  local buf = render.render(view)
+  eq(#view.lines, vim.api.nvim_buf_line_count(buf))
+  local syntax = vim.api.nvim_get_namespaces()['unidiff.syntax']
+  eq({}, vim.api.nvim_buf_get_extmarks(buf, syntax, 0, -1, {}))
+
+  assert(vim.wait(5000, function()
+    return disposed(view)
+  end), 'syntax was never filled in')
+  -- every file got its colors, not only the first
+  for _, f in ipairs(view.files) do
+    assert(#marks(buf, 'unidiff.syntax', f.row) > 0, 'no syntax below ' .. f.label)
+  end
+  for _, b in ipairs(ghosts) do
+    eq(false, vim.api.nvim_buf_is_valid(b))
+  end
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+test('a view replaced before its syntax is filled in leaves nothing behind', function()
+  local view = large_view()
+  local buf = render.render(view)
+  render.draw(buf, tiny_view('local z = 1'))
+
+  assert(vim.wait(5000, function()
+    return disposed(view)
+  end), 'the replaced view was never freed')
+  local syntax = vim.api.nvim_get_namespaces()['unidiff.syntax']
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, syntax, 0, -1, {})) do
+    assert(m[2] == 0, 'the replaced view colored row ' .. m[2])
+  end
   vim.api.nvim_buf_delete(buf, { force = true })
 end)

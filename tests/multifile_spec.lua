@@ -36,10 +36,6 @@ local function build(sources)
   end
   local view = { lines = lines, files = files, hunk_rows = hunk_rows, rev = 'HEAD' }
   local buf = render.render(view)
-  for _, f in ipairs(files) do
-    vim.api.nvim_buf_delete(f.old_buf, { force = true })
-    vim.api.nvim_buf_delete(f.new_buf, { force = true })
-  end
   return buf, view
 end
 
