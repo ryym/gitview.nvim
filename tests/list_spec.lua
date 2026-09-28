@@ -157,9 +157,17 @@ end)
 test('list: state is dropped when the buffer goes', function()
   local buf = list.create_buffer()
   list.draw(buf, { pane = 'files', root = '/tmp/repo', entries = { entry('M', ' ', 'a.txt') } })
-  assert(list.state[buf], 'state should be registered')
+  assert(list.state_of(buf), 'state should be registered')
   vim.api.nvim_buf_delete(buf, { force = true })
-  eq(nil, list.state[buf])
+  eq(nil, list.state_of(buf))
+end)
+
+-- `v:lua.require(...).fn()` converts the whole module into a Vim value on every
+-- call, so a table on it would be copied each time a window option is evaluated.
+test('list: the module holds no table for window options to copy', function()
+  for key, value in pairs(list) do
+    assert(type(value) ~= 'table', ('list.%s is a table'):format(key))
+  end
 end)
 
 --- @param status string

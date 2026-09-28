@@ -149,13 +149,23 @@ M.setup_highlights = highlights.apply
 
 --- Sessions by the buffer holding their list, so that `'statuscolumn'` can find
 --- what a screen line belongs to. Filled in by `ui.session`.
+---
+--- Kept off `M` on purpose: the window options call into this module as
+--- `v:lua.require(...).fn()`, which converts `M` into a Vim value on every call.
 --- @type table<integer, unidiff.ListModel|{rows:unidiff.ListRow[]}>
-M.state = {}
+local states = {}
+
+--- What `buf` is showing, if it is a list.
+--- @param buf integer
+--- @return (unidiff.ListModel|{rows:unidiff.ListRow[]})?
+function M.state_of(buf)
+  return states[buf]
+end
 
 --- @return string
 function M.statuscolumn()
   local win = vim.g.statusline_winid
-  local state = M.state[vim.api.nvim_win_get_buf(win)]
+  local state = states[vim.api.nvim_win_get_buf(win)]
   -- A window that inherited 'statuscolumn' from a list window is showing another
   -- buffer, which has no gutter: drawing blanks would leave it an empty column.
   if not state then
@@ -174,7 +184,7 @@ end
 --- @return string
 function M.winbar()
   local win = vim.g.statusline_winid
-  local state = M.state[vim.api.nvim_win_get_buf(win)]
+  local state = states[vim.api.nvim_win_get_buf(win)]
   if not state then
     return ''
   end
@@ -199,7 +209,7 @@ end
 --- @return integer bufnr
 function M.create_buffer()
   M.setup_highlights()
-  return util.scratch_buffer('unidiffstatus', M.state)
+  return util.scratch_buffer('unidiffstatus', states)
 end
 
 --- @param buf integer from `create_buffer`
@@ -215,7 +225,7 @@ function M.draw(buf, model)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
-  M.state[buf] = {
+  states[buf] = {
     pane = model.pane,
     root = model.root,
     entries = model.entries or {},
@@ -249,7 +259,7 @@ end
 --- @param row integer 1-based
 --- @return unidiff.ListTarget?
 function M.target_at(buf, row)
-  local state = M.state[buf]
+  local state = states[buf]
   local r = state and state.rows[row]
   return r and r.target or nil
 end
@@ -263,7 +273,7 @@ function M.entry_at(buf, row)
   if not target or target.kind ~= 'file' then
     return nil
   end
-  return M.state[buf].entries[target.index]
+  return states[buf].entries[target.index]
 end
 
 --- Where a target is shown. The reverse of `target_at`, for moving the cursor
@@ -272,7 +282,7 @@ end
 --- @param target unidiff.ListTarget?
 --- @return integer? row 1-based
 function M.row_of(buf, target)
-  local state = M.state[buf]
+  local state = states[buf]
   if not state or not target then
     return nil
   end
