@@ -234,6 +234,21 @@ require('unidiff').setup({
 })
 ```
 
+### Filetypes left unhighlighted
+
+A language without a Tree-sitter parser is highlighted through its Vim syntax
+file, which is loaded again for both versions of every such file in a view. Some
+are slow to load, especially with many highlight groups defined, and a commit
+touching many of them can take noticeably longer to open. Listing a filetype
+shows its diffs with the diff colors only:
+
+```lua
+require('unidiff').setup({ no_highlight = { 'scss' } })
+```
+
+Installing the language's Tree-sitter parser avoids the cost without giving up
+the colors.
+
 ### Agreement with `git diff`
 
 Hunk boundaries match `git diff`, because Neovim's `linematch` pass — which

@@ -170,3 +170,21 @@ test('a ghost buffer sets filetype when the legacy path is needed', function()
   eq('perl', vim.bo[buf].filetype)
   assert(next(hl.collect(buf, 'perl')), 'legacy highlights should still work')
 end)
+
+test('a filetype listed in no_highlight counts as none', function()
+  local config = require('unidiff.config')
+  local source = require('unidiff.diff.source')
+  local kept = config.values.no_highlight
+  eq('scss', source.filetype_of('/tmp/a.scss'))
+  config.values.no_highlight = { 'scss' }
+  eq('', source.filetype_of('/tmp/a.scss'))
+  eq('css', source.filetype_of('/tmp/a.css'))
+  config.values.no_highlight = kept
+end)
+
+test('a ghost buffer with no filetype is left unhighlighted', function()
+  local buf = hl.ghost_buffer(PERL, '', '')
+  eq('', vim.bo[buf].filetype)
+  eq('', vim.bo[buf].syntax)
+  eq({}, hl.collect(buf, ''))
+end)

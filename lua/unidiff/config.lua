@@ -11,6 +11,7 @@ local M = {}
 --- @field list_width integer columns for the file list in `:UnidiffStatus`
 --- @field commit_count integer how many recent commits `:UnidiffStatus` lists
 --- @field commit_ratio number share of the sidebar height the commit list takes
+--- @field no_highlight string[] filetypes shown without syntax highlighting
 
 --- @type unidiff.Config
 M.values = {
@@ -21,6 +22,7 @@ M.values = {
   list_width = 30,
   commit_count = 20,
   commit_ratio = 0.4,
+  no_highlight = {},
 }
 
 --- @param opts? unidiff.Config

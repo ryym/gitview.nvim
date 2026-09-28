@@ -3,6 +3,7 @@
 ---
 --- This is the only part of the pipeline that reads git and the editor. What it
 --- hands back is plain data, so `view.build` has nothing left to look up.
+local config = require('unidiff.config')
 local git = require('unidiff.git')
 local status = require('unidiff.status')
 local util = require('unidiff.util')
@@ -13,7 +14,7 @@ local M = {}
 --- @field path string absolute path
 --- @field label string
 --- @field ft string filetype, resolved here so that building a view needs no
----       editor state
+---       editor state. Empty for a file that is not to be highlighted.
 --- @field old_lines string[]
 --- @field new_lines string[]
 --- @field index_lines string[]? given only for a mixed view; see unidiff.diff.mixed
@@ -33,14 +34,27 @@ function M.working_lines(path)
   return vim.fn.readfile(path)
 end
 
+--- The filetype to highlight `path` with, or `''` when it is not to be
+--- highlighted.
+---
+--- A filetype listed in `no_highlight` counts as none. Highlighting a language
+--- without a Tree-sitter parser means loading its syntax file into every ghost
+--- buffer, and some are costly enough that a view of many such files is slow to
+--- open; dropping the filetype here is what leaves the ghost buffers bare.
 --- @param path string
 --- @return string filetype
 function M.filetype_of(path)
   local buf = vim.fn.bufnr(path)
+  local ft
   if buf ~= -1 and vim.bo[buf].filetype ~= '' then
-    return vim.bo[buf].filetype
+    ft = vim.bo[buf].filetype
+  else
+    ft = vim.filetype.match({ filename = path }) or ''
   end
-  return vim.filetype.match({ filename = path }) or ''
+  if vim.tbl_contains(config.values.no_highlight, ft) then
+    return ''
+  end
+  return ft
 end
 
 --- The repository of the current buffer, falling back to that of the cwd.

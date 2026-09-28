@@ -33,14 +33,14 @@ end
 --- language explicitly and does not care what the buffer's filetype is.
 ---
 --- @param lines string[]
---- @param filetype string
+--- @param filetype string `''` leaves the buffer without any highlighting
 --- @param lang string? language Tree-sitter would use, when it has a parser
 --- @return integer bufnr
 function M.ghost_buffer(lines, filetype, lang)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].bufhidden = 'hide'
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  if not (lang and M.has_parser(lang)) then
+  if filetype ~= '' and not (lang and M.has_parser(lang)) then
     vim.bo[buf].filetype = filetype
   end
   return buf
