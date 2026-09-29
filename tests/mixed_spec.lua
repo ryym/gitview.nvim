@@ -11,9 +11,9 @@ local function dump(lines)
   local out = {}
   for i, l in ipairs(lines) do
     out[i] = ('%s%s%s|%s|%s'):format(
-      ({ add = '+', del = '-', context = ' ', gap = '~' })[l.kind],
+      l.folded and '~' or ({ add = '+', del = '-', context = ' ' })[l.kind],
       l.stage and STAGE[l.stage] or ' ',
-      l.kind == 'gap' and '' or l.text,
+      l.text,
       l.old_lnum or '',
       l.new_lnum or ''
     )
@@ -58,7 +58,7 @@ test('mixed: index lines carry both line numbers across offsets', function()
   eq({ '+ z||1', '  a|1|2', '+Sb||3', '  c|2|4' }, dump(lines))
 end)
 
-test('mixed: build trims unchanged runs and reports hunk rows', function()
+test('mixed: build folds unchanged runs and reports hunk rows', function()
   local head = { '1', '2', '3', '4', '5', '6', '7', '8', '9' }
   local index = vim.deepcopy(head)
   index[2] = 'two'
@@ -70,13 +70,15 @@ test('mixed: build trims unchanged runs and reports hunk rows', function()
     '-S2|2|',
     '+Stwo||2',
     '  3|3|3',
-    '~ ||',
+    '~ 4|4|4',
+    '~ 5|5|5',
+    '~ 6|6|6',
     '  7|7|7',
     '- 8|8|',
     '+ eight||8',
     '  9|9|9',
   }, dump(lines))
-  eq({ 2, 7 }, hunk_rows)
+  eq({ 2, 9 }, hunk_rows)
 end)
 
 test('mixed: build returns nil when nothing differs', function()

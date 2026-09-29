@@ -3,7 +3,7 @@
 local M = {}
 
 --- @class unidiff.Config
---- @field context integer unchanged lines kept around each hunk
+--- @field context integer unchanged lines left open around each hunk
 --- @field algorithm string vim.diff() algorithm
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
 --- @field ignore_whitespace boolean where a diff starts out; `:UnidiffStatus`

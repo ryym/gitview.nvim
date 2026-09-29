@@ -686,6 +686,98 @@ test('session: staging in the diff redraws the pane as staged', function()
   end)
 end)
 
+--- Twenty lines with the second and the nineteenth changed, which leaves a run
+--- of unchanged lines folded between the two changes.
+--- @param extra table<integer, string>? more lines to change
+--- @return string[]
+local function spread_lines(extra)
+  local lines = {}
+  for i = 1, 20 do
+    lines[i] = 'line ' .. i
+  end
+  lines[2], lines[19] = 'TWO', 'NINETEEN'
+  for i, text in pairs(extra or {}) do
+    lines[i] = text
+  end
+  return lines
+end
+
+--- Two files changed alike, so that each folds the same rows.
+local function spread(repo)
+  local lines = spread_lines({ [2] = 'line 2', [19] = 'line 19' })
+  repo.write('f.txt', lines)
+  repo.write('g.txt', lines)
+  repo.commit('init')
+  repo.write('f.txt', spread_lines())
+  repo.write('g.txt', spread_lines())
+end
+
+--- The diff row a folded line of this text is drawn on.
+--- @param s unidiff.Session
+--- @param text string
+--- @return integer
+local function folded_row(s, text)
+  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
+  for i, l in ipairs(view.lines) do
+    if l.folded and l.text == text then
+      return i
+    end
+  end
+  error('no folded row reading ' .. text)
+end
+
+--- @param s unidiff.Session
+--- @param text string
+--- @return boolean
+local function fold_open(s, text)
+  local row = folded_row(s, text)
+  return vim.api.nvim_win_call(s.diff_win, function()
+    return vim.fn.foldclosed(row) == -1
+  end)
+end
+
+--- @param s unidiff.Session
+--- @param text string
+local function open_fold(s, text)
+  put_cursor(s, folded_row(s, text))
+  vim.api.nvim_win_call(s.diff_win, function()
+    vim.cmd('normal! zo')
+  end)
+end
+
+-- Replacing the lines under an open fold closes it when it gets shorter, so an
+-- opened run is carried over explicitly. Working down a diff while it is being
+-- edited would otherwise keep closing what the reader opened.
+test('session: an opened run stays open while the same file is redrawn', function()
+  with_session(spread, function(s, repo)
+    eq(false, fold_open(s, 'line 10'))
+    open_fold(s, 'line 10')
+    eq(true, fold_open(s, 'line 10'))
+
+    put_cursor(s, changed_row(s, 'TWO'))
+    press_diff(s, 's')
+    eq(true, fold_open(s, 'line 10'))
+
+    -- a change further down shortens the run
+    repo.write('f.txt', spread_lines({ [12] = 'TWELVE' }))
+    session.refresh(s)
+    settle(s)
+    eq(true, fold_open(s, 'line 7'))
+  end)
+end)
+
+-- The same rows are folded in the next file, and a fold replaced by one at
+-- least as long stays open unless it is closed explicitly.
+test('session: an opened run is closed again in another file', function()
+  with_session(spread, function(s)
+    open_fold(s, 'line 10')
+    session.select(s, 2)
+    eq(false, fold_open(s, 'line 10'))
+    session.select(s, 1)
+    eq(false, fold_open(s, 'line 10'))
+  end)
+end)
+
 test('session: a row with nothing to stage leaves the index alone', function()
   with_session(partial, function(s, repo)
     -- `three` is unchanged in all three versions, so it is a context row.

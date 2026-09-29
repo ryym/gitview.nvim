@@ -348,9 +348,7 @@ end
 
 --- Draw whatever is selected, or say why there is nothing to draw.
 ---
---- The index contents are kept, because the drawn rows cannot stand in for them:
---- a view is trimmed, so everything away from a change has been folded into a
---- `gap` row and is no longer there to be read back.
+--- The index contents are kept, since staging writes the chosen rows into them.
 ---
 --- @param s unidiff.Session
 --- @param keep_unchanged boolean? leave the pane as it is when it already shows

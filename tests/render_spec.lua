@@ -195,54 +195,107 @@ test('the gutter is numbered for source lines and blank for the rest', function(
   render.configure_window(win, buf)
   vim.g.statusline_winid = win
 
-  local source_row, gap_row
+  local source_row, folded_row
   for i, l in ipairs(view.lines) do
-    if l.kind == 'gap' then
-      gap_row = i
+    if l.folded then
+      folded_row = folded_row or i
     elseif not source_row then
       source_row = i
     end
   end
-  assert(gap_row, 'expected the fixture to skip a range')
+  assert(folded_row, 'expected the fixture to fold a range')
 
   vim.v.lnum = source_row
   local real = render.statuscolumn()
   assert(real:find('%d'), 'a source line should show numbers, got ' .. vim.inspect(real))
 
-  vim.v.lnum = gap_row
-  local gap = render.statuscolumn()
-  eq(nil, gap:find('%d'), 'a gap line has no line numbers')
+  vim.v.lnum = folded_row
+  local closed = render.statuscolumn()
+  eq(nil, closed:find('%d'), 'a closed fold has no line numbers')
   -- the highlight-group markers take no width on screen
-  eq(#(real:gsub('%%#%S-#', '')), #gap, 'and keeps the gutter the same width')
+  eq(#(real:gsub('%%#%S-#', '')), #closed, 'and keeps the gutter the same width')
+
+  vim.api.nvim_win_call(win, function()
+    vim.cmd(folded_row .. 'foldopen')
+  end)
+  -- evaluating 'foldexpr' moved it
+  vim.v.lnum = folded_row
+  assert(render.statuscolumn():find('%d'), 'an opened fold shows its numbers')
 
   vim.api.nvim_win_close(win, true)
   eq(#view.lines, #vim.api.nvim_buf_get_lines(buf, 0, -1, false))
 end)
 
-test('separator lines are real lines, not virtual ones', function()
-  local buf, view = build(1)
-  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
-  local gap_row
-  for i, l in ipairs(view.lines) do
-    if l.kind == 'gap' then
-      gap_row = i
+--- The first and last row of every closed fold in `win`.
+--- @param win integer
+--- @return integer[][]
+local function closed_folds(win)
+  return vim.api.nvim_win_call(win, function()
+    local out = {}
+    local row, last = 1, vim.api.nvim_buf_line_count(0)
+    while row <= last do
+      local first = vim.fn.foldclosed(row)
+      if first ~= -1 then
+        local stop = vim.fn.foldclosedend(row)
+        out[#out + 1] = { first, stop }
+        row = stop + 1
+      else
+        row = row + 1
+      end
     end
-  end
-  assert(gap_row, 'expected the fixture to skip a range')
-  eq(
-    { view.lines[gap_row].text },
-    vim.api.nvim_buf_get_lines(buf, gap_row - 1, gap_row, false)
-  )
+    return out
+  end)
+end
 
-  local found
-  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    eq(nil, m[4].virt_lines, 'no virtual lines are left')
-    if m[2] == gap_row - 1 and m[4].hl_group == 'UnidiffSeparator' then
-      found = m[4]
+test('each run of unchanged lines away from a change is a closed fold', function()
+  local buf, view = build(1)
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = 'editor',
+    width = 40,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  render.configure_window(win, buf)
+
+  local runs = {}
+  for i, l in ipairs(view.lines) do
+    local prev = view.lines[i - 1]
+    if l.folded then
+      if prev and prev.folded then
+        runs[#runs][2] = i
+      else
+        runs[#runs + 1] = { i, i }
+      end
     end
   end
-  assert(found, 'the gap line should carry the separator highlight')
-  eq(true, found.hl_eol)
+  assert(#runs > 0, 'expected the fixture to fold a range')
+  eq(runs, closed_folds(win))
+
+  local text = vim.api.nvim_win_call(win, function()
+    vim.v.foldstart, vim.v.foldend = runs[1][1], runs[1][2]
+    return render.foldtext()
+  end)
+  eq({ { dlib.fold_label(runs[1][2] - runs[1][1] + 1), 'UnidiffSeparator' } }, text)
+  vim.api.nvim_win_close(win, true)
+end)
+
+-- A folded row is only seen once its fold is opened, so its syntax is left
+-- until after the open rows have theirs.
+test('the rows folded away get their syntax too, after the rest', function()
+  local buf, view = build(1)
+  local row
+  for i, l in ipairs(view.lines) do
+    if l.folded and l.text == 'return M' then
+      row = i - 1
+    end
+  end
+  assert(row, 'expected the fixture to fold the last line away')
+  local done = vim.wait(1000, function()
+    return #marks(buf, 'unidiff.syntax', row) > 0
+  end)
+  assert(done, 'the folded row was never highlighted')
+  eq(nil, view.files[1].old_buf, 'and the ghost buffers are freed once it is')
 end)
 
 -- The groups whose colors we compute; the rest are plain `default link`s, which

@@ -3,20 +3,22 @@ local util = require('unidiff.util')
 local M = {}
 
 --- A line of the rendered buffer. `context`, `add` and `del` carry source text
---- and are the only kinds with a place in one of the two versions; `gap`, `file`
---- and `blank` are structural lines the view inserts, and `subject`, `author`,
+--- and are the only kinds with a place in one of the two versions; `file` and
+--- `blank` are structural lines the view inserts, and `subject`, `author`,
 --- `body` and `stat` make up a commit's header. None of those carry line numbers
 --- or a `side`/`row`/`file` to look their syntax up by.
 ---
 --- @class unidiff.Line
 --- @field text string source text without any gutter
---- @field kind 'context'|'add'|'del'|'gap'|'file'|'blank'|'subject'|'author'|'body'|'stat'
+--- @field kind 'context'|'add'|'del'|'file'|'blank'|'subject'|'author'|'body'|'stat'
 --- @field old_lnum integer? 1-based line number in the old version
 --- @field new_lnum integer? 1-based line number in the new version
 --- @field side 'old'|'new'|'index'? which version `text` came from; `index`
 ---       only in a mixed view
 --- @field row integer? 0-based row of `text` in its version
 --- @field file integer? index into `unidiff.View.files`
+--- @field folded true? a `context` line away from every change, which starts
+---       out folded away. Each run of them is one fold.
 --- @field stage 'staged'|'unstaged'|'index'? which layer a change belongs to, in
 ---       a mixed view only; see unidiff.diff.mixed
 --- @field index_pos integer? where the row sits in the index, in a mixed view
@@ -29,10 +31,10 @@ local M = {}
 --- @type table<string, true>
 M.source_kinds = { context = true, add = true, del = true }
 
---- The label of a `gap` line, naming how many lines it stands for.
+--- What a closed run of `folded` lines reads as, naming how many it stands for.
 --- @param count integer
 --- @return string
-function M.gap_label(count)
+function M.fold_label(count)
   local dots = ('\u{00b7}'):rep(4)
   return ('%s %s %s'):format(dots, util.counted(count, 'unchanged line'), dots)
 end
@@ -83,7 +85,8 @@ function M.build(hunks, old_lines, new_lines, context)
 
   --- @param from integer
   --- @param to integer
-  local function push_context(from, to)
+  --- @param folded true?
+  local function push_context(from, to, folded)
     for i = from, to do
       out[#out + 1] = {
         text = old_lines[i],
@@ -92,22 +95,22 @@ function M.build(hunks, old_lines, new_lines, context)
         new_lnum = i + offset,
         side = 'old',
         row = i - 1,
+        folded = folded,
       }
     end
   end
 
-  --- Emit an unchanged range, keeping only `head` lines at its start and `tail`
-  --- lines at its end. Emitting the whole range eagerly would double up lines
-  --- that the next hunk is about to claim as changed.
+  --- Emit an unchanged range, folding away all but `head` lines at its start and
+  --- `tail` lines at its end. Emitting the whole range eagerly would double up
+  --- lines that the next hunk is about to claim as changed.
   ---
-  --- The separator occupies a row of its own, so hiding a single line behind it
-  --- saves no space and only makes the file harder to read. Such a range is
-  --- kept in full.
+  --- A closed fold still occupies a row, so folding a single line away saves no
+  --- space and only makes the file harder to read. Such a range is left open.
   --- @param from integer
   --- @param to integer
   --- @param head integer
   --- @param tail integer
-  local function push_gap(from, to, head, tail)
+  local function push_unchanged(from, to, head, tail)
     local n = to - from + 1
     if n <= 0 then
       return
@@ -117,7 +120,7 @@ function M.build(hunks, old_lines, new_lines, context)
       return
     end
     push_context(from, from + head - 1)
-    out[#out + 1] = { text = M.gap_label(n - head - tail), kind = 'gap' }
+    push_context(from + head, to - tail, true)
     push_context(to - tail + 1, to)
   end
 
@@ -127,7 +130,7 @@ function M.build(hunks, old_lines, new_lines, context)
     local old_first = oc > 0 and os_ or os_ + 1
     local new_first = nc > 0 and ns_ or ns_ + 1
 
-    push_gap(prev_end + 1, old_first - 1, hi == 1 and 0 or context, context)
+    push_unchanged(prev_end + 1, old_first - 1, hi == 1 and 0 or context, context)
 
     hunk_rows[#hunk_rows + 1] = #out + 1
     for i = old_first, old_first + oc - 1 do
@@ -143,7 +146,7 @@ function M.build(hunks, old_lines, new_lines, context)
     offset = offset + (nc - oc)
   end
 
-  push_gap(prev_end + 1, #old_lines, context, 0)
+  push_unchanged(prev_end + 1, #old_lines, context, 0)
 
   return out, hunk_rows
 end

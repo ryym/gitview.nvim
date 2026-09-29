@@ -43,7 +43,8 @@ end
 --- @field historical boolean? the versions compared are both committed, so the
 ---        line numbers are not the working tree's
 --- @field header_rows integer? how many rows at the top introduce the view rather
----        than belong to a file: a commit's message and stat. They fold as one.
+---        than belong to a file: a commit's message and stat. They fold as one,
+---        as does each run of `folded` lines.
 
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
@@ -124,7 +125,6 @@ local SIGN = { add = '+', del = '-', context = ' ' }
 local LINE_HL = {
   add = 'UnidiffAdd',
   del = 'UnidiffDelete',
-  gap = 'UnidiffSeparator',
   file = 'UnidiffFileHeader',
   subject = 'UnidiffCommitSubject',
   author = 'UnidiffCommitAuthor',
@@ -155,88 +155,139 @@ function M.create_buffer()
   return util.scratch_buffer('unidiff', views)
 end
 
---- Whether the header's fold is open, in each window showing `buf` whose view
---- has a header to fold.
+--- What names a fold across views: `header` for a commit's header, and the
+--- file and the new line number of its first row for a run of unchanged lines.
+--- Staging leaves the working tree alone, and a commit never changes, so a run
+--- keeps its name for as long as the same thing is being redrawn.
+--- @param view unidiff.View
+--- @param row integer 1-based first row of the fold
+--- @return string
+local function fold_key(view, row)
+  if view.header_rows and row == 1 then
+    return 'header'
+  end
+  local l = view.lines[row]
+  return ('%s:%d'):format(view.files[l.file].path, l.new_lnum)
+end
+
+--- The first row of every fold `view` makes.
+--- @param view unidiff.View
+--- @return integer[]
+local function fold_starts(view)
+  local starts = view.header_rows and { 1 } or {}
+  for row, l in ipairs(view.lines) do
+    local prev = view.lines[row - 1]
+    if l.folded and not (prev and prev.folded) then
+      starts[#starts + 1] = row
+    end
+  end
+  return starts
+end
+
+--- Which folds are open, by `fold_key`, in each window showing `buf`.
 ---
 --- Replacing the lines under a fold opens or closes it depending on how its
---- extent changed, so a header opened on one commit would be found open or
---- closed on the next more or less at random. What the reader chose is carried
---- over instead, and 'foldlevel' only decides for a header appearing where there
---- was none.
+--- extent changed, so a fold opened on one view would be found open or closed
+--- on the next more or less at random. What the reader chose is carried over
+--- instead, and 'foldlevel' only decides for a fold that has no counterpart.
 --- @param buf integer
---- @return table<integer, boolean> open by window
-local function header_fold_states(buf)
+--- @return table<integer, table<string, boolean>> by window
+local function fold_states(buf)
   local old = views[buf]
-  local open = {}
-  if old and old.header_rows then
+  local states = {}
+  if old then
+    local starts = fold_starts(old)
     for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-      open[win] = vim.api.nvim_win_call(win, function()
-        return vim.fn.foldclosed(1) == -1
+      states[win] = vim.api.nvim_win_call(win, function()
+        local open = {}
+        for _, row in ipairs(starts) do
+          open[fold_key(old, row)] = vim.fn.foldclosed(row) == -1
+        end
+        return open
       end)
     end
   end
-  return open
+  return states
 end
 
---- @param open table<integer, boolean> from `header_fold_states`
-local function restore_header_folds(open)
-  for win, was_open in pairs(open) do
+--- @param view unidiff.View
+--- @param states table<integer, table<string, boolean>> from `fold_states`
+local function restore_folds(view, states)
+  local starts = fold_starts(view)
+  for win, open in pairs(states) do
     -- A window the buffer was moved into keeps its own folding, and has no fold
     -- here to open or close.
     pcall(vim.api.nvim_win_call, win, function()
-      vim.cmd(was_open and '1foldopen' or '1foldclose')
+      local default = vim.wo.foldlevel > 0
+      for _, row in ipairs(starts) do
+        local want = open[fold_key(view, row)]
+        if want == nil then
+          want = default
+        end
+        if want ~= (vim.fn.foldclosed(row) == -1) then
+          vim.cmd(('%dfold%s'):format(row, want and 'open' or 'close'))
+        end
+      end
     end)
   end
 end
 
---- A view with more rows than this is shown before its syntax is collected, and
---- the syntax is filled in afterwards. Collecting is most of the cost of a large
---- view, but colors appearing a moment late would only flicker on the small
---- views that are redrawn all the time, such as a file being staged hunk by
---- hunk.
+--- A view with more open rows than this is shown before their syntax is
+--- collected, and the syntax is filled in afterwards. Collecting is most of the
+--- cost of a large view, but colors appearing a moment late would only flicker
+--- on the small views that are redrawn all the time, such as a file being
+--- staged hunk by hunk.
 local PROGRESSIVE_ROWS = 1000
 
 --- How long one step of filling in the syntax may run before it yields to the
 --- editor. A file is never split, so a step overruns by up to one file.
 local STEP_BUDGET_MS = 10
 
---- The rows each file occupies, and the rows of each version they show.
+--- The rows of one file whose syntax is collected together, and the rows of
+--- each version they show.
+--- @class unidiff.FillJob
+--- @field file integer index into `unidiff.View.files`
+--- @field rows integer[] 1-based rows of the view
+--- @field want table<string, table<integer, true>> rows of each version
+
+--- The rows each file occupies, split into those drawn open and those folded
+--- away.
 ---
---- Only a fraction of each version ends up on screen. The legacy syntax path
---- probes byte by byte, so telling it which rows matter keeps that bounded by
---- the size of the diff rather than the size of the file.
+--- Only a fraction of each version is open to begin with. The legacy syntax path
+--- probes byte by byte, so telling it which rows matter keeps what the reader
+--- waits for bounded by the size of the diff rather than the size of the file.
 --- @param view unidiff.View
---- @return integer[][] rows 1-based rows of the view, by file
---- @return table<string, table<integer, true>>[] want rows of each version, by file
+--- @return unidiff.FillJob[] open by file
+--- @return unidiff.FillJob[] folded by file
 local function rows_by_file(view)
-  local rows, want = {}, {}
+  local open, folded = {}, {}
   for i = 1, #view.files do
-    rows[i] = {}
-    want[i] = { old = {}, new = {}, index = {} }
+    open[i] = { file = i, rows = {}, want = { old = {}, new = {}, index = {} } }
+    folded[i] = { file = i, rows = {}, want = { old = {}, new = {}, index = {} } }
   end
   for row, l in ipairs(view.lines) do
     if dlib.source_kinds[l.kind] then
-      table.insert(rows[l.file], row)
-      want[l.file][l.side][l.row] = true
+      local job = (l.folded and folded or open)[l.file]
+      table.insert(job.rows, row)
+      job.want[l.side][l.row] = true
     end
   end
-  return rows, want
+  return open, folded
 end
 
 --- Collect one file's syntax from its ghost buffers and replay it onto `buf`.
 --- @param buf integer
 --- @param view unidiff.View
---- @param file integer index into `view.files`
---- @param rows integer[] from `rows_by_file`
---- @param want table<string, table<integer, true>> from `rows_by_file`
-local function fill_file(buf, view, file, rows, want)
-  local f = view.files[file]
+--- @param job unidiff.FillJob from `rows_by_file`
+local function fill_file(buf, view, job)
+  local f = view.files[job.file]
+  local want = job.want
   local segs = {
     old = hl.collect(f.old_buf, f.lang, want.old),
     new = hl.collect(f.new_buf, f.lang, want.new),
     index = f.index_buf and hl.collect(f.index_buf, f.lang, want.index),
   }
-  for _, row in ipairs(rows) do
+  for _, row in ipairs(job.rows) do
     local l = view.lines[row]
     for _, s in ipairs(segs[l.side][l.row] or {}) do
       -- `end_col == -1` marks a capture that continues past this row
@@ -280,10 +331,12 @@ end
 
 --- Replay the syntax of every file onto `buf`, then free the ghost buffers.
 ---
---- A large view gets it in steps scheduled after the draw, so that its text is
---- on screen before the colors are. A step finding that `buf` no longer shows
---- the view gives up: the view has been replaced, and its colors would land on
---- someone else's rows.
+--- The open rows come first and the folded ones after, since those are only
+--- seen once the reader opens a fold. A large view gets even its open rows in
+--- steps scheduled after the draw, so that its text is on screen before the
+--- colors are; the folded rows always do, since they cover every unchanged line
+--- of every file. A step finding that `buf` no longer shows the view gives up:
+--- the view has been replaced, and its colors would land on someone else's rows.
 ---
 --- The screen is redrawn explicitly, before the first step and after each one.
 --- Neovim puts off its own redraw while an event is already waiting to run, and
@@ -292,18 +345,33 @@ end
 --- @param buf integer
 --- @param view unidiff.View
 local function fill_syntax(buf, view)
-  local rows, want = rows_by_file(view)
+  local open, folded = rows_by_file(view)
+  local jobs = {} --- @type unidiff.FillJob[]
   local order = fill_order(buf, view)
-
-  if #view.lines <= PROGRESSIVE_ROWS then
-    for _, file in ipairs(order) do
-      fill_file(buf, view, file, rows[file], want[file])
+  local open_rows = 0
+  for _, file in ipairs(order) do
+    jobs[#jobs + 1] = open[file]
+    open_rows = open_rows + #open[file].rows
+  end
+  local first_folded = #jobs + 1
+  for _, file in ipairs(order) do
+    if #folded[file].rows > 0 then
+      jobs[#jobs + 1] = folded[file]
     end
+  end
+
+  local next_job = 1
+  if open_rows <= PROGRESSIVE_ROWS then
+    for i = 1, first_folded - 1 do
+      fill_file(buf, view, jobs[i])
+    end
+    next_job = first_folded
+  end
+  if next_job > #jobs then
     vlib.dispose(view)
     return
   end
 
-  local next_file = 1
   local function step()
     if views[buf] ~= view then
       vlib.dispose(view)
@@ -311,12 +379,11 @@ local function fill_syntax(buf, view)
     end
     local deadline = vim.uv.hrtime() + STEP_BUDGET_MS * 1e6
     repeat
-      local file = order[next_file]
-      fill_file(buf, view, file, rows[file], want[file])
-      next_file = next_file + 1
-    until next_file > #order or vim.uv.hrtime() >= deadline
+      fill_file(buf, view, jobs[next_job])
+      next_job = next_job + 1
+    until next_job > #jobs or vim.uv.hrtime() >= deadline
     vim.cmd.redraw()
-    if next_file > #order then
+    if next_job > #jobs then
       vlib.dispose(view)
     else
       -- A timer rather than `vim.schedule`: the event queue runs whatever is
@@ -343,7 +410,7 @@ function M.draw(buf, view)
   vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
   vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
 
-  local header_open = header_fold_states(buf)
+  local folds = fold_states(buf)
 
   local texts = {}
   for i, l in ipairs(view.lines) do
@@ -353,9 +420,7 @@ function M.draw(buf, view)
   -- reads has to be the new one by then.
   views[buf] = view
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
-  if view.header_rows then
-    restore_header_folds(header_open)
-  end
+  restore_folds(view, folds)
 
   -- 1. syntax, replayed from the ghost buffers: last, since it may be left for
   --    later. See `fill_syntax`.
@@ -502,9 +567,16 @@ function M.statuscolumn()
     return blank
   end
   local l = view.lines[vim.v.lnum]
-  -- separators, file headers and the blanks between files stand for no source
-  -- line and so have no numbers to show
+  -- file headers and the blanks between files stand for no source line and so
+  -- have no numbers to show
   if not l or not dlib.source_kinds[l.kind] then
+    return blank
+  end
+  -- A closed fold is drawn as its first row, and stands for all of them.
+  local lnum = vim.v.lnum
+  if l.folded and vim.api.nvim_win_call(win, function()
+    return vim.fn.foldclosed(lnum) ~= -1
+  end) then
     return blank
   end
   local function num(n)
@@ -554,25 +626,40 @@ function M.winbar()
   return '%#UnidiffFileHeader#' .. util.escape_statusline(text)
 end
 
---- Folds a commit's header into one line, and nothing else.
+--- Folds a commit's header into one line, and each run of unchanged lines away
+--- from a change into another.
 --- @return string
 function M.foldexpr()
   -- Evaluated with the window being folded made current, whichever it is.
   local view = views[vim.api.nvim_get_current_buf()]
-  local n = view and view.header_rows
-  local lnum = vim.v.lnum
-  if not n or lnum > n then
+  if not view then
     return '0'
   end
-  return lnum == 1 and '>1' or '1'
+  local lnum = vim.v.lnum
+  local n = view.header_rows
+  if n and lnum <= n then
+    return lnum == 1 and '>1' or '1'
+  end
+  local l, prev = view.lines[lnum], view.lines[lnum - 1]
+  if not (l and l.folded) then
+    return '0'
+  end
+  -- Two runs are never adjacent, but a run has to start a fold of its own
+  -- rather than continue whatever the row above it was in.
+  return (prev and prev.folded) and '1' or '>1'
 end
 
---- A folded header reads as its subject and how much the commit changed.
+--- A folded header reads as its subject and how much the commit changed, and a
+--- folded run of unchanged lines as how many lines it holds.
 --- @return string|[string, string][]
 function M.foldtext()
   local view = views[vim.api.nvim_get_current_buf()]
-  if not view or not view.header_rows then
+  if not view then
     return vim.fn.foldtext()
+  end
+  if not view.header_rows or vim.v.foldstart > view.header_rows then
+    local count = vim.v.foldend - vim.v.foldstart + 1
+    return { { dlib.fold_label(count), 'UnidiffSeparator' } }
   end
   local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'UnidiffCommitSubject' } }
   -- the summary git ends a stat with
@@ -597,8 +684,7 @@ end
 --- @param win integer
 --- @param buf integer
 function M.configure_window(win, buf)
-  -- The folded header is padded with 'fillchars' fold, a row of dots by
-  -- default. The rest of the user's choices are kept: a later key overrides an
+  -- A closed fold is padded with 'fillchars' fold, a row of dots by default. The rest of the user's choices are kept: a later key overrides an
   -- earlier one.
   local fillchars = vim.api.nvim_get_option_value('fillchars', { win = win })
   util.configure_window_options(win, {
@@ -613,7 +699,8 @@ function M.configure_window(win, buf)
     foldexpr = 'v:lua.require("unidiff.diff.render").foldexpr()',
     foldtext = 'v:lua.require("unidiff.diff.render").foldtext()',
     foldenable = true,
-    -- a commit's header starts folded: the diff is what is being read
+    -- a commit's header and the unchanged lines start folded: the changes are
+    -- what is being read
     foldlevel = 0,
     -- A header can be as short as its subject and author. A fold no longer than
     -- 'foldminlines' stays open, and would be carried over to the next commit

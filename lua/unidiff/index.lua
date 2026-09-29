@@ -50,10 +50,10 @@ end
 
 --- The rows of the change the cursor is in.
 ---
---- A hunk of a mixed view is a run of added and deleted rows: `mixed.trim` marks
---- one wherever such a run begins, and a run is bounded by context, by a gap, or
---- by the end of the file's rows. Walking out from the cursor finds the same run
---- without having to match a row against `hunk_rows` and guess where it ends.
+--- A hunk of a mixed view is a run of added and deleted rows: `mixed.fold` marks
+--- one wherever such a run begins, and a run is bounded by context or by the end
+--- of the file's rows. Walking out from the cursor finds the same run without
+--- having to match a row against `hunk_rows` and guess where it ends.
 ---
 --- @param lines unidiff.Line[]
 --- @param row integer 1-based

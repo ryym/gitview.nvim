@@ -65,7 +65,7 @@ local layers = {
   row({ stage = 'staged', index_pos = 1 }),
   row({ stage = 'index', kind = 'del', side = 'index', index_pos = 1 }),
   row({ kind = 'context', side = 'index', index_pos = 1 }),
-  row({ kind = 'gap' }),
+  row({ kind = 'blank' }),
 }
 
 test('selection: staging takes the unstaged layer and the index-only rows', function()
@@ -95,10 +95,10 @@ test('hunk_at: a run of changed rows is found from anywhere inside it', function
   end
 end)
 
-test('hunk_at: a gap ends a run, and a context row is in none', function()
+test('hunk_at: a context row ends a run, and is in none', function()
   local lines = {
     row({ kind = 'add' }),
-    row({ kind = 'gap' }),
+    row({ kind = 'context' }),
     row({ kind = 'add' }),
   }
   eq({ 1, 1 }, { index.hunk_at(lines, 1) })

@@ -147,15 +147,18 @@ function M.merge(head, index, work, opts)
   return out
 end
 
---- Collapse unchanged runs the way diff.lines.build does: `context` lines are
---- kept on each side of a change, nothing before the first or after the last,
---- and a run only one line longer than what is kept is shown whole.
+--- Fold unchanged runs the way diff.lines.build does: `context` lines are kept
+--- open on each side of a change, none before the first or after the last, and
+--- a run only one line longer than what is kept open is left open whole.
+---
+--- The rows are marked in place and none is dropped, so a row's position in
+--- `lines` is its row in the view.
 --- @param lines unidiff.Line[]
 --- @param context integer
 --- @return unidiff.Line[] lines
 --- @return integer[] hunk_rows
-function M.trim(lines, context)
-  local out, hunk_rows = {}, {}
+function M.fold(lines, context)
+  local hunk_rows = {}
   local n = #lines
   local i = 1
   while i <= n do
@@ -166,23 +169,20 @@ function M.trim(lines, context)
       end
       local head = i == 1 and 0 or context
       local tail = j == n and 0 or context
-      if j - i + 1 <= head + tail + 1 then
-        vim.list_extend(out, lines, i, j)
-      else
-        vim.list_extend(out, lines, i, i + head - 1)
-        out[#out + 1] = { text = dlib.gap_label(j - i + 1 - head - tail), kind = 'gap' }
-        vim.list_extend(out, lines, j - tail + 1, j)
+      if j - i + 1 > head + tail + 1 then
+        for k = i + head, j - tail do
+          lines[k].folded = true
+        end
       end
       i = j + 1
     else
       if i == 1 or lines[i - 1].kind == 'context' then
-        hunk_rows[#hunk_rows + 1] = #out + 1
+        hunk_rows[#hunk_rows + 1] = i
       end
-      out[#out + 1] = lines[i]
       i = i + 1
     end
   end
-  return out, hunk_rows
+  return lines, hunk_rows
 end
 
 --- @param head string[]
@@ -193,9 +193,9 @@ end
 --- @return unidiff.Line[]? lines nil when none of the three versions differ
 --- @return integer[] hunk_rows
 function M.build(head, index, work, context, opts)
-  -- `trim` counts a hunk for every run of non-context lines, so an empty
+  -- `fold` counts a hunk for every run of non-context lines, so an empty
   -- `hunk_rows` is exactly "none of the three versions differ".
-  local out, hunk_rows = M.trim(M.merge(head, index, work, opts), context)
+  local out, hunk_rows = M.fold(M.merge(head, index, work, opts), context)
   if #hunk_rows == 0 then
     return nil, {}
   end

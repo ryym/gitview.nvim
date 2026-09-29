@@ -30,7 +30,7 @@ works.
 
 ```lua
 require('unidiff').setup({
-  context = 3,             -- unchanged lines kept around each hunk
+  context = 3,             -- unchanged lines left open around each hunk
   rev = 'HEAD',            -- default revision to diff against
   algorithm = 'histogram', -- vim.diff() algorithm
   linematch = 0,           -- see "Agreement with git diff" below

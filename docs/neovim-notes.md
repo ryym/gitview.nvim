@@ -82,9 +82,9 @@ other marks must be able to override has to be a range mark instead:
 ### `virt_lines_above` does not render on the first line
 
 Virtual lines placed above buffer line 1 are simply not drawn, so nothing can be
-shown above the top of the buffer that way. This is one reason separators and
-file headers here are ordinary buffer lines: a leading gap count and the first
-file's header have nowhere to hang otherwise.
+shown above the top of the buffer that way. This is one reason file headers here
+are ordinary buffer lines: the first file's header has nowhere to hang
+otherwise.
 
 ### `'foldexpr'` is evaluated while the lines are being replaced
 
@@ -94,6 +94,9 @@ has to describe the new lines before they are written; set afterwards, the folds
 describe the old ones until something else changes the buffer. The expression is
 evaluated with the window being folded made current, so it can find its buffer
 with `nvim_get_current_buf()` even when another window has focus.
+
+Evaluating it also sets `v:lnum`, so anything that reads `v:lnum` afterwards —
+a `'statuscolumn'` expression called by hand, say — has to set it again first.
 
 ### Replacing the lines under a fold does not keep it open or closed
 

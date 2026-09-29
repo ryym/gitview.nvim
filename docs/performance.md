@@ -7,7 +7,7 @@ collection, and both scale with the number of files rather than the size of the
 diff, which is why a many-file view was once slow while a single large file was
 not.
 
-One view over 60 changed files of ~360 lines each, showing 1440 rows:
+One view over 60 changed files of ~360 lines each, showing 1440 open rows:
 
 | phase                                    | time         | share |
 | ---------------------------------------- | ------------ | ----- |
@@ -22,7 +22,7 @@ One view over 60 changed files of ~360 lines each, showing 1440 rows:
 | **total**                                | **163.6 ms** |       |
 
 A commit has the same profile at a larger scale. One commit of 52 files, drawn
-as 8300 rows into a configured diff window:
+as 8300 open rows into a configured diff window:
 
 | phase                                         | time         | share |
 | --------------------------------------------- | ------------ | ----- |
@@ -37,10 +37,37 @@ as 8300 rows into a configured diff window:
 `vim.diff` accounts for a few percent at most. Anyone optimising this should
 look at highlight collection first and subprocesses second.
 
-That total is not what the reader waits for. A view of more than 1000 rows is
-shown before its highlights are collected, which leaves the commit above on
+Both tables were taken with only the open rows in the buffer. The rows folded
+away add the cost described in [Folded rows](#folded-rows).
+
+That total is not what the reader waits for. A view of more than 1000 open rows
+is shown before its highlights are collected, which leaves the commit above on
 screen after ~120 ms and fully colored after ~370 ms; see
 [Fill large views progressively](#fill-large-views-progressively).
+
+### Folded rows
+
+Every unchanged line is in the buffer, folded, so a view's row count follows the
+size of its files rather than of its diff. One 50,000-line Lua file with one line
+changed, in a configured window:
+
+| phase                                  | folded  | only open rows |
+| -------------------------------------- | ------- | -------------- |
+| Draw, open rows colored                | 430 ms  | 267 ms         |
+| of which `'foldexpr'`                  | ~170 ms | —              |
+| Folded rows colored, in the background | 1.3 s   | —              |
+
+- **`'foldexpr'` is the one cost paid on every draw.** It is one `v:lua` call
+  per row, ~3.4 µs each, and a redraw of the same file pays it again. A
+  `'foldmethod'` of `manual` would cost per fold instead, at the price of making
+  the folds in every window that shows the buffer.
+- **The folded rows' syntax is never waited for.** It is collected after every
+  open row, in steps, so it costs time in the background rather than before the
+  view is shown.
+- Most of the rest of the 267 ms is parsing the two versions, which happens
+  whether or not the unchanged lines are in the buffer.
+
+At 5,000 lines the draw is 44 ms against 27 ms.
 
 ## What made it fast
 
@@ -148,13 +175,13 @@ neither module holds a table. Anything a window option can reach through
 
 ### Fill large views progressively
 
-A view of more than 1000 rows gets its text, diff colors and word highlights at
-once, and its syntax afterwards: one file at a time, in steps of about 10 ms,
+A view of more than 1000 open rows gets its text, diff colors and word
+highlights at once, and their syntax afterwards: one file at a time, in steps of about 10 ms,
 starting with the file the cursor is in and then those below it. The total is
 unchanged; what changes is that the reader is not waiting on files that are not
 on screen.
 
-| commit rows | shown  | fully colored |
+| open rows   | shown  | fully colored |
 | ----------- | ------ | ------------- |
 | 1513        | 52 ms  | 99 ms         |
 | 8300        | 121 ms | 371 ms        |

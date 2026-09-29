@@ -174,12 +174,11 @@ Which rows an operation moves comes from the row's `stage`:
 - An `index` row — a line the index has that neither HEAD nor the working tree
   does — belongs to both, since either direction removes it from the index.
 
-### The rendered rows are not enough
+### The index contents are kept
 
-A view is trimmed: everything away from a change is folded into a `gap` row and
-is no longer there to read back. The index contents therefore cannot be
-reconstructed from the buffer, and the session keeps the selected file's
-`index_lines` for as long as it shows that file's diff.
+`index.apply` writes the chosen rows into the index contents as they stand, so
+the session keeps the selected file's `index_lines` for as long as it shows that
+file's diff.
 
 ## Why not `git apply --cached`
 

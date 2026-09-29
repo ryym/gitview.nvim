@@ -9,7 +9,7 @@ local function dump(lines)
   local out = {}
   for i, l in ipairs(lines) do
     out[i] = ('%s%s|%s|%s'):format(
-      ({ add = '+', del = '-', context = ' ', gap = '~' })[l.kind],
+      l.folded and '~' or ({ add = '+', del = '-', context = ' ' })[l.kind],
       l.text,
       l.old_lnum or '',
       l.new_lnum or ''
@@ -106,7 +106,7 @@ test('context lines carry the text of the matching new line', function()
   end
 end)
 
-test('skipped ranges become gap lines saying how many were dropped', function()
+test('unchanged ranges away from a change are folded, not dropped', function()
   local old, new = {}, {}
   for i = 1, 30 do
     old[i], new[i] = 'line ' .. i, 'line ' .. i
@@ -114,23 +114,20 @@ test('skipped ranges become gap lines saying how many were dropped', function()
   new[15] = 'changed'
   local lines, hunk_rows = dlib.build(dlib.hunks(old, new), old, new, 3)
   eq(1, #hunk_rows)
-  local gaps = {}
+  -- every line of the file, with line 15 shown twice
+  eq(31, #lines)
+  local folded = {}
   for i, l in ipairs(lines) do
-    if l.kind == 'gap' then
-      gaps[#gaps + 1] = { row = i, text = l.text }
+    if l.folded then
+      folded[#folded + 1] = i
     end
   end
-  eq(2, #gaps)
   -- 11 lines before the leading context, 12 after the trailing one
-  eq(dlib.gap_label(11), gaps[1].text)
-  eq(dlib.gap_label(12), gaps[2].text)
-  -- the leading gap is the first line, the trailing one the last
-  eq(1, gaps[1].row)
-  eq(#lines, gaps[2].row)
+  eq(vim.list_extend(vim.fn.range(1, 11), vim.fn.range(20, 31)), folded)
 end)
 
-test('a range of one line is shown rather than hidden behind a separator', function()
-  -- the separator takes a row of its own, so folding one line away saves none
+test('a range of one line is left open rather than folded', function()
+  -- a closed fold takes a row of its own, so folding one line away saves none
   local old, new = {}, {}
   for i = 1, 6 do
     old[i], new[i] = 'line ' .. i, 'line ' .. i
@@ -138,7 +135,7 @@ test('a range of one line is shown rather than hidden behind a separator', funct
   new[5] = 'changed'
   local lines = dlib.build(dlib.hunks(old, new), old, new, 3)
   for _, l in ipairs(lines) do
-    eq(nil, l.kind == 'gap' and l.text or nil, 'nothing should be hidden')
+    eq(nil, l.folded, 'nothing should be folded')
   end
   eq(7, #lines, 'all six lines, with line 5 shown twice')
 end)

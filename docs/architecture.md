@@ -168,11 +168,8 @@ comparison as the commit alone, and gets the header too.
 - **The message and stat are read once per sha** and kept in the session, since
   a commit cannot change.
 - **It folds as one**, through `'foldexpr'` reading `header_rows`, and starts
-  closed. An expression rather than manual folds, because a manual fold would be
-  lost every time the lines are replaced. Replacing them under an open fold
-  leaves it open or closes it depending on how its extent changed, so
-  `render.draw` records whether it was open in each window and restores that;
-  `'foldlevel'` only decides for a header appearing where there was none.
+  closed. Whether it was open is carried from one view to the next as a folded
+  run's is; see [Folded unchanged lines](#folded-unchanged-lines).
 
 #### What is compared with what
 
@@ -302,9 +299,8 @@ acting on it, so the decision can be tested without a repository:
 --cached` was not used, what a row's `side` decides, and where the approach has
 holes. The parts that constrain the rest of the design are:
 
-- **The session keeps the selected file's `index_lines`.** A view is trimmed, so
-  everything away from a change has been folded into a `gap` row; the index
-  contents cannot be read back out of the buffer.
+- **The session keeps the selected file's `index_lines`**, which is what
+  `index.apply` writes the chosen rows into.
 - **Whether the repository has a HEAD is a session-level flag**, re-read
   whenever the log is, because it decides which unstaging command is even
   available.
@@ -461,19 +457,20 @@ For each file in the diff:
 
 Then once for the whole view:
 
-4. **Collect highlights** from the ghost buffers, for the displayed rows only.
+4. **Collect highlights** from the ghost buffers, for the rows the view shows.
    Tree-sitter is used when the language has a parser and legacy `:syntax`
    otherwise; both produce byte ranges paired with highlight groups, and nothing
    downstream knows which ran.
 5. **Render**: write the source text, replay the highlights as extmarks, and
-   layer diff backgrounds, word-level highlights, headers and separators on top.
+   layer diff backgrounds, word-level highlights and headers on top.
 6. **Discard the ghost buffers.** They exist only for step 4.
 
-A large view is shown before steps 4 and 6 run: its text and diff colors go on
-screen at once, and the syntax is collected and replayed a few files at a time
-afterwards, starting from the file the cursor is in. `render.draw` owns the
-ghost buffers from the moment it is called, and a step that finds its view
-replaced frees them and stops.
+The rows folded away are collected after every open row, a few files at a time
+once the view is on screen. A view with many open rows is treated the same way:
+its text and diff colors go on screen at once, and the syntax of its open rows
+follows, starting from the file the cursor is in. `render.draw` owns the ghost
+buffers from the moment it is called, and a step that finds its view replaced
+frees them and stops.
 
 Step 3 is what makes a line deleted from the middle of a multi-line string come
 out as a string: the fragment alone carries no such information.
@@ -524,7 +521,6 @@ one of the two versions:
 | kind                     | text                       | has line numbers |
 | ------------------------ | -------------------------- | ---------------- |
 | `context`, `add`, `del`  | source text                | yes              |
-| `gap`                    | `···· N unchanged lines ····` | no            |
 | `file`                   | the file's label           | no               |
 | `blank`                  | empty, separates two files | no               |
 | `subject`, `author`      | a commit's header          | no               |
@@ -534,8 +530,31 @@ one of the two versions:
 up in a ghost buffer, prints a gutter, or jumps to the source has to check it
 first, because the other kinds carry no `side`, `row` or `file`.
 
-A `gap` is only emitted for two or more lines. It takes a row of its own, so
-folding a single line away saves nothing and loses the line.
+### Folded unchanged lines
+
+Every line of every version is in the view. The unchanged lines away from any
+change — all but `context` of them on each side of a change, and all of them
+before the first and after the last — are marked `folded`, and each run of them
+is one closed fold that reads as `···· N unchanged lines ····`.
+
+- **Folding rather than dropping** lets a reader open a run to see what the
+  change sits in, and lets a search find a line that is not in view.
+- **A run of one line is left open.** A closed fold still takes a row, so folding
+  a single line away saves nothing and hides the line.
+- **The gutter is blank on a closed run**, which stands for several lines rather
+  than for its first.
+- **Their syntax comes last.** The folded rows cover whole files, so they are
+  collected after every open row, in the background; a run opened before then
+  shows its colors a moment late.
+
+Folds are an expression reading the view rather than manual folds, because a
+manual fold would be lost every time the lines are replaced. Replacing them
+under an open fold leaves it open or closes it depending on how its extent
+changed, so `render.draw` records which folds were open in each window and
+restores that. A fold is recognised in the next view by the file and the new
+line number of its first row — or as the header — which stays put while
+staging redraws the same file. A fold with no counterpart follows
+`'foldlevel'`.
 
 ## Layering
 
@@ -551,11 +570,11 @@ The ordering is the point: the line background has to sit under the syntax
 colors so they survive, and the word-level highlights have to sit over both so a
 changed word stands out against its own line's background.
 
-Separators and file headers are ordinary buffer lines, highlighted by the same
-whole-line range marks as the diff colors. They were virtual lines once; making
-them real means they can be searched, jumped to by row, and copied along with the
-lines around them, and it removes the special cases that `virt_lines` above line
-1 forced (see `neovim-notes.md`).
+File headers are ordinary buffer lines, highlighted by the same whole-line
+range marks as the diff colors. They were virtual lines once; making them real
+means they can be searched, jumped to by row, and copied along with the lines
+around them, and it removes the special cases that `virt_lines` above line 1
+forced (see `neovim-notes.md`).
 
 Two things are still deliberately _not_ buffer text:
 
@@ -659,6 +678,8 @@ everything still looks right.
 | The diff pane restarts at the top unless it is redrawing the same thing  | `session_spec`                                   |
 | Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
 | Rows are never written to the index while whitespace is ignored          | `session_spec`                                    |
+| Unchanged lines are folded, never dropped                               | `diff_spec`, `mixed_spec`                        |
+| An opened fold stays open while the same file is redrawn                | `session_spec`                                   |
 
 ## Deliberate omissions
 
