@@ -541,6 +541,9 @@ is one closed fold that reads as `···· N unchanged lines ····`.
   change sits in, and lets a search find a line that is not in view.
 - **A run of one line is left open.** A closed fold still takes a row, so folding
   a single line away saves nothing and hides the line.
+- **The rest of a closed fold is `'fillchars'` fold**, the user's own, for a run
+  and for a commit's header alike, so a closed fold spans the window and is
+  hard to miss.
 - **The gutter is blank on a closed run**, which stands for several lines rather
   than for its first.
 - **Their syntax comes last.** The folded rows cover whole files, so they are

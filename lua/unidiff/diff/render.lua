@@ -650,7 +650,8 @@ function M.foldexpr()
 end
 
 --- A folded header reads as its subject and how much the commit changed, and a
---- folded run of unchanged lines as how many lines it holds.
+--- folded run of unchanged lines as how many lines it holds. Whatever room is
+--- left is filled with 'fillchars' fold.
 --- @return string|[string, string][]
 function M.foldtext()
   local view = views[vim.api.nvim_get_current_buf()]
@@ -659,7 +660,7 @@ function M.foldtext()
   end
   if not view.header_rows or vim.v.foldstart > view.header_rows then
     local count = vim.v.foldend - vim.v.foldstart + 1
-    return { { dlib.fold_label(count), 'UnidiffSeparator' } }
+    return { { dlib.fold_label(count) .. ' ', 'UnidiffSeparator' } }
   end
   local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'UnidiffCommitSubject' } }
   -- the summary git ends a stat with
@@ -678,15 +679,14 @@ function M.foldtext()
       chunks[#chunks + 1] = { ' -' .. del, 'UnidiffStatDelete' }
     end
   end
+  -- a space between the text and the fill, as the label of a run has
+  chunks[#chunks][1] = chunks[#chunks][1] .. ' '
   return chunks
 end
 
 --- @param win integer
 --- @param buf integer
 function M.configure_window(win, buf)
-  -- A closed fold is padded with 'fillchars' fold, a row of dots by default. The rest of the user's choices are kept: a later key overrides an
-  -- earlier one.
-  local fillchars = vim.api.nvim_get_option_value('fillchars', { win = win })
   util.configure_window_options(win, {
     winbar = '%!v:lua.require("unidiff.diff.render").winbar()',
     statuscolumn = '%!v:lua.require("unidiff.diff.render").statuscolumn()',
@@ -707,7 +707,6 @@ function M.configure_window(win, buf)
     -- as the reader's choice.
     foldminlines = 0,
     foldcolumn = '0',
-    fillchars = (fillchars == '' and '' or fillchars .. ',') .. 'fold: ',
   })
 end
 

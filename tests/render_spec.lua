@@ -276,7 +276,7 @@ test('each run of unchanged lines away from a change is a closed fold', function
     vim.v.foldstart, vim.v.foldend = runs[1][1], runs[1][2]
     return render.foldtext()
   end)
-  eq({ { dlib.fold_label(runs[1][2] - runs[1][1] + 1), 'UnidiffSeparator' } }, text)
+  eq({ { dlib.fold_label(runs[1][2] - runs[1][1] + 1) .. ' ', 'UnidiffSeparator' } }, text)
   vim.api.nvim_win_close(win, true)
 end)
 

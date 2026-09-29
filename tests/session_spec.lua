@@ -1570,7 +1570,7 @@ test('session: the header starts folded, and reads as its subject', function()
       { '\u{25b8} second', 'UnidiffCommitSubject' },
       { '   2 files', 'UnidiffCommitAuthor' },
       { ' +3', 'UnidiffStatAdd' },
-      { ' -1', 'UnidiffStatDelete' },
+      { ' -1 ', 'UnidiffStatDelete' },
     }, text)
   end)
 end)
