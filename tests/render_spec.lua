@@ -31,18 +31,21 @@ local NEW = {
   'return M',
 }
 
---- @param context integer? defaults to 3, which keeps the fixture gap-free
+--- @param context integer? defaults to 3, which keeps the fixture fold-free
+--- @param old string[]? defaults to `OLD`
+--- @param new string[]? defaults to `NEW`
 --- @return integer bufnr, unidiff.View
-local function build(context)
-  local hunks = dlib.hunks(OLD, NEW)
-  local lines, hunk_rows = dlib.build(hunks, OLD, NEW, context or 3)
+local function build(context, old, new)
+  old, new = old or OLD, new or NEW
+  local hunks = dlib.hunks(old, new)
+  local lines, hunk_rows = dlib.build(hunks, old, new, context or 3)
   for _, l in ipairs(lines) do
     if dlib.source_kinds[l.kind] then
       l.file = 1
     end
   end
-  local old_buf = hl.ghost_buffer(OLD, 'lua')
-  local new_buf = hl.ghost_buffer(NEW, 'lua')
+  local old_buf = hl.ghost_buffer(old, 'lua')
+  local new_buf = hl.ghost_buffer(new, 'lua')
   local view = {
     lines = lines,
     hunk_rows = hunk_rows,
@@ -272,12 +275,90 @@ test('each run of unchanged lines away from a change is a closed fold', function
   assert(#runs > 0, 'expected the fixture to fold a range')
   eq(runs, closed_folds(win))
 
-  local text = vim.api.nvim_win_call(win, function()
-    vim.v.foldstart, vim.v.foldend = runs[1][1], runs[1][2]
+  vim.api.nvim_win_close(win, true)
+end)
+
+--- Open `buf` in a window of `width` columns and read the foldtext of the fold
+--- over `first`..`last`.
+--- @param buf integer
+--- @param width integer
+--- @param first integer
+--- @param last integer
+--- @return [string, string][] chunks
+--- @return integer room the columns right of the gutter
+local function foldtext_of(buf, width, first, last)
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = 'editor',
+    width = width,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  render.configure_window(win, buf)
+  local chunks = vim.api.nvim_win_call(win, function()
+    vim.v.foldstart, vim.v.foldend = first, last
     return render.foldtext()
   end)
-  eq({ { dlib.fold_label(runs[1][2] - runs[1][1] + 1) .. ' ', 'UnidiffSeparator' } }, text)
+  local info = vim.fn.getwininfo(win)[1]
+  local room = info.width - info.textoff
   vim.api.nvim_win_close(win, true)
+  return chunks, room
+end
+
+--- @param chunks [string, string][]
+--- @return string
+local function text_of(chunks)
+  local out = {}
+  for _, c in ipairs(chunks) do
+    out[#out + 1] = c[1]
+  end
+  return table.concat(out)
+end
+
+--- Wait for the syntax of every row, folded ones included, to be replayed.
+--- @param view unidiff.View
+local function wait_filled(view)
+  assert(vim.wait(1000, function()
+    return view.files[1].old_buf == nil
+  end), 'the syntax was never filled in')
+end
+
+test('a closed run reads as its first line and how many lines it holds', function()
+  local buf, view = build(1)
+  wait_filled(view)
+  -- rows 11-13 are `end`, a blank line and `return M`
+  eq('end', view.lines[11].text)
+  local chunks = foldtext_of(buf, 60, 11, 13)
+  eq('end  3 lines ', text_of(chunks))
+  -- the code keeps its syntax
+  assert(chunks[1][2]:find('^@keyword'), vim.inspect(chunks[1]))
+  eq({ '  3 lines ', 'UnidiffSeparator' }, chunks[#chunks])
+end)
+
+test('a closed run skips its blank lines and keeps the indent', function()
+  local old = { 'x', '', '', '  local y = 1', 'z', 'a', 'b', 'c' }
+  local new = vim.deepcopy(old)
+  new[1] = 'X'
+  local buf, view = build(1, old, new)
+  eq(true, view.lines[4].folded)
+  eq('  local y = 1  6 lines ', text_of((foldtext_of(buf, 60, 4, 9))))
+  -- a run of nothing but blank lines has no line to show
+  eq('', view.lines[4].text)
+  eq('  1 line ', text_of((foldtext_of(buf, 60, 4, 4))))
+end)
+
+test('a closed run expands tabs and is cut to the window', function()
+  local long = '\tlocal value = ' .. ('x'):rep(80)
+  local old = { 'a', 'b', long, 'c', 'd' }
+  local new = vim.deepcopy(old)
+  new[1] = 'A'
+  local buf, view = build(1, old, new)
+  eq(long, view.lines[4].text)
+  local chunks, room = foldtext_of(buf, 50, 4, 6)
+  local text = text_of(chunks)
+  eq(vim.bo[buf].tabstop, #text:match('^ *'), 'the tab is spaces up to the next stop')
+  eq(room, vim.api.nvim_strwidth(text), 'the code is cut so the label fits')
+  assert(text:find('  3 lines $'), text)
 end)
 
 -- A folded row is only seen once its fold is opened, so its syntax is left

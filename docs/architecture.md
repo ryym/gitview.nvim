@@ -535,20 +535,24 @@ first, because the other kinds carry no `side`, `row` or `file`.
 Every line of every version is in the view. The unchanged lines away from any
 change — all but `context` of them on each side of a change, and all of them
 before the first and after the last — are marked `folded`, and each run of them
-is one closed fold that reads as `···· N unchanged lines ····`.
+is one closed fold.
 
 - **Folding rather than dropping** lets a reader open a run to see what the
   change sits in, and lets a search find a line that is not in view.
 - **A run of one line is left open.** A closed fold still takes a row, so folding
   a single line away saves nothing and hides the line.
+- **A closed run reads as its first line that is not blank**, indented as it is
+  in the file and colored by its syntax, followed by how many lines it holds.
+  It is the only hint of what the run hides without opening it. Tabs are
+  expanded and a long line is cut, so that the count always fits.
 - **The rest of a closed fold is `'fillchars'` fold**, the user's own, for a run
   and for a commit's header alike, so a closed fold spans the window and is
   hard to miss.
 - **The gutter is blank on a closed run**, which stands for several lines rather
   than for its first.
 - **Their syntax comes last.** The folded rows cover whole files, so they are
-  collected after every open row, in the background; a run opened before then
-  shows its colors a moment late.
+  collected after every open row, in the background; a run shown or opened
+  before then shows its colors a moment late.
 
 Folds are an expression reading the view rather than manual folds, because a
 manual fold would be lost every time the lines are replaced. Replacing them

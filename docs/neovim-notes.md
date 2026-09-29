@@ -106,6 +106,12 @@ shorter. A fold appearing where there was none follows `'foldlevel'`. Keeping
 what the reader chose means reading `foldclosed()` before the replacement and
 applying `:foldopen` or `:foldclose` after it.
 
+### A list returned by `'foldtext'` is drawn over `Folded`
+
+Each chunk's group is combined with `Folded` rather than replacing it, so a chunk
+of a syntax group keeps the fold's background and takes only the colors the group
+sets. Naming `Folded` in the chunk as well is not needed.
+
 ### `'statuscolumn'` is evaluated for every screen line
 
 Return blanks when `vim.v.virtnum ~= 0`, or a wrapped line repeats the numbers of

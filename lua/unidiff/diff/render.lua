@@ -649,19 +649,104 @@ function M.foldexpr()
   return (prev and prev.folded) and '1' or '>1'
 end
 
+--- The first line of a folded run that is not blank, as chunks grouped by the
+--- syntax replayed onto it, cut to `width` display cells. Tabs are expanded
+--- here, since how wide one is has to be known to cut the line anyway.
+---
+--- The syntax of a folded row is filled in after the rest of the view, so a run
+--- shown before then reads as plain text, and is redrawn once it is colored.
+--- @param buf integer
+--- @param view unidiff.View
+--- @param first integer 1-based first row of the run
+--- @param last integer
+--- @param width integer
+--- @return {text: string, group: string?}[]
+local function first_line_chunks(buf, view, first, last, width)
+  local row
+  for r = first, last do
+    if view.lines[r].text:find('%S') then
+      row = r
+      break
+    end
+  end
+  if not row then
+    return {}
+  end
+  local text = view.lines[row].text
+
+  -- Which group paints each byte: the mark of the highest priority, and of two
+  -- at the same priority the one set later, as when they are drawn.
+  local marks = vim.api.nvim_buf_get_extmarks(
+    buf,
+    ns_syntax,
+    { row - 1, 0 },
+    { row - 1, -1 },
+    { details = true }
+  )
+  table.sort(marks, function(a, b)
+    if a[4].priority ~= b[4].priority then
+      return a[4].priority < b[4].priority
+    end
+    return a[1] < b[1]
+  end)
+  local group = {}
+  for _, m in ipairs(marks) do
+    for byte = m[3] + 1, m[4].end_col or #text do
+      group[byte] = m[4].hl_group
+    end
+  end
+
+  local tabstop = vim.bo[buf].tabstop
+  local chunks, col = {}, 0
+  for _, at in ipairs(vim.str_utf_pos(text)) do
+    local char = text:sub(at, at + vim.str_utf_end(text, at))
+    local cells
+    if char == '\t' then
+      cells = tabstop - col % tabstop
+      char = (' '):rep(cells)
+    else
+      cells = vim.api.nvim_strwidth(char)
+    end
+    if col + cells > width then
+      break
+    end
+    local prev = chunks[#chunks]
+    if prev and prev.group == group[at] then
+      prev.text = prev.text .. char
+    else
+      chunks[#chunks + 1] = { text = char, group = group[at] }
+    end
+    col = col + cells
+  end
+  return chunks
+end
+
 --- A folded header reads as its subject and how much the commit changed, and a
---- folded run of unchanged lines as how many lines it holds. Whatever room is
---- left is filled with 'fillchars' fold.
+--- folded run of unchanged lines as its first line that is not blank and how
+--- many lines it holds. Whatever room is left is filled with 'fillchars' fold.
+---
+--- Each chunk's group is drawn over `Folded`, so the code keeps its colors on
+--- the fold's background.
 --- @return string|[string, string][]
 function M.foldtext()
-  local view = views[vim.api.nvim_get_current_buf()]
+  local buf = vim.api.nvim_get_current_buf()
+  local view = views[buf]
   if not view then
     return vim.fn.foldtext()
   end
   if not view.header_rows or vim.v.foldstart > view.header_rows then
-    local count = vim.v.foldend - vim.v.foldstart + 1
-    return { { dlib.fold_label(count) .. ' ', 'UnidiffSeparator' } }
+    local first, last = vim.v.foldstart, vim.v.foldend
+    local label = ('  %s '):format(util.counted(last - first + 1, 'line'))
+    local info = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1]
+    local width = info.width - info.textoff - vim.api.nvim_strwidth(label)
+    local out = {}
+    for _, c in ipairs(first_line_chunks(buf, view, first, last, width)) do
+      out[#out + 1] = { c.text, c.group or 'UnidiffSeparator' }
+    end
+    out[#out + 1] = { label, 'UnidiffSeparator' }
+    return out
   end
+
   local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'UnidiffCommitSubject' } }
   -- the summary git ends a stat with
   local last = view.lines[view.header_rows]

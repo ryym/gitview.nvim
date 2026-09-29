@@ -1,4 +1,3 @@
-local util = require('unidiff.util')
 
 local M = {}
 
@@ -30,14 +29,6 @@ local M = {}
 --- Kinds that stand for a line of one of the two versions.
 --- @type table<string, true>
 M.source_kinds = { context = true, add = true, del = true }
-
---- What a closed run of `folded` lines reads as, naming how many it stands for.
---- @param count integer
---- @return string
-function M.fold_label(count)
-  local dots = ('\u{00b7}'):rep(4)
-  return ('%s %s %s'):format(dots, util.counted(count, 'unchanged line'), dots)
-end
 
 --- `linematch` is off by default. It is a Neovim-only post-pass that re-pairs
 --- lines inside a hunk and splits the hunk accordingly, which makes the result
