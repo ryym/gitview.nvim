@@ -152,18 +152,17 @@ test('the winbar names the file the cursor is in', function()
   vim.api.nvim_win_close(win, true)
 end)
 
-test('a rule is drawn across the line in front of every file but the first', function()
+test("a rule runs through every file's header, gutter included", function()
   local buf, view = build({ LUA, PERL })
   local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
   local rules = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    if m[4].virt_text_win_col then
+    if m[4].virt_text_pos == 'eol' then
       eq('UnidiffFileRule', m[4].virt_text[1][2])
-      eq(0, m[4].virt_text_win_col)
       rules[#rules + 1] = m[2] + 1
     end
   end
-  eq({ view.files[2].row - 1 }, rules)
+  eq({ view.files[1].row, view.files[2].row }, rules)
 
   local win = vim.api.nvim_open_win(buf, false, {
     relative = 'editor',
@@ -174,10 +173,10 @@ test('a rule is drawn across the line in front of every file but the first', fun
   })
   render.configure_window(win, buf)
   vim.g.statusline_winid = win
-  vim.v.lnum = rules[1]
-  eq('%#UnidiffFileRule#' .. ('─'):rep(12), render.statuscolumn())
   vim.v.lnum = view.files[2].row
-  eq((' '):rep(12), render.statuscolumn(), 'the header itself keeps a blank gutter')
+  eq('%#UnidiffFileRule#' .. ('─'):rep(11) .. ' ', render.statuscolumn())
+  vim.v.lnum = view.files[2].row - 1
+  eq((' '):rep(12), render.statuscolumn(), 'the blank line in front is left blank')
   vim.api.nvim_win_close(win, true)
 end)
 
@@ -198,28 +197,14 @@ test('each header ends with how many lines its file adds and deletes', function(
   end
   eq({
     [view.files[1].row] = {
+      { ' ' },
       { '+1', 'UnidiffStatAdd' },
       { ' ' },
       { '-1', 'UnidiffStatDelete' },
     },
     -- a count of zero is left out
-    [view.files[2].row] = { { '+1', 'UnidiffStatAdd' } },
+    [view.files[2].row] = { { ' ' }, { '+1', 'UnidiffStatAdd' } },
   }, stats)
-end)
-
-test("a header's name is underlined, and the rest of its line is not", function()
-  local buf, view = build({ LUA, PERL })
-  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
-  local got = {}
-  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    if m[4].hl_group == 'UnidiffFileTitle' then
-      got[#got + 1] = { m[2] + 1, m[3], m[4].end_row + 1, m[4].end_col, m[4].hl_eol }
-    end
-  end
-  eq({
-    { view.files[1].row, 0, view.files[1].row, #'a.lua', false },
-    { view.files[2].row, 0, view.files[2].row, #'b.pl', false },
-  }, got)
 end)
 
 test('a single-file view still gets its header', function()

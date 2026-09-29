@@ -111,7 +111,6 @@ local highlights = util.highlights('unidiff.highlights', function(set)
   set('UnidiffSeparator', { link = 'Folded' })
   set('UnidiffFileHeader', { link = 'Title' })
   set('UnidiffFileRule', { link = 'WinSeparator' })
-  set('UnidiffFileTitle', { underline = true })
   set('UnidiffCommitSubject', { link = 'Title' })
   set('UnidiffCommitAuthor', { link = 'Comment' })
   set('UnidiffStatAdd', { link = 'Added' })
@@ -148,19 +147,10 @@ local function text_hl_of(l)
   return l.stage == 'staged' and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
 end
 
---- Whether a row is the blank line in front of a file's header, which is drawn
---- as a rule across the window, gutter included, so that where one file ends
---- and the next begins can be seen at a glance.
---- @param view unidiff.View
---- @param row integer
---- @return boolean
-local function is_rule(view, row)
-  local l, next_l = view.lines[row], view.lines[row + 1]
-  return l ~= nil and l.kind == 'blank' and next_l ~= nil and next_l.kind == 'file'
-end
-
---- The rule's text. Drawn over the line from the window's left edge, and cut at
---- its right edge, so it only has to be longer than any window is wide.
+--- The rule a file's header is drawn on, so that where one file ends and the
+--- next begins can be seen at a glance. It runs through the gutter up to the
+--- name, and on from the name's end, where it is cut at the window's right
+--- edge: it only has to be longer than any window is wide.
 local RULE = ('─'):rep(512)
 
 --- How many lines each file adds and deletes, from HEAD to the working tree in
@@ -529,24 +519,14 @@ function M.draw(buf, view)
     end
   end
 
-  -- 5. a rule in front of each file after the first, an underline under each
-  --    file's name, and how much the file changed at the right end of its
-  --    header. The underline has no color of its own, so it takes the name's,
-  --    which unlike an underline color every terminal can show.
-  for row = 1, #view.lines do
-    if is_rule(view, row) then
-      vim.api.nvim_buf_set_extmark(buf, ns_diff, row - 1, 0, {
-        virt_text = { { RULE, 'UnidiffFileRule' } },
-        virt_text_pos = 'overlay',
-        virt_text_win_col = 0,
-      })
-    end
-  end
+  -- 5. each file's header: the rest of the rule the gutter starts, and how
+  --    much the file changed at the right end
   for _, f in ipairs(view.files) do
     vim.api.nvim_buf_set_extmark(buf, ns_diff, f.row - 1, 0, {
-      end_col = #view.lines[f.row].text,
-      hl_group = 'UnidiffFileTitle',
-      priority = 100,
+      virt_text = { { RULE, 'UnidiffFileRule' } },
+      virt_text_pos = 'eol',
+      -- under the count, which is drawn over the rule's right end
+      priority = 10,
     })
   end
   for i, s in ipairs(file_stats(view)) do
@@ -561,9 +541,12 @@ function M.draw(buf, view)
       chunks[#chunks + 1] = { '-' .. s.del, 'UnidiffStatDelete' }
     end
     if #chunks > 0 then
+      -- a space parts the count from the rule
+      table.insert(chunks, 1, { ' ' })
       vim.api.nvim_buf_set_extmark(buf, ns_diff, view.files[i].row - 1, 0, {
         virt_text = chunks,
         virt_text_pos = 'right_align',
+        priority = 200,
       })
     end
   end
@@ -635,15 +618,16 @@ function M.statuscolumn()
     return ''
   end
   local blank = view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER
-  if vim.v.virtnum == 0 and is_rule(view, vim.v.lnum) then
-    return '%#UnidiffFileRule#' .. RULE:sub(1, #'─' * #blank)
-  end
   -- 'statuscolumn' is evaluated for every screen line, so a wrapped line must
   -- not repeat the numbers of the buffer line it continues.
   if vim.v.virtnum ~= 0 then
     return blank
   end
   local l = view.lines[vim.v.lnum]
+  -- a space parts the rule from the name
+  if l and l.kind == 'file' then
+    return '%#UnidiffFileRule#' .. RULE:sub(1, #'─' * (#blank - 1)) .. ' '
+  end
   -- file headers and the blanks between files stand for no source line and so
   -- have no numbers to show
   if not l or not dlib.source_kinds[l.kind] then
