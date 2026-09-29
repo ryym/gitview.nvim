@@ -2,6 +2,7 @@ local hl = require('unidiff.diff.highlight')
 local util = require('unidiff.util')
 local worddiff = require('unidiff.diff.worddiff')
 local dlib = require('unidiff.diff.lines')
+local perf = require('unidiff.perf')
 local vlib = require('unidiff.diff.view')
 
 local M = {}
@@ -397,11 +398,16 @@ local function fill_syntax(buf, view)
     return
   end
 
+  -- Until the last step, which is when the view is fully colored.
+  local span = perf.start('syntax.background', { jobs = #jobs - next_job + 1 })
+  local steps = 0
   local function step()
     if views[buf] ~= view then
       vlib.dispose(view)
+      span:finish({ steps = steps, replaced = true })
       return
     end
+    steps = steps + 1
     local deadline = vim.uv.hrtime() + STEP_BUDGET_MS * 1e6
     repeat
       fill_file(buf, view, jobs[next_job])
@@ -410,6 +416,7 @@ local function fill_syntax(buf, view)
     vim.cmd.redraw()
     if next_job > #jobs then
       vlib.dispose(view)
+      span:finish({ steps = steps })
     else
       -- A timer rather than `vim.schedule`: the event queue runs whatever is
       -- scheduled while it is being drained, so a chain of `vim.schedule`d
@@ -428,6 +435,8 @@ end
 --- @param buf integer from `create_buffer`
 --- @param view unidiff.View
 function M.draw(buf, view)
+  -- Up to the text being on screen; `syntax.background` covers what is left.
+  local span = perf.start('draw', { rows = #view.lines })
   M.ensure_highlights()
   vim.bo[buf].modifiable = true
   -- Both namespaces have to go: leaving either behind keeps marks from the
@@ -555,6 +564,7 @@ function M.draw(buf, view)
   vim.bo[buf].modified = false
 
   fill_syntax(buf, view)
+  span:finish()
 end
 
 --- Replace whatever `buf` holds with a single line of text.

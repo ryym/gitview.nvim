@@ -1,3 +1,5 @@
+local perf = require('unidiff.perf')
+
 local M = {}
 
 --- @class unidiff.Change
@@ -42,6 +44,9 @@ local async_threads = setmetatable({}, { __mode = 'k' })
 function M.run(cmd, cwd, opts)
   local sys = vim.tbl_extend('force', { text = true, cwd = cwd }, opts or {})
   local resume = async_threads[coroutine.running()]
+  -- The subcommand and its first argument say which of the calls a view makes
+  -- this was; the rest is revisions and paths.
+  local span = perf.start('git', { cmd = table.concat(cmd, ' ', 2, math.min(#cmd, 3)) })
   local out --- @type vim.SystemCompleted
   if resume then
     vim.system(cmd, sys, function(done)
@@ -53,6 +58,7 @@ function M.run(cmd, cwd, opts)
   else
     out = vim.system(cmd, sys):wait()
   end
+  span:finish()
   return {
     ok = out.code == 0,
     stdout = out.stdout or '',

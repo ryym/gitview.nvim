@@ -14,6 +14,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `stage.lua`          | Which git command moves a file into or out of the index  |
 | `index.lua`          | Writing part of a file's changes into the index          |
 | `util.lua`           | Messages shown to the user                              |
+| `perf.lua`           | Timings logged for development, off by default          |
 | `diff/source.lua`    | Reading the versions to compare, and their filetype     |
 | `diff/view.lua`      | Assembling sources into a view, and freeing it           |
 | `diff/lines.lua`     | `vim.diff` wrapper, unified line list, del/add pairing  |
@@ -28,8 +29,8 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 The dependency direction is one-way: `init` only opens a session, `source` uses
 `status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
 `git`, `view` uses `lines`, `mixed` and `highlight`, `render` uses `highlight`,
-`worddiff` and `lines`, and `config`, `util` and `git` depend on nothing but
-Neovim.
+`worddiff` and `lines`, `git` and `render` use `perf`, and `config`, `util`
+and `perf` depend on nothing but Neovim.
 
 `ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
 under `diff/` knows that `ui` exists.

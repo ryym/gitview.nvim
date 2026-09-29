@@ -207,9 +207,60 @@ Some details keep it correct:
 
 ## Measuring it again
 
-Use `vim.uv.hrtime()` around each phase and print a breakdown; the phases above
-correspond directly to the steps in [architecture.md](architecture.md). Three
-things matter for a meaningful number:
+### The timing log
+
+The steps a reader waits on are timed all the time, and written to
+`stdpath('log')/unidiff-perf.log` when either of these is set:
+
+- `vim.g.unidiff_perf`, which can be set in a running session with
+  `:let g:unidiff_perf = 1`
+- `UNIDIFF_PERF` in the environment, other than `0`
+
+Off, each timed step costs one check of those two. Watching the log with
+`tail -f` while moving through the lists shows where a delay comes from:
+
+```
+21:51:50.129 select.wait 60.5ms gen=6
+21:51:50.151 git 21.0ms cmd=diff --name-status
+21:51:50.163 git 11.8ms cmd=diff --numstat
+21:51:50.173 git 10.4ms cmd=cat-file --batch
+21:51:50.175 source 45.5ms
+21:51:50.176 build 1.3ms
+21:51:50.185 git 8.9ms cmd=log -1
+21:51:50.194 git 8.3ms cmd=diff --stat
+21:51:50.194 detail 17.4ms
+21:51:50.225 draw 30.9ms rows=1129
+21:51:50.225 select 156.1ms gen=6 kind=commit
+21:51:50.240 syntax.background 16.1ms jobs=2 steps=2
+```
+
+A line is written when its step ends, so a step comes after the ones inside it.
+
+| name                | from → to                                      |
+| ------------------- | ---------------------------------------------- |
+| `select`            | cursor lands on a row → its view is on screen  |
+| `select.wait`       | the delay a commit row is held for             |
+| `git`               | one subprocess, named by its first two words   |
+| `source`            | reading the versions to compare                |
+| `build`             | diffing them into a view                       |
+| `detail`            | a commit's message and stat                    |
+| `draw`              | the view into the buffer, up to showing it     |
+| `syntax.background` | the rest of a large view's syntax              |
+
+- `gen` ties a `select` to its `select.wait`. A `select` with `dropped=true`
+  was passed over before its delay ran out, and drew nothing.
+- `syntax.background` appears only for a view large enough to be filled in
+  steps; see [Fill large views progressively](#fill-large-views-progressively).
+  `replaced=true` means another view took its place before it finished.
+- To time a new step, wrap it in `perf.measure(name, fn, ...)`, or in
+  `perf.start(name)` and `span:finish()` when it ends in another callback.
+
+### Measuring a phase precisely
+
+The log times whole steps as they run in the user's configuration. For a
+breakdown finer than that, use `vim.uv.hrtime()` around each phase; the phases
+above correspond directly to the steps in [architecture.md](architecture.md).
+Three things matter for a meaningful number:
 
 - Use a repository with many files, not one large file. The two have very
   different profiles.

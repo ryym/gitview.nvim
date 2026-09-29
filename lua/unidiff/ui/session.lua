@@ -9,6 +9,7 @@ local git = require('unidiff.git')
 local index = require('unidiff.index')
 local keymap = require('unidiff.diff.keymap')
 local list = require('unidiff.ui.list')
+local perf = require('unidiff.perf')
 local render = require('unidiff.diff.render')
 local source = require('unidiff.diff.source')
 local stage = require('unidiff.stage')
@@ -287,7 +288,7 @@ local function show_commit(s, commit, index)
     return
   end
   local range, label = range_of(s, commit, index)
-  local sources, skipped, err = source.for_range(range, s.root)
+  local sources, skipped, err = perf.measure('source', source.for_range, range, s.root)
   if not sources then
     util.git_error(err)
     render.notice(s.diff_buf, label .. '   (could not be read)')
@@ -295,7 +296,7 @@ local function show_commit(s, commit, index)
   end
 
   local view, unchanged =
-    vlib.build(sources, label, config.values.context, diff_opts(s))
+    perf.measure('build', vlib.build, sources, label, config.values.context, diff_opts(s))
   if not view then
     render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
     return
@@ -306,7 +307,7 @@ local function show_commit(s, commit, index)
   view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), range_note(s, range, commit))
   -- A range between two commits has no one message to show.
   if vim.deep_equal(range, git.commit_range(commit)) then
-    local detail = commit_detail(s, commit)
+    local detail = perf.measure('detail', commit_detail, s, commit)
     if detail then
       vlib.prepend(view, vlib.commit_header(detail))
     end
@@ -334,8 +335,9 @@ local function show_commit_file(s, index)
     return
   end
 
-  local src = source.for_range_change(scope.range, change, s.root)
-  local view = src and vlib.build({ src }, scope.label, config.values.context, diff_opts(s))
+  local src = perf.measure('source', source.for_range_change, scope.range, change, s.root)
+  local view = src
+    and perf.measure('build', vlib.build, { src }, scope.label, config.values.context, diff_opts(s))
   if not view then
     -- a pure rename or a mode change: a real change with no lines to show
     render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
@@ -408,8 +410,9 @@ function M.show_selected(s, keep_unchanged)
     return
   end
 
-  local src = source.for_entry(entry, s.root)
-  local view = src and vlib.build({ src }, REV, config.values.context, diff_opts(s))
+  local src = perf.measure('source', source.for_entry, entry, s.root)
+  local view = src
+    and perf.measure('build', vlib.build, { src }, REV, config.values.context, diff_opts(s))
   if not view then
     -- a pure rename or a mode change: a real change with no lines to show
     render.notice(s.diff_buf, ('%s   %s'):format(status.label(entry), no_view_reason(s)))
@@ -448,17 +451,26 @@ local function sync_selection(s, win, force, keep_unchanged)
   -- Every draw takes a generation, so a deferred one can tell that it is no
   -- longer wanted without a timer handle to cancel.
   s.generation = s.generation + 1
+  -- From the cursor landing to the view being on screen: the wait the reader
+  -- actually has, whatever it is made of.
+  local span = perf.start('select', { gen = s.generation, kind = target and target.kind })
 
   -- A refresh is an explicit act rather than a cursor sweep, so it is not
   -- worth delaying even when a commit is selected.
   if force or not target or target.kind ~= 'commit' then
     M.show_selected(s, keep_unchanged)
+    span:finish()
     return
   end
   local generation = s.generation
+  local waited = perf.start('select.wait', { gen = generation })
   vim.defer_fn(function()
+    waited:finish()
     if s.generation == generation and vim.api.nvim_buf_is_valid(s.diff_buf) then
       M.show_selected(s, keep_unchanged)
+      span:finish()
+    else
+      span:finish({ dropped = true })
     end
   end, COMMIT_DELAY_MS)
 end
