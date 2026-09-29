@@ -1196,6 +1196,35 @@ local function unwatch_index(s)
   end
 end
 
+--- The name of the augroup holding one session's own autocommands.
+--- @param s unidiff.Session
+local function augroup_name(s)
+  return 'unidiff.ui.session.' .. s.tab
+end
+
+--- Drop everything the session holds: its registration, its watcher, its
+--- autocommands and its buffers. Deleting the buffers closes whatever windows
+--- still show them, except a window that is the last one there is, which is
+--- handed another buffer instead.
+--- @param s unidiff.Session
+local function teardown(s)
+  M.sessions[s.tab] = nil
+  unwatch_index(s)
+  pcall(vim.api.nvim_del_augroup_by_name, augroup_name(s))
+  for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
+    -- A window that survives is no longer a pane, so it must not stay pinned
+    -- to whatever buffer it is handed.
+    if vim.api.nvim_win_is_valid(win) then
+      util.configure_window_options(win, { winfixbuf = false })
+    end
+  end
+  for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
+    if vim.api.nvim_buf_is_valid(buf) then
+      vim.api.nvim_buf_delete(buf, { force = true })
+    end
+  end
+end
+
 --- Open a tab page listing everything uncommitted.
 --- @return unidiff.Session?
 function M.open()
@@ -1275,20 +1304,39 @@ function M.open()
 
   M.sessions[s.tab] = s
   watch_index(s)
+  local group = vim.api.nvim_create_augroup(augroup_name(s), { clear = true })
   vim.api.nvim_create_autocmd('TabClosed', {
-    group = vim.api.nvim_create_augroup('unidiff.ui.session.' .. s.tab, { clear = true }),
+    group = group,
     callback = function()
       -- TabClosed does not say which tab went, so this checks its own.
       if not vim.api.nvim_tabpage_is_valid(s.tab) then
-        M.sessions[s.tab] = nil
-        unwatch_index(s)
-        for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
-          if vim.api.nvim_buf_is_valid(buf) then
-            vim.api.nvim_buf_delete(buf, { force = true })
-          end
-        end
-        return true -- delete the autocommand
+        teardown(s)
       end
+    end,
+  })
+  -- A session missing a pane has nowhere to draw what that pane showed, and
+  -- putting the layout back would fight whoever just took it apart. Closing a
+  -- pane closes the session instead, the same as `q` does, which also covers a
+  -- pane moved off with `CTRL-W T`: that closes the window and opens another.
+  vim.api.nvim_create_autocmd('WinClosed', {
+    group = group,
+    pattern = { tostring(s.files_win), tostring(s.commits_win), tostring(s.diff_win) },
+    callback = function()
+      -- Windows cannot be closed from inside WinClosed. Closing the tab page
+      -- closes every pane, and each lands here, so all but the first find the
+      -- session already gone.
+      vim.schedule(function()
+        if M.sessions[s.tab] ~= s then
+          return
+        end
+        -- `M.close` would `:quit` a sole tab page, and closing one pane is not
+        -- asking for Neovim to exit.
+        if #vim.api.nvim_list_tabpages() > 1 then
+          M.close(s)
+        else
+          teardown(s)
+        end
+      end)
     end,
   })
 

@@ -207,6 +207,44 @@ test('session: closing the tab directly drops the session', function()
   end)
 end)
 
+--- Wait for the session to be dropped, which closing a pane does on the next
+--- turn of the event loop.
+--- @param s unidiff.Session
+local function wait_dropped(s)
+  local done = vim.wait(1000, function()
+    return session.sessions[s.tab] == nil
+  end)
+  assert(done, 'the session was never dropped')
+end
+
+test('session: closing a pane closes the session', function()
+  for _, pane in ipairs({ 'files_win', 'commits_win', 'diff_win' }) do
+    with_session(base, function(s)
+      local tab = s.tab
+      vim.api.nvim_win_close(s[pane], true)
+      wait_dropped(s)
+      eq(false, vim.api.nvim_tabpage_is_valid(tab))
+      eq(false, vim.api.nvim_buf_is_valid(s.files_buf))
+    end)
+  end
+end)
+
+-- `M.close` would `:quit` there, which would take Neovim with it.
+test('session: closing a pane in the only tab page leaves one window', function()
+  with_session(base, function(s)
+    vim.cmd.tabonly()
+    vim.api.nvim_win_close(s.diff_win, true)
+    wait_dropped(s)
+    eq(1, #vim.api.nvim_list_wins())
+    eq(false, vim.api.nvim_buf_is_valid(s.files_buf))
+    eq(false, vim.api.nvim_buf_is_valid(s.commits_buf))
+    local win = vim.api.nvim_get_current_win()
+    eq(false, vim.api.nvim_get_option_value('winfixbuf', { win = win }))
+    -- Somewhere for the harness's own close to go back to.
+    vim.cmd.tabnew()
+  end)
+end)
+
 test('session: a pane refuses to show another buffer', function()
   with_session(base, function(s)
     for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
