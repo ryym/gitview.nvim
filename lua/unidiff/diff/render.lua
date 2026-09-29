@@ -615,6 +615,10 @@ function M.configure_window(win, buf)
     foldenable = true,
     -- a commit's header starts folded: the diff is what is being read
     foldlevel = 0,
+    -- A header can be as short as its subject and author. A fold no longer than
+    -- 'foldminlines' stays open, and would be carried over to the next commit
+    -- as the reader's choice.
+    foldminlines = 0,
     foldcolumn = '0',
     fillchars = (fillchars == '' and '' or fillchars .. ',') .. 'fold: ',
   })

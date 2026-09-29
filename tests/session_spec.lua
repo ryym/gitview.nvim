@@ -1365,6 +1365,24 @@ test('session: an opened header stays open from one commit to the next', functio
   end)
 end)
 
+-- A fold no longer than 'foldminlines' is never shown closed, and reads as open
+-- to the check that carries the reader's choice over to the next commit: one
+-- short header would leave every header after it open.
+test('session: a short header folds whatever the user has foldminlines at', function()
+  local saved = vim.o.foldminlines
+  -- Counted in screen lines, so it is set well past the header's rows whatever
+  -- the window's width does to them.
+  vim.o.foldminlines = 20
+  local ok, err = pcall(with_session, described_history, function(s)
+    show_commit(s, 2)
+    eq(5, header_closed(s))
+    show_commit(s, 1)
+    eq(10, header_closed(s))
+  end)
+  vim.o.foldminlines = saved
+  assert(ok, err)
+end)
+
 -- A mark on a commit's own parent compares exactly what the commit alone does,
 -- so that is a single commit too.
 test('session: only a single commit has a header', function()
