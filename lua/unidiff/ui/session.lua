@@ -27,7 +27,15 @@ local M = {}
 --- @field commits_buf integer
 --- @field diff_win integer
 --- @field diff_buf integer drawn into repeatedly, never swapped out
---- @field entries unidiff.StatusEntry[]
+--- @field entries unidiff.StatusEntry[] empty until the first read finishes
+--- @field files_notice string? shown in place of the files while there are none
+---        to show yet: until the first read finishes, or after it failed
+--- @field reads integer bumped by every read of the status, so a read can tell
+---        whether a later one has made it obsolete
+--- @field reading boolean? whether a read of the status is under way
+--- @field outdated boolean? whether the session has changed the index since the
+---        panes were drawn. Staging from them then would write back the state
+---        they show, undoing the change, so it waits for the read to catch up
 --- @field commits unidiff.Commit[] the tail of the history, newest first
 --- @field ignore_whitespace boolean whether lines differing only in whitespace
 ---        count as changed; starts from the configuration and is toggled while
@@ -374,7 +382,7 @@ function M.show_selected(s, keep_unchanged)
 
   local target = s.selected
   if not target then
-    render.notice(s.diff_buf, list.EMPTY_NOTICE)
+    render.notice(s.diff_buf, s.files_notice or list.EMPTY_NOTICE)
     return
   end
   if target.kind == 'commit' then
@@ -540,7 +548,12 @@ end
 --- @param target unidiff.ListTarget? where the cursor should end up
 --- @param keep_unchanged boolean? passed on to `show_selected`
 local function redraw_list(s, target, keep_unchanged)
-  list.draw(s.files_buf, { pane = 'files', root = s.root, entries = s.entries })
+  list.draw(s.files_buf, {
+    pane = 'files',
+    root = s.root,
+    entries = s.entries,
+    notice = s.files_notice,
+  })
   list.draw(s.commits_buf, {
     pane = 'commits',
     root = s.root,
@@ -606,6 +619,57 @@ local function read_log(s, id)
   end
 end
 
+--- Read the uncommitted changes in the background, then redraw both panes.
+---
+--- Listing untracked files walks the whole working tree, which takes a second in
+--- a large one, so the panes stay usable on what they already show meanwhile.
+--- Only the latest read is drawn: one that a later read has overtaken is out of
+--- date by the time it finishes, whichever finishes first.
+---
+--- The log is read here too, synchronously, once the status is in. It is a
+--- single cheap process, and reading it along with the status keeps the two
+--- panes describing the same moment.
+---
+--- @param s unidiff.Session
+--- @param report boolean whether to tell the user when git fails
+--- @param keep_unchanged boolean? passed on to `show_selected`
+local function read_status(s, report, keep_unchanged)
+  s.reads = s.reads + 1
+  local read = s.reads
+  s.reading = true
+  git.async(function()
+    return status.list(s.root)
+  end, function(entries, err)
+    if s.reads ~= read or M.sessions[s.tab] ~= s then
+      return
+    end
+    s.reading = nil
+    if not entries then
+      if report then
+        util.git_error(err)
+      end
+      -- A list already on screen is still the best there is, but a notice
+      -- promising one that is on its way would be a lie from here on.
+      if s.files_notice then
+        s.files_notice = list.UNREADABLE_NOTICE
+        redraw_list(s, nil, true)
+      end
+      return
+    end
+    local id = selection_id(s)
+    s.entries = entries
+    s.files_notice = nil
+    s.outdated = nil
+    -- While a range is being looked into, the commits pane shows its files and
+    -- the log behind them is off screen, so re-reading it would buy nothing.
+    -- Backing out is what reads it again.
+    if not s.scope then
+      read_log(s, id)
+    end
+    redraw_list(s, target_of_id(s, id), keep_unchanged)
+  end)
+end
+
 --- How long an automatic refresh waits after the last one.
 ---
 --- `TabEnter` fires on every move between tab pages, and a refresh is seven
@@ -614,7 +678,8 @@ end
 --- back.
 local REFRESH_THROTTLE_MS = 300
 
---- Re-read the repository and redraw both panes.
+--- Re-read the repository and redraw both panes, once the read has finished in
+--- the background; see `read_status`.
 ---
 --- A commit is immutable, so looking into one survives a refresh untouched. What
 --- is re-read is everything underneath it, which is what the list goes back to.
@@ -631,23 +696,7 @@ function M.refresh(s, opts)
     return
   end
   s.refreshed_at = now
-
-  local entries, err = status.list(s.root)
-  if not entries then
-    if not auto then
-      util.git_error(err)
-    end
-    return
-  end
-  local id = selection_id(s)
-  s.entries = entries
-  -- While a range is being looked into, the commits pane shows its files and the
-  -- log behind them is off screen, so re-reading it would buy nothing. Backing
-  -- out is what reads it again.
-  if not s.scope then
-    read_log(s, id)
-  end
-  redraw_list(s, target_of_id(s, id), auto)
+  read_status(s, not auto, auto)
 end
 
 --- Follow the list's cursor, replacing a held-back commit list first.
@@ -791,6 +840,17 @@ function M.edit_entry(s)
   vim.cmd.edit(vim.fn.fnameescape(path))
 end
 
+--- Refuse to stage from panes the session has made out of date, saying why.
+--- @param s unidiff.Session
+--- @return boolean refused
+local function wait_for_read(s)
+  if not s.outdated then
+    return false
+  end
+  util.info('the status is being re-read; try again in a moment, or refresh with R')
+  return true
+end
+
 --- Change the index for the file under the cursor, then redraw.
 ---
 --- Both panes are rebuilt from git rather than adjusted in place: the status
@@ -805,7 +865,7 @@ end
 --- @param decide fun(e: unidiff.StatusEntry, has_head: boolean): unidiff.StageAction?, string?
 local function apply_to_selected(s, decide)
   local target = s.selected
-  if not target then
+  if not target or wait_for_read(s) then
     return
   end
   if target.kind ~= 'file' then
@@ -826,6 +886,7 @@ local function apply_to_selected(s, decide)
     util.git_error(err)
     return
   end
+  s.outdated = true
   M.refresh(s)
 end
 
@@ -841,6 +902,9 @@ end
 --- @param first integer 1-based row of the diff buffer
 --- @param last integer inclusive
 local function apply_to_rows(s, op, first, last)
+  if wait_for_read(s) then
+    return
+  end
   local target = s.selected
   local entry = target and target.kind == 'file' and s.entries[target.index] or nil
   local view = render.view_of(s.diff_buf)
@@ -876,6 +940,7 @@ local function apply_to_rows(s, op, first, last)
     util.git_error(err)
     return
   end
+  s.outdated = true
   M.refresh(s)
 end
 
@@ -1140,12 +1205,6 @@ function M.open()
   if not root then
     return
   end
-  local entries, err = status.list(root)
-  if not entries then
-    util.git_error(err)
-    return
-  end
-
   set_hooks()
   vim.cmd.tabnew()
   local s = { --- @type unidiff.Session
@@ -1155,7 +1214,9 @@ function M.open()
     files_buf = list.create_buffer(),
     commits_buf = list.create_buffer(),
     diff_buf = render.create_buffer(),
-    entries = entries,
+    entries = {},
+    files_notice = list.LOADING_NOTICE,
+    reads = 0,
     commits = {},
     generation = 0,
     details = {},
@@ -1227,6 +1288,10 @@ function M.open()
   })
 
   redraw_list(s, { kind = 'file', index = 1 })
+  -- Once the files are in, the cursor lands on the first of them, unless it has
+  -- been moved to the commits in the meantime: the row it is on in the files
+  -- pane is the notice's, which stands for nothing and so names no selection.
+  read_status(s, true, true)
   return s
 end
 

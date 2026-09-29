@@ -416,6 +416,35 @@ genuinely stopped having changes, so there is nothing to go on showing, and movi
 to the row that took its place is what a file manager does with a deleted file.
 With nothing left at all the pane holds its empty notice and the diff says so too.
 
+#### The status is read in the background
+
+Listing untracked files walks the whole working tree, and in a large one
+`git ls-files --others` alone takes a second. Every read of the status — opening
+the tab page and every refresh — therefore runs its git commands through
+`git.async`, and Neovim stays usable while they run:
+
+- **Opening shows the commits at once.** The log is one cheap process, so it is
+  read before the tab page is drawn, while the files pane holds a notice until
+  the first read finishes. The cursor then lands on the first file, unless it has
+  been moved to the commits in the meantime.
+- **A refresh leaves the panes as they are** until its read finishes, and then
+  redraws them as a synchronous refresh did.
+- **Only the latest read is drawn.** Each one takes a number, and one that a
+  later read has overtaken is dropped whichever finishes first, since it
+  started from an older repository.
+- **A first read that fails says so in the files pane.** A later one keeps the
+  list already there, which is still the best there is.
+
+`git.async` runs ordinary synchronous code in a coroutine and makes `git.run`
+yield there rather than wait, so the readers in `status` and `git` are the same
+functions either way, and a caller decides by how it calls them.
+
+Staging is the one thing the wait changes. After `s` or `u` the panes show the
+index as it was until the read catches up, and staging lines from them then
+would write that old state back over the change just made. The session marks
+itself `outdated` when it writes the index and refuses to stage again until a
+read has drawn the result.
+
 ## Pipeline
 
 For each file in the diff:

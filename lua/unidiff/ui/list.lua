@@ -20,6 +20,8 @@ local M = {}
 --- @field pane 'files'|'commits' which of the two it is
 --- @field root string repository root
 --- @field entries unidiff.StatusEntry[]? the files pane
+--- @field notice string? the files pane, shown in place of the entries while
+---        there are none to show yet
 --- @field commits unidiff.Commit[]? the commits pane
 --- @field mark string? sha of the marked commit, the far end of a range
 --- @field scope unidiff.ListScope? the commits pane, looking into a range
@@ -38,6 +40,12 @@ local M = {}
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
 M.EMPTY_NOTICE = 'no uncommitted changes'
+
+--- Shown instead of the list until the uncommitted changes have been read.
+M.LOADING_NOTICE = 'reading the status...'
+
+--- Shown instead of the list when the uncommitted changes could not be read.
+M.UNREADABLE_NOTICE = 'could not read the status'
 
 --- Shown in the commits pane of a repository that has no commit yet.
 M.NO_COMMITS_NOTICE = 'no commits yet'
@@ -101,6 +109,9 @@ end
 --- @return unidiff.ListRow[]
 function M.content(model)
   if model.pane == 'files' then
+    if model.notice then
+      return { { text = model.notice } }
+    end
     local entries = model.entries or {}
     if #entries == 0 then
       return { { text = M.EMPTY_NOTICE } }
@@ -190,7 +201,11 @@ function M.winbar()
   end
   local text
   if state.pane == 'files' then
-    text = (' %s   %s'):format(vim.fs.basename(state.root), util.counted(#state.entries, 'file'))
+    text = ' ' .. vim.fs.basename(state.root)
+    -- Zero files would be a claim about a list that has not been read.
+    if not state.notice then
+      text = ('%s   %s'):format(text, util.counted(#state.entries, 'file'))
+    end
   elseif state.scope then
     -- What is being looked into has no row of its own, so this is the only place
     -- it is named.
@@ -229,6 +244,7 @@ function M.draw(buf, model)
     pane = model.pane,
     root = model.root,
     entries = model.entries or {},
+    notice = model.notice,
     commits = model.commits or {},
     scope = model.scope,
     stale = model.stale,

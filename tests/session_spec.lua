@@ -4,13 +4,24 @@ local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq
 
+--- Wait for the status being read in the background to be drawn.
+--- @param s unidiff.Session
+local function settle(s)
+  local done = vim.wait(5000, function()
+    return not s.reading
+  end)
+  assert(done, 'the status was never read')
+end
+
 --- Open a session against a fresh repository, run `fn`, then close it.
 ---
 --- `:lcd` into the repository is what makes the session find it, the same way
 --- the commands do for the buffer they were called from.
 --- @param setup fun(repo: unidiff.TestRepo)
 --- @param fn fun(s: unidiff.Session, repo: unidiff.TestRepo)
-local function with_session(setup, fn)
+--- @param opts? {unsettled?:boolean} `unsettled` to start `fn` while the status
+---        is still being read, rather than once it has been drawn
+local function with_session(setup, fn, opts)
   helpers.with_repo(function(repo)
     setup(repo)
     local previous = vim.fn.getcwd()
@@ -18,6 +29,9 @@ local function with_session(setup, fn)
     local s = session.open()
     local ok, err = pcall(function()
       assert(s, 'no session opened')
+      if not (opts and opts.unsettled) then
+        settle(s)
+      end
       fn(s, repo)
     end)
     if s and vim.api.nvim_tabpage_is_valid(s.tab) then
@@ -78,6 +92,7 @@ test('session: refreshing picks up changes made since', function()
     repo.git('add', 'loose.txt')
     repo.write('third.txt', { 'more' })
     session.refresh(s)
+    settle(s)
     eq({ 'edit.txt', 'loose.txt', 'third.txt' }, rows(s))
     eq('A', s.entries[2].index_status)
   end)
@@ -87,6 +102,7 @@ test('session: an automatic refresh picks up changes made since', function()
   with_session(base, function(s, repo)
     repo.write('third.txt', { 'more' })
     session.refresh(s, { auto = true })
+    settle(s)
     eq({ 'edit.txt', 'loose.txt', 'third.txt' }, rows(s))
   end)
 end)
@@ -96,10 +112,13 @@ end)
 test('session: an automatic refresh is throttled and a manual one is not', function()
   with_session(base, function(s, repo)
     session.refresh(s, { auto = true })
+    settle(s)
     repo.write('third.txt', { 'more' })
     session.refresh(s, { auto = true })
+    settle(s)
     eq({ 'edit.txt', 'loose.txt' }, rows(s))
     session.refresh(s)
+    settle(s)
     eq({ 'edit.txt', 'loose.txt', 'third.txt' }, rows(s))
   end)
 end)
@@ -132,8 +151,10 @@ test('session: only a manual refresh reports a git failure', function()
     end
     local ok, err = pcall(function()
       session.refresh(s, { auto = true })
+      settle(s)
       eq({}, messages)
       session.refresh(s)
+      settle(s)
       eq(1, #messages)
       assert(messages[1]:find('boom', 1, true), messages[1])
     end)
@@ -150,6 +171,7 @@ test('session: refreshing pulls the cursor back inside the list', function()
     repo.git('checkout', '--', 'edit.txt')
     vim.fn.delete(s.root .. '/loose.txt')
     session.refresh(s)
+    settle(s)
     eq({ list.EMPTY_NOTICE }, rows(s))
     eq(1, vim.api.nvim_win_get_cursor(s.files_win)[1])
   end)
@@ -351,6 +373,7 @@ test('session: refreshing rebuilds the diff of the selected file', function()
   with_session(two, function(s, repo)
     repo.write('a.lua', { 'return 4' })
     session.refresh(s)
+    settle(s)
     eq(1, selected(s))
     local text = table.concat(diff_rows(s), '\n')
     assert(text:find('return 4', 1, true), text)
@@ -380,6 +403,85 @@ test('session: every buffer goes when the session closes', function()
   end)
 end)
 
+-- Listing untracked files walks the whole working tree, which is what made a
+-- large repository slow to open.
+test('session: opens before the status is read, then fills it in', function()
+  with_session(base, function(s)
+    eq({ list.LOADING_NOTICE }, rows(s))
+    eq({ list.LOADING_NOTICE }, diff_rows(s))
+    eq(nil, selected(s))
+    settle(s)
+    eq({ 'edit.txt', 'loose.txt' }, rows(s))
+    eq({ kind = 'file', index = 1 }, s.selected)
+  end, { unsettled = true })
+end)
+
+test('session: moving to the commits while the status is read stays there', function()
+  with_session(base, function(s)
+    vim.api.nvim_set_current_win(s.commits_win)
+    eq('commit', s.selected.kind)
+    settle(s)
+    eq(s.commits_win, vim.api.nvim_get_current_win())
+    eq({ kind = 'commit', index = 1 }, s.selected)
+  end, { unsettled = true })
+end)
+
+-- Whichever read finishes first, only what the latest one found is drawn: the
+-- one it overtook started from an older repository.
+test('session: a read overtaken by a later one is dropped', function()
+  with_session(base, function(s)
+    local git = require('unidiff.git')
+    local status = require('unidiff.status')
+    local list_entries = status.list
+    local slow_done = false
+    local calls = 0
+    status.list = function(root)
+      calls = calls + 1
+      if calls == 1 then
+        git.run({ 'sleep', '0.2' }, root)
+        slow_done = true
+        return { { path = 'slow.txt', index_status = '?', worktree_status = '?' } }
+      end
+      return list_entries(root)
+    end
+    local ok, err = pcall(function()
+      session.refresh(s)
+      session.refresh(s)
+      vim.wait(5000, function()
+        return slow_done and not s.reading
+      end)
+      -- One more turn of the loop, for the callback scheduled after the sleep.
+      vim.wait(50)
+      eq({ 'edit.txt', 'loose.txt' }, rows(s))
+    end)
+    status.list = list_entries
+    assert(ok, err)
+  end)
+end)
+
+test('session: a first read that fails says so in place of the files', function()
+  local status = require('unidiff.status')
+  local list_entries, notify = status.list, vim.notify
+  local messages = {}
+  local ok, err = pcall(function()
+    with_session(function(repo)
+      base(repo)
+      status.list = function()
+        return nil, { what = 'git diff', stderr = 'boom' }
+      end
+      vim.notify = function(msg)
+        messages[#messages + 1] = msg
+      end
+    end, function(s)
+      eq({ list.UNREADABLE_NOTICE }, rows(s))
+      eq({ list.UNREADABLE_NOTICE }, diff_rows(s))
+      eq(1, #messages)
+    end)
+  end)
+  status.list, vim.notify = list_entries, notify
+  assert(ok, err)
+end)
+
 --- Press a key in one of the sidebar panes, so that the buffer-local mapping is
 --- what is being tested rather than the function behind it.
 --- @param s unidiff.Session
@@ -388,6 +490,7 @@ end)
 local function press(s, key, win)
   vim.api.nvim_set_current_win(win or s.files_win)
   vim.cmd.normal(key)
+  settle(s)
 end
 
 test('session: `s` stages the file under the cursor', function()
@@ -403,6 +506,7 @@ test('session: `u` unstages the file under the cursor', function()
   with_session(base, function(s, repo)
     repo.git('add', 'edit.txt')
     session.refresh(s)
+    settle(s)
     session.select(s, 1)
     press(s, 'u')
     eq(' ', s.entries[1].index_status)
@@ -454,7 +558,34 @@ test('session: a refresh notices that the repository gained a HEAD', function()
     repo.git('commit', '-qm', 'init')
     repo.write('a.txt', { 'two' })
     session.refresh(s)
+    settle(s)
     eq(true, s.has_head)
+  end)
+end)
+
+-- Until the status is re-read, the panes show the index as it was before the
+-- first `s`; staging lines from them would write that back over it.
+test('session: staging waits for the status it changed to be re-read', function()
+  with_session(base, function(s, repo)
+    session.select(s, 1)
+    vim.api.nvim_set_current_win(s.files_win)
+    vim.cmd.normal('s')
+    eq(true, s.outdated)
+    local notify = vim.notify
+    local messages = {}
+    vim.notify = function(msg)
+      messages[#messages + 1] = msg
+    end
+    local ok, err = pcall(function()
+      vim.cmd.normal('u')
+    end)
+    vim.notify = notify
+    assert(ok, err)
+    eq(1, #messages)
+    assert(messages[1]:find('re-read', 1, true), messages[1])
+    settle(s)
+    eq(nil, s.outdated)
+    eq('M  edit.txt\n?? loose.txt\n', repo.git('status', '--short'))
   end)
 end)
 
@@ -462,6 +593,7 @@ test('session: staging a file with nothing unstaged changes nothing', function()
   with_session(base, function(s, repo)
     repo.git('add', 'edit.txt')
     session.refresh(s)
+    settle(s)
     session.select(s, 1)
     press(s, 's')
     eq('M  edit.txt\n?? loose.txt\n', repo.git('status', '--short'))
@@ -475,6 +607,7 @@ end)
 local function press_diff(s, keys)
   vim.api.nvim_set_current_win(s.diff_win)
   vim.cmd.normal(keys)
+  settle(s)
 end
 
 --- The diff row a changed line of this text is drawn on.
@@ -766,6 +899,7 @@ test('session: the selection survives a refresh that changes the file count', fu
     local sha = s.commits[2].sha
     repo.write('later.lua', { 'return 0' })
     session.refresh(s)
+    settle(s)
     eq('commit', s.selected.kind)
     eq(sha, s.commits[s.selected.index].sha)
   end)
@@ -833,6 +967,7 @@ test('session: a refresh keeps the commit being looked into', function()
     session.enter(s)
     repo.write('later.lua', { 'return 0' })
     session.refresh(s)
+    settle(s)
     eq(s.commits[1].sha .. ' second', s.scope.label)
     eq({ kind = 'commit_file', index = 1 }, s.selected)
     session.leave(s)
@@ -892,6 +1027,7 @@ test('session: moving to another file puts the diff pane back at the start', fun
   with_session(long_history, function(s, repo)
     repo.write('b.txt', { 'new' })
     session.refresh(s)
+    settle(s)
     session.select(s, 1)
     vim.api.nvim_win_set_cursor(s.diff_win, { 30, 0 })
     session.select(s, 2)
@@ -917,6 +1053,7 @@ test('session: a refresh that changes nothing keeps the position in the diff', f
     session.select(s, 1)
     vim.api.nvim_win_set_cursor(s.diff_win, { 25, 0 })
     session.refresh(s)
+    settle(s)
     eq(25, diff_row(s))
   end)
 end)
@@ -929,6 +1066,7 @@ test('session: the position survives a file moving in the list', function()
     vim.api.nvim_win_set_cursor(s.diff_win, { 25, 0 })
     repo.write('0-first.txt', { 'new' })
     session.refresh(s)
+    settle(s)
     eq(2, selected(s))
     eq('a.txt', s.entries[selected(s)].path)
     eq(25, diff_row(s))
@@ -1109,6 +1247,7 @@ test('session: a refresh drops a mark that has left the list', function()
     goto_commit(s, 1)
     with_commit_count(2, function()
       session.refresh(s)
+      settle(s)
     end)
     eq(2, #s.commits)
     eq(nil, s.mark)
@@ -1123,6 +1262,7 @@ test('session: a commit the log has dropped holds the list open', function()
     local dropped = s.commits[4].sha
     with_commit_count(2, function()
       session.refresh(s)
+      settle(s)
       eq(4, #s.commits)
       eq(true, s.commits_stale)
       eq({ kind = 'commit', index = 4 }, s.selected)
