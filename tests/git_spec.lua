@@ -123,6 +123,39 @@ test('tells a repository with a commit from one without', function()
   end)
 end)
 
+test('async runs git without blocking and hands over what it returned', function()
+  helpers.with_repo(function(repo)
+    local got
+    git.async(function()
+      return git.has_head(repo.root), git.dir(repo.root)
+    end, function(...)
+      got = { ... }
+    end)
+    -- Both commands are still running: nothing has had a chance to finish them.
+    eq(nil, got)
+    vim.wait(5000, function()
+      return got ~= nil
+    end)
+    eq({ false, repo.root .. '/.git' }, got)
+  end)
+end)
+
+test('async finishes at once when no command is run', function()
+  local got
+  git.async(function()
+    return 1, nil, 3
+  end, function(...)
+    got = { n = select('#', ...), ... }
+  end)
+  eq({ n = 3, 1, nil, 3 }, got)
+end)
+
+test('run blocks as before outside async', function()
+  helpers.with_repo(function(repo)
+    eq(false, git.has_head(repo.root))
+  end)
+end)
+
 --- `git log -z --format=...` separates commits with NUL and the fields within
 --- one with a unit separator.
 local function log_z(...)

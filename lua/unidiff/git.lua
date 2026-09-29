@@ -23,8 +23,17 @@ end
 --- @field stdout string
 --- @field stderr string what to show the user when `ok` is false
 
+--- The coroutines started by `M.async`, each with the function that resumes it.
+--- Weak, so that a coroutine abandoned mid-way does not stay alive through here.
+--- @type table<thread, fun(out: vim.SystemCompleted)>
+local async_threads = setmetatable({}, { __mode = 'k' })
+
 --- Every subprocess goes through here, so that stderr is never thrown away and
---- so that making these calls asynchronous later is one change rather than many.
+--- so that one place decides whether a call blocks.
+---
+--- Inside `M.async` it does not: the coroutine yields until the process exits
+--- and Neovim goes on running meanwhile. Anywhere else it waits, which is what
+--- every caller that needs the answer before it can go on wants.
 ---
 --- @param cmd string[]
 --- @param cwd string
@@ -32,12 +41,50 @@ end
 --- @return unidiff.GitResult
 function M.run(cmd, cwd, opts)
   local sys = vim.tbl_extend('force', { text = true, cwd = cwd }, opts or {})
-  local out = vim.system(cmd, sys):wait()
+  local resume = async_threads[coroutine.running()]
+  local out --- @type vim.SystemCompleted
+  if resume then
+    vim.system(cmd, sys, function(done)
+      vim.schedule(function()
+        resume(done)
+      end)
+    end)
+    out = coroutine.yield()
+  else
+    out = vim.system(cmd, sys):wait()
+  end
   return {
     ok = out.code == 0,
     stdout = out.stdout or '',
     stderr = vim.trim(out.stderr or ''),
   }
+end
+
+--- Run `fn` without blocking on the git commands it runs, and hand what it
+--- returns to `done`.
+---
+--- `fn` is ordinary synchronous code: every `M.run` inside it yields rather than
+--- waits. So `done` may be called before this returns, when `fn` runs no command.
+--- Between commands the rest of Neovim runs, so by the time `done` is called the
+--- editor may be in any state; checking that the result is still wanted is the
+--- caller's business.
+---
+--- @param fn fun(): ...
+--- @param done fun(...)
+function M.async(fn, done)
+  local co = coroutine.create(fn)
+  local function finish(ok, ...)
+    if not ok then
+      error(debug.traceback(co, (...)), 0)
+    end
+    if coroutine.status(co) == 'dead' then
+      done(...)
+    end
+  end
+  async_threads[co] = function(out)
+    finish(coroutine.resume(co, out))
+  end
+  finish(coroutine.resume(co))
 end
 
 --- @param cwd string
