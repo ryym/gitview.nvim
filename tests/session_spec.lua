@@ -207,6 +207,17 @@ test('session: closing the tab directly drops the session', function()
   end)
 end)
 
+test('session: a pane refuses to show another buffer', function()
+  with_session(base, function(s)
+    for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
+      vim.api.nvim_set_current_win(win)
+      local ok, err = pcall(vim.cmd.enew)
+      eq(false, ok)
+      assert(err:find('E1513'), err)
+    end
+  end)
+end)
+
 -- The gutter and the winbar are drawn by `%!` expressions, so a typo in one of
 -- them shows only when the window actually renders. Unit tests of the functions
 -- themselves never reach that.

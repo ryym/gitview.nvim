@@ -1237,6 +1237,13 @@ function M.open()
   list.configure_window(s.files_win, config.values.list_width)
   list.configure_window(s.commits_win, config.values.list_width)
   render.configure_window(s.diff_win, s.diff_buf)
+  -- Each pane is only ever drawn with its own buffer, so `:edit` or `:bnext`
+  -- there is refused rather than leaving a pane the session goes on drawing
+  -- into blind. A window split off from a pane does not inherit it, which
+  -- leaves `:split` as the way to open something else here.
+  for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
+    util.configure_window_options(win, { winfixbuf = true })
+  end
   -- The split is even until told otherwise, and the commits pane is the one
   -- pinned: what the sidebar gains or loses on a resize belongs to the files,
   -- which is the list that grows without bound.
