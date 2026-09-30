@@ -418,8 +418,7 @@ test('a range ending at a merge needs no parent chosen', function()
 end)
 
 -- A range with no new revision ends at the working tree, so it takes in what is
--- staged and what is not alike. Untracked files are not in it: `git diff` only
--- compares what the index names.
+-- staged and what is not alike, and what git is not tracking as well.
 test('a range can end at the working tree', function()
   helpers.with_repo(function(repo)
     repo.write('staged.txt', { 'one' })
@@ -438,6 +437,55 @@ test('a range can end at the working tree', function()
     for _, c in ipairs(changes) do
       status[c.path] = c.status
     end
-    eq({ ['staged.txt'] = 'M', ['unstaged.txt'] = 'M', ['gone.txt'] = 'D' }, status)
+    eq({
+      ['staged.txt'] = 'M',
+      ['unstaged.txt'] = 'M',
+      ['gone.txt'] = 'D',
+      ['loose.txt'] = 'A',
+    }, status)
+  end)
+end)
+
+-- An untracked file is put in a copy of the index, so git sees it as it sees any
+-- other file: the same path the old side had is a modification rather than a
+-- deletion beside an addition, and a file moved without `git mv` is a rename.
+test('an untracked file is compared as git compares a tracked one', function()
+  helpers.with_repo(function(repo)
+    repo.write('back.txt', { 'one' })
+    repo.write('moved.txt', { 'a', 'b', 'c', 'd' })
+    repo.commit('first')
+    local sha = assert(git.log(1, repo.root))[1].sha
+    repo.git('rm', '-q', 'back.txt')
+    repo.commit('second')
+    repo.write('back.txt', { 'two' })
+    repo.git('mv', 'moved.txt', 'kept.txt')
+    repo.git('rm', '-q', '--cached', 'kept.txt')
+
+    local before = repo.git('status', '--porcelain')
+    local changes = assert(git.changed_between({ old = sha }, repo.root))
+    local status = {}
+    for _, c in ipairs(changes) do
+      status[c.old_path .. ' -> ' .. c.path] = c.status
+    end
+    eq({ ['back.txt -> back.txt'] = 'M', ['moved.txt -> kept.txt'] = 'R' }, status)
+    -- the real index is left as it was
+    eq(before, repo.git('status', '--porcelain'))
+  end)
+end)
+
+-- The session has listed the untracked files already, and hands them over
+-- rather than have the working tree walked again.
+test('a range to the working tree takes the untracked files it is given', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    local sha = assert(git.log(1, repo.root))[1].sha
+    repo.write('listed.txt', { 'new' })
+    repo.write('unlisted.txt', { 'new' })
+
+    local changes = assert(git.changed_between({ old = sha }, repo.root, { 'listed.txt' }))
+    eq({ 'listed.txt' }, vim.tbl_map(function(c)
+      return c.path
+    end, changes))
   end)
 end)

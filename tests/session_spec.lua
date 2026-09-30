@@ -1618,8 +1618,7 @@ test('session: a mark and the working-tree row compare the commit with the worki
     session.show_selected(s)
     local label = s.commits[2].sha .. '..working tree'
     assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
-    -- untracked files are not compared yet
-    eq({ 'a.lua', 'added.lua' }, view_files(s))
+    eq({ 'a.lua', 'added.lua', 'loose.lua' }, view_files(s))
     local text = table.concat(diff_rows(s), '\n')
     assert(text:find('return 1', 1, true), text)
     assert(text:find('return 3', 1, true), text)
@@ -1660,7 +1659,7 @@ test('session: looking into a range ending at the working tree', function()
     goto_worktree(s)
     session.enter(s)
     eq(s.commits[2].sha .. '..working tree', s.scope.label)
-    eq({ 'a.lua', 'added.lua' }, commit_rows(s))
+    eq({ 'a.lua', 'added.lua', 'loose.lua' }, commit_rows(s))
     session.show_selected(s)
     local text = table.concat(diff_rows(s), '\n')
     assert(text:find('return 3', 1, true), text)

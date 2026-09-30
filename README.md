@@ -185,8 +185,8 @@ and unstaged at once, and `<CR>` there moves to the files pane.
 
 It is also an end a range can have, and the newest one. `m` on `HEAD~3` with the
 cursor on the zeros reads everything since, committed or not, the way
-`git diff HEAD~3` does; `<CR>` then lists those files. Untracked files are left
-out, as `git diff` leaves them out.
+`git diff HEAD~3` does; `<CR>` then lists those files. Untracked files are
+compared too, as additions, which `git diff` itself would leave out.
 
 | key         | in the files pane | in the commits pane  | in the diff                   |
 | ----------- | ----------------- | -------------------- | ----------------------------- |

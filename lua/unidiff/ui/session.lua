@@ -221,6 +221,22 @@ local function has_worktree_row(s)
   return s.has_head and not s.files_notice and #s.entries > 0
 end
 
+--- The files git is not tracking, as the last read of the status found them.
+---
+--- A range ending at the working tree compares them too, and listing them again
+--- for every view would walk the whole working tree each time.
+--- @param s unidiff.Session
+--- @return string[]
+local function untracked_paths(s)
+  local paths = {}
+  for _, e in ipairs(s.entries) do
+    if status.is_untracked(e) then
+      paths[#paths + 1] = e.path
+    end
+  end
+  return paths
+end
+
 --- Where the row a mark names sits among the ends a range can have: 0 for the
 --- working tree, which is newer than any commit, then the commits newest first.
 --- @param s unidiff.Session
@@ -349,7 +365,8 @@ local function show_commit(s, target)
     show_worktree(s)
     return
   end
-  local sources, skipped, err = perf.measure('source', source.for_range, range, s.root)
+  local sources, skipped, err =
+    perf.measure('source', source.for_range, range, s.root, untracked_paths(s))
   if not sources then
     util.git_error(err)
     render.notice(s.diff_buf, label .. '   (could not be read)')
@@ -726,7 +743,7 @@ local function reread_scope(s)
   if scope.range.new then
     return
   end
-  local changes = git.changed_between(scope.range, s.root)
+  local changes = git.changed_between(scope.range, s.root, untracked_paths(s))
   if changes then
     scope.changes = changes
   end
@@ -907,7 +924,7 @@ function M.enter(s)
     vim.api.nvim_set_current_win(s.files_win)
     return
   end
-  local changes, err = git.changed_between(range, s.root)
+  local changes, err = git.changed_between(range, s.root, untracked_paths(s))
   if not changes then
     util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
     return

@@ -152,11 +152,12 @@ end
 --- Every file a range changed, in one view.
 --- @param range unidiff.Range
 --- @param root string repository root
+--- @param untracked string[]? passed on to `git.changed_between`
 --- @return unidiff.Source[]? sources
 --- @return unidiff.Skipped skipped
 --- @return unidiff.GitError? err
-function M.for_range(range, root)
-  local changes, err = git.changed_between(range, root)
+function M.for_range(range, root, untracked)
+  local changes, err = git.changed_between(range, root, untracked)
   if not changes then
     return nil, no_skipped(), { what = 'git diff ' .. (range.new or range.old), stderr = err or '' }
   end

@@ -268,12 +268,34 @@ things now, committed or not, read as a range like any other.
 - **It is there only while there is something uncommitted.** A clean working tree
   is HEAD, and a row for it would compare nothing HEAD's own row does not. A mark
   on it goes when it does, as a mark on a commit goes with the list.
-- **Untracked files are left out of a range.** `git diff` compares only what the
-  index names, and a range ending at the working tree reads its change list from
-  it.
+- **Untracked files are part of a range.** See
+  [Untracked files in a range](#untracked-files-in-a-range).
 - **Divergence is asked of HEAD.** The working tree stands on it, so a range
   ending there is one line of history exactly when its commit is an ancestor of
   HEAD.
+
+#### Untracked files in a range
+
+`git diff <rev>` compares only the paths the index names, so it would leave out
+every file git is not tracking. The change list of a range ending at the working
+tree is read against a copy of the index instead, with those files added to it as
+intents to add (`git add -N`), and `GIT_INDEX_FILE` pointing the diff at the copy.
+
+- **git treats them as any other file.** A path the old side had is a
+  modification rather than a deletion beside an addition, a file moved without
+  `git mv` is a rename, and binary detection is git's own.
+- **The real index is never written.** The copy is thrown away afterwards, so
+  nothing the user staged moves, and a write to the real index meanwhile cannot
+  be undone by it.
+- **The copy starts from the real index, not from nothing.** The diff lists the
+  paths the index names, and an empty one would report every tracked file as
+  deleted.
+- **A stale copy gives the same answer.** It compares the old side with the
+  working tree, and the index only decides which paths are looked at. git
+  replaces the index by renaming a finished one over it, so the copy is never of
+  a write under way.
+- **The untracked files are the ones the status read found.** Listing them walks
+  the whole working tree, which is too slow to repeat for every view.
 
 #### Looking into one commit
 

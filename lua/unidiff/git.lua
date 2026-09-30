@@ -269,13 +269,14 @@ end
 --- @param prefix string[] the git command, up to but not including the format
 --- @param args string[] what to compare, appended after the format flags
 --- @param cwd string
+--- @param opts? table passed on to `M.run`
 --- @return unidiff.Change[]? changes
 --- @return string? err why the command failed
-local function changes_of(prefix, args, cwd)
+local function changes_of(prefix, args, cwd, opts)
   local function listing(format)
     local cmd = vim.list_extend({}, prefix)
     vim.list_extend(cmd, { format, '-z', '--find-renames' })
-    return M.run(vim.list_extend(cmd, args), cwd)
+    return M.run(vim.list_extend(cmd, args), cwd, opts)
   end
   local status = listing('--name-status')
   if not status.ok then
@@ -490,21 +491,82 @@ local function range_args(range)
   return { range.old, range.new }
 end
 
+--- What changed between a commit and the working tree, untracked files
+--- included.
+---
+--- `git diff <rev>` only compares the paths the index names, so an untracked
+--- file would be left out. It is put in a copy of the index as an intent to add
+--- (`git add -N`), which names the path without taking its contents, and the diff
+--- is run against that copy through `GIT_INDEX_FILE`. git then treats the file as
+--- any other: an addition, a modification of a path the old side had, or one end
+--- of a rename. The real index is never written, so nothing the user staged moves.
+---
+--- The copy is taken rather than started empty because the diff lists the paths
+--- the index names; an empty one would report every tracked file as deleted.
+---
+--- @param old string
+--- @param untracked string[]
+--- @param cwd string
+--- @return unidiff.Change[]? changes
+--- @return string? err
+local function changed_since(old, untracked, cwd)
+  if #untracked == 0 then
+    return changes_of({ 'git', 'diff' }, { old }, cwd)
+  end
+  local dir = M.dir(cwd)
+  if not dir then
+    return nil, 'the git directory could not be found'
+  end
+  local index = vim.fn.tempname()
+  -- git replaces the index by renaming a finished one over it, so a copy is of
+  -- one whole version or another, never of a write under way.
+  local copied, copy_err = vim.uv.fs_copyfile(vim.fs.joinpath(dir, 'index'), index)
+  if not copied then
+    return nil, 'could not copy the index: ' .. tostring(copy_err)
+  end
+  local opts = { env = { GIT_INDEX_FILE = index } }
+  -- The paths go in on stdin, since a working tree can hold more of them than a
+  -- command line does.
+  local added = M.run(
+    { 'git', 'add', '--intent-to-add', '--pathspec-from-file=-', '--pathspec-file-nul' },
+    cwd,
+    vim.tbl_extend('force', opts, { stdin = table.concat(untracked, '\0') })
+  )
+  local changes, err
+  if added.ok then
+    changes, err = changes_of({ 'git', 'diff' }, { old }, cwd, opts)
+  else
+    err = added.stderr
+  end
+  os.remove(index)
+  return changes, err
+end
+
 --- What changed between the two sides of a range.
 ---
 --- A root commit has no old side to name, and is the one case that needs
 --- `diff-tree --root`. Every other range, including one whose ends are merges,
 --- is an ordinary comparison of two trees, or of a tree and the working tree.
 ---
---- A range ending at the working tree leaves out untracked files: `git diff`
---- only compares what the index names.
----
 --- @param range unidiff.Range
 --- @param cwd string
+--- @param untracked string[]? for a range ending at the working tree, the files
+---        git is not tracking, when the caller has already listed them. Read
+---        here otherwise, which walks the whole working tree
 --- @return unidiff.Change[]? changes
 --- @return string? err
-function M.changed_between(range, cwd)
-  return changes_of(range_command(range), range_args(range), cwd)
+function M.changed_between(range, cwd, untracked)
+  if range.new or not range.old then
+    return changes_of(range_command(range), range_args(range), cwd)
+  end
+  if not untracked then
+    local err
+    untracked, err = M.untracked(cwd)
+    if not untracked then
+      return nil, err
+    end
+  end
+  return changed_since(range.old, untracked, cwd)
 end
 
 --- @class unidiff.CommitDetail what a commit says beyond its row in the log
