@@ -177,6 +177,17 @@ then also undoes whatever the other branch did, and the winbar says
 `(diverged; not one line of history)` rather than passing it off as a stretch of
 history.
 
+#### Comparing with the working tree
+
+While anything is uncommitted, the list is headed by a row of zeros standing for
+the working tree. On its own it shows every uncommitted file in one view, staged
+and unstaged at once, and `<CR>` there moves to the files pane.
+
+It is also an end a range can have, and the newest one. `m` on `HEAD~3` with the
+cursor on the zeros reads everything since, committed or not, the way
+`git diff HEAD~3` does; `<CR>` then lists those files. Untracked files are left
+out, as `git diff` leaves them out.
+
 | key         | in the files pane | in the commits pane  | in the diff                   |
 | ----------- | ----------------- | -------------------- | ----------------------------- |
 | `<CR>`      | focus the diff    | look into the commit |                               |

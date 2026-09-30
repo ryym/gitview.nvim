@@ -55,8 +55,8 @@ status letters are painted by `'statuscolumn'`, and what the pane is holding by
 `'winbar'`.
 
 A row stands for a `unidiff.ListTarget` — a kind and an index — rather than for
-an entry, because a row is no longer always a file: it can be a commit, or a file
-of one. A row can also stand for nothing, which is what the notices are. The
+an entry, because a row is no longer always a file: it can be a commit, the
+working tree standing in the commit list, or a file of a range. A row can also stand for nothing, which is what the notices are. The
 mapping is kept in both directions: the cursor picks a target, but `]f` picks a
 file from inside the diff.
 
@@ -160,7 +160,8 @@ Three things follow from both sides being committed:
 - **Neither side comes from the working tree.** `source.for_range` reads both
   from the object database, in one `git cat-file --batch` as everything else
   does. The working tree is not one of the versions being compared, and may no
-  longer have the file.
+  longer have the file. The [working-tree row](#the-working-tree-row) is the one
+  row that makes it a side, and then only the new one.
 - **Its line numbers are the commit's.** `gf` still opens the file at the line
   a row names, which is close to where it now is rather than on it; see
   [Opening a file](#opening-a-file).
@@ -249,6 +250,31 @@ that case read as "what B added since they forked". It is not used, because it
 would mean two rules for what a range means and the winbar could no longer state
 the comparison as a pair of revisions.
 
+#### The working-tree row
+
+While anything is uncommitted, the list is headed by a row of zeros standing for
+the working tree. The use is `git diff HEAD~3`: from some commit to the state of
+things now, committed or not, read as a range like any other.
+
+- **It is the newest end a range can have**, so it sits above the commits and is
+  the new side whenever it is one end. `unidiff.Range.new` is nil for it, which
+  `git diff` given one revision already means, and `source.for_range` reads the
+  new side from the files rather than the object database.
+- **On its own it is not a range.** Against HEAD it would compare what the files
+  pane already lists, so it shows that: every uncommitted file in one mixed view,
+  staged and unstaged at once. `<CR>` there moves to the files pane rather than
+  listing the same files a second time. Nothing is staged from it, since a
+  partial stage reads the index contents of one file.
+- **It is there only while there is something uncommitted.** A clean working tree
+  is HEAD, and a row for it would compare nothing HEAD's own row does not. A mark
+  on it goes when it does, as a mark on a commit goes with the list.
+- **Untracked files are left out of a range.** `git diff` compares only what the
+  index names, and a range ending at the working tree reads its change list from
+  it.
+- **Divergence is asked of HEAD.** The working tree stands on it, so a range
+  ending there is one line of history exactly when its commit is an ancestor of
+  HEAD.
+
 #### Looking into one commit
 
 `<CR>` sets the session's `scope` to whatever the cursor compares — one commit
@@ -268,7 +294,9 @@ the buffer stands for it and every row remains a file.
   `source.for_range_change` reads one entry of it the way `source.for_entry`
   reads one status entry.
 - **A commit is immutable, so a refresh leaves the scope alone.** What is
-  re-read is everything underneath, which is what backing out goes back to. The
+  re-read is everything underneath, which is what backing out goes back to. A
+  range ending at the working tree is the exception: its change list is read
+  again, since the working tree may have moved on. The
   log is not even read while a range is in front of it, since the commits pane is
   showing the range's files; `<BS>` reads it on the way out.
 - **`<BS>` backs out**, and the cursor lands on the commit it was on when going
@@ -398,7 +426,8 @@ Being triggered rather than asked for changes what a refresh may do:
   message per attempt would be noise rather than news. `R` still reports.
 - **It keeps a diff the selection cannot have changed.** A commit or a range is
   named by sha, so what it compares is fixed; a file is named by its path alone,
-  the working tree moves under it, and its view has to be built again. This is
+  the working tree moves under it, and its view has to be built again. So does
+  anything with the working-tree row at either end, whose name says as little. This is
   read from what is shown against `shown`, not from the target `sync_selection`
   derives, because those are compared by list index and one new commit moves every
   index below it.

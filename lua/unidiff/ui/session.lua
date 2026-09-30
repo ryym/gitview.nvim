@@ -43,9 +43,10 @@ local M = {}
 --- @field ignore_whitespace boolean whether lines differing only in whitespace
 ---        count as changed; starts from the configuration and is toggled while
 ---        the session is open
---- @field mark string? sha of the marked commit. While it is set the commits
----        pane compares it with whatever the cursor is on, rather than showing
----        one commit against its parent
+--- @field mark string? sha of the marked commit, or `list.WORKTREE` for the
+---        working-tree row. While it is set the commits pane compares it with
+---        whatever the cursor is on, rather than showing one commit against its
+---        parent
 --- @field scope unidiff.ListScope? the range being looked into, whose files
 ---        replace the commits pane while it is set
 --- @field selected unidiff.ListTarget? what the diff pane is showing
@@ -77,7 +78,7 @@ end
 --- revision here: the point of the view is what has not been committed.
 local REV = 'HEAD, staged + unstaged'
 
---- @alias unidiff.SelectionId {kind:'file'|'commit'|'commit_file', id:string}
+--- @alias unidiff.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file', id:string}
 
 --- @param s unidiff.Session
 --- @return unidiff.SelectionId?
@@ -93,6 +94,8 @@ local function selection_id(s)
   elseif t.kind == 'commit' then
     local c = s.commits[t.index]
     named = c and c.sha
+  elseif t.kind == 'worktree' then
+    named = list.WORKTREE
   else
     local c = s.scope and s.scope.changes[t.index]
     named = c and c.path
@@ -148,7 +151,7 @@ end
 --- Which pane a kind of target lives in. The sidebar holds two lists, and a
 --- selection belongs to exactly one of them.
 --- @param s unidiff.Session
---- @param kind 'file'|'commit'|'commit_file'
+--- @param kind 'file'|'commit'|'worktree'|'commit_file'
 --- @return integer win
 --- @return integer buf
 local function pane_of(s, kind)
@@ -206,29 +209,60 @@ local function commit_by_sha(s, sha)
   return nil, nil
 end
 
---- What the commits pane compares, given the commit under the cursor.
+--- Whether the commits pane has a row for the working tree above the commits.
 ---
---- With no mark set that is the commit against its own first parent. With one
---- set it is the stretch between the two, ordered by their place in the list
---- rather than by date: the list is what the user is reading, and a rebase or a
---- cherry-pick can leave dates out of order.
+--- Only while there is something uncommitted: a clean working tree is HEAD, and
+--- a row for it would compare nothing HEAD's own row does not. Nor before the
+--- status is in, since until then there is no telling, nor without a commit for
+--- it to be compared with.
+--- @param s unidiff.Session
+--- @return boolean
+local function has_worktree_row(s)
+  return s.has_head and not s.files_notice and #s.entries > 0
+end
+
+--- Where the row a mark names sits among the ends a range can have: 0 for the
+--- working tree, which is newer than any commit, then the commits newest first.
+--- @param s unidiff.Session
+--- @param mark string? a sha, or `list.WORKTREE`
+--- @return integer?
+local function place_of(s, mark)
+  if mark == list.WORKTREE then
+    return has_worktree_row(s) and 0 or nil
+  end
+  local _, at = commit_by_sha(s, mark)
+  return at
+end
+
+--- What the commits pane compares, given the row under the cursor.
+---
+--- With no mark set that is the commit against its own first parent, or
+--- everything uncommitted on the working-tree row. With one set it is the
+--- stretch between the two, ordered by their place in the list rather than by
+--- date: the list is what the user is reading, and a rebase or a cherry-pick can
+--- leave dates out of order.
 ---
 --- @param s unidiff.Session
---- @param commit unidiff.Commit the one under the cursor
---- @param index integer its place in the list
---- @return unidiff.Range
+--- @param target unidiff.ListTarget a commit or the working tree
+--- @return unidiff.Range? range nil for the working tree on its own, which is
+---         not a range but the uncommitted changes as the files pane has them
 --- @return string label
-local function range_of(s, commit, index)
-  local marked, at = commit_by_sha(s, s.mark)
-  if not marked or at == index then
+local function range_of(s, target)
+  local here = target.kind == 'worktree' and 0 or target.index
+  local at = place_of(s, s.mark)
+  if not at or at == here then
+    if here == 0 then
+      return nil, REV
+    end
+    local commit = s.commits[here]
     return git.commit_range(commit), ('%s %s'):format(commit.sha, commit.subject)
   end
-  -- The list is newest first, so the further down it is, the older it is.
-  local older, newer = commit, marked
-  if at > index then
-    older, newer = marked, commit
-  end
-  return { old = older.sha, new = newer.sha }, ('%s..%s'):format(older.sha, newer.sha)
+  -- The list is newest first, so the further down it is, the older it is. The
+  -- older end is always a commit, since the working tree is the newest of all.
+  local old = s.commits[math.max(here, at)].sha
+  local newer = math.min(here, at)
+  local new = newer > 0 and s.commits[newer].sha or nil
+  return { old = old, new = new }, ('%s..%s'):format(old, new or 'working tree')
 end
 
 --- What to say in the winbar about a range beyond what it compares.
@@ -236,25 +270,27 @@ end
 --- `git diff` compares the two trees whatever their history, but across a fork
 --- the result also undoes whatever the other side did, which is not what "the
 --- changes between these commits" sounds like. Saying so is better than refusing
---- a comparison the user asked for.
+--- a comparison the user asked for. The working tree stands on HEAD, so a range
+--- ending there is asked about HEAD.
 ---
 --- @param s unidiff.Session
 --- @param range unidiff.Range
---- @param commit unidiff.Commit the commit under the cursor
+--- @param target unidiff.ListTarget the row under the cursor
 --- @return string?
-local function range_note(s, range, commit)
+local function range_note(s, range, target)
   if not range.old then
     return nil
   end
-  if range.new ~= commit.sha or range.old ~= git.commit_range(commit).old then
-    -- a range of two chosen commits
-    if not git.is_ancestor(range.old, range.new, s.root) then
-      return '(diverged; not one line of history)'
+  local commit = target.kind == 'commit' and s.commits[target.index] or nil
+  if commit and vim.deep_equal(range, git.commit_range(commit)) then
+    if #commit.parents > 1 then
+      return '(first parent)'
     end
     return nil
   end
-  if #commit.parents > 1 then
-    return '(first parent)'
+  -- a range of two chosen ends
+  if not git.is_ancestor(range.old, range.new or 'HEAD', s.root) then
+    return '(diverged; not one line of history)'
   end
   return nil
 end
@@ -276,20 +312,43 @@ local function commit_detail(s, commit)
   return s.details[commit.sha]
 end
 
---- Draw what the commits pane's cursor compares: one commit against its first
---- parent, or the stretch between it and the mark.
+--- Draw everything uncommitted in one view, as the files pane has it file by
+--- file: HEAD, the index and the working tree at once.
 ---
---- This is a two-version view: there is no index between the sides and so
---- nothing to mark as staged.
+--- Nothing is staged from here. It is many files, and the index contents a
+--- partial stage writes back are read for one.
 --- @param s unidiff.Session
---- @param commit unidiff.Commit?
---- @param index integer? its place in the list
-local function show_commit(s, commit, index)
-  if not commit or not index then
+local function show_worktree(s)
+  local sources, skipped = perf.measure('source', source.for_entries, s.entries, s.root)
+  local view, unchanged =
+    perf.measure('build', vlib.build, sources, REV, config.values.context, diff_opts(s))
+  if not view then
+    render.notice(s.diff_buf, ('%s   %s'):format(REV, no_view_reason(s)))
+    return
+  end
+  view.note = note_of(s, vlib.skipped_note(skipped, #unchanged))
+  render.draw(s.diff_buf, view)
+end
+
+--- Draw what the commits pane's cursor compares: one commit against its first
+--- parent, the stretch between it and the mark, or on the working-tree row by
+--- itself, everything uncommitted.
+---
+--- A range is a two-version view: there is no index between the sides and so
+--- nothing to mark as staged, even when one side is the working tree.
+--- @param s unidiff.Session
+--- @param target unidiff.ListTarget a commit or the working tree
+local function show_commit(s, target)
+  local commit = target.kind == 'commit' and s.commits[target.index] or nil
+  if target.kind == 'commit' and not commit then
     render.notice(s.diff_buf, list.EMPTY_NOTICE)
     return
   end
-  local range, label = range_of(s, commit, index)
+  local range, label = range_of(s, target)
+  if not range then
+    show_worktree(s)
+    return
+  end
   local sources, skipped, err = perf.measure('source', source.for_range, range, s.root)
   if not sources then
     util.git_error(err)
@@ -303,9 +362,9 @@ local function show_commit(s, commit, index)
     render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
     return
   end
-  view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), range_note(s, range, commit))
-  -- A range between two commits has no one message to show.
-  if vim.deep_equal(range, git.commit_range(commit)) then
+  view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), range_note(s, range, target))
+  -- A range between two ends has no one message to show.
+  if commit and vim.deep_equal(range, git.commit_range(commit)) then
     local detail = perf.measure('detail', commit_detail, s, commit)
     if detail then
       vlib.prepend(view, vlib.commit_header(detail))
@@ -346,6 +405,24 @@ local function show_commit_file(s, index)
   render.draw(s.diff_buf, view)
 end
 
+--- Whether what is selected is compared with the working tree, which can change
+--- under a name that stays the same.
+--- @param s unidiff.Session
+--- @return boolean
+local function reads_worktree(s)
+  local t = s.selected
+  if not t then
+    return false
+  end
+  if t.kind == 'commit' then
+    return s.mark == list.WORKTREE
+  end
+  if t.kind == 'commit_file' then
+    return s.scope ~= nil and s.scope.range.new == nil
+  end
+  return true
+end
+
 --- Draw whatever is selected, or say why there is nothing to draw.
 ---
 --- The index contents are kept, since staging writes the chosen rows into them.
@@ -361,10 +438,10 @@ function M.show_selected(s, keep_unchanged)
   local id = selection_id(s)
 
   -- A commit and a range are named by sha, so what they compare cannot have
-  -- changed and the view already drawn still stands. A file is named by its path
-  -- alone: the working tree moves under it, so the name says nothing about the
-  -- contents and it has to be built again.
-  if keep_unchanged and id and id.kind ~= 'file' and vim.deep_equal(id, s.shown) then
+  -- changed and the view already drawn still stands. Whatever reads the working
+  -- tree is named by something that says nothing about the contents — a path,
+  -- the working-tree row — and it has to be built again.
+  if keep_unchanged and id and not reads_worktree(s) and vim.deep_equal(id, s.shown) then
     return
   end
   s.index_lines = nil
@@ -383,8 +460,8 @@ function M.show_selected(s, keep_unchanged)
     render.notice(s.diff_buf, s.files_notice or list.EMPTY_NOTICE)
     return
   end
-  if target.kind == 'commit' then
-    show_commit(s, s.commits[target.index], target.index)
+  if target.kind == 'commit' or target.kind == 'worktree' then
+    show_commit(s, target)
     return
   end
   if target.kind == 'commit_file' then
@@ -454,8 +531,9 @@ local function sync_selection(s, win, force, keep_unchanged)
   local span = perf.start('select', { gen = s.generation, kind = target and target.kind })
 
   -- A refresh is an explicit act rather than a cursor sweep, so it is not
-  -- worth delaying even when a commit is selected.
-  if force or not target or target.kind ~= 'commit' then
+  -- worth delaying even when a commit is selected. The working-tree row is many
+  -- files as a commit is, and waits as one does.
+  if force or not target or (target.kind ~= 'commit' and target.kind ~= 'worktree') then
     M.show_selected(s, keep_unchanged)
     span:finish()
     return
@@ -519,6 +597,9 @@ local function target_of_id(s, id)
   if not id then
     return nil
   end
+  if id.kind == 'worktree' then
+    return has_worktree_row(s) and { kind = 'worktree', index = 1 } or nil
+  end
   local haystack, name
   if id.kind == 'file' then
     haystack, name = s.entries, 'path'
@@ -566,6 +647,7 @@ local function redraw_list(s, target, keep_unchanged)
     pane = 'commits',
     root = s.root,
     commits = s.commits,
+    worktree = has_worktree_row(s),
     mark = s.mark,
     scope = s.scope,
     stale = s.commits_stale,
@@ -584,6 +666,19 @@ local function redraw_list(s, target, keep_unchanged)
   -- different contents, so the diff is rebuilt either way unless the caller says
   -- it knows better.
   sync_selection(s, win, true, keep_unchanged)
+end
+
+--- Clear a mark whose row has gone.
+---
+--- A mark on a commit that has dropped off the end of the list, or on the
+--- working-tree row once nothing is uncommitted, would go on widening every range
+--- while no row showed where it was. It is only ever cleared along with the list
+--- it pointed into.
+--- @param s unidiff.Session
+local function drop_lost_mark(s)
+  if s.mark and not place_of(s, s.mark) then
+    s.mark = nil
+  end
 end
 
 --- Re-read the commit list, unless replacing it would pull the selected commit
@@ -619,11 +714,21 @@ local function read_log(s, id)
   end
   s.commits = commits
   s.commits_stale = nil
-  -- A mark on a commit that has dropped off the end of the list would go on
-  -- widening every range while no row showed where it was. It is only ever
-  -- cleared along with the list it pointed into.
-  if s.mark and not commit_by_sha(s, s.mark) then
-    s.mark = nil
+  drop_lost_mark(s)
+end
+
+--- List again what a range ending at the working tree changed, since the working
+--- tree may have moved on. A range between commits cannot have, and is left as
+--- it is; so is the list when it cannot be read, being the best there is.
+--- @param s unidiff.Session
+local function reread_scope(s)
+  local scope = assert(s.scope)
+  if scope.range.new then
+    return
+  end
+  local changes = git.changed_between(scope.range, s.root)
+  if changes then
+    scope.changes = changes
   end
 end
 
@@ -673,7 +778,11 @@ local function read_status(s, report, keep_unchanged)
     -- Backing out is what reads it again.
     if not s.scope then
       read_log(s, id)
+    else
+      reread_scope(s)
     end
+    -- The working-tree row comes and goes with the entries, and its mark with it.
+    drop_lost_mark(s)
     redraw_list(s, target_of_id(s, id), keep_unchanged)
   end)
 end
@@ -691,6 +800,8 @@ local REFRESH_THROTTLE_MS = 300
 ---
 --- A commit is immutable, so looking into one survives a refresh untouched. What
 --- is re-read is everything underneath it, which is what the list goes back to.
+--- A range ending at the working tree is the exception, and its files are listed
+--- again.
 ---
 --- @param s unidiff.Session
 --- @param opts? {auto?:boolean} `auto` for a refresh nothing asked for. It is
@@ -742,16 +853,21 @@ function M.toggle_whitespace(s)
   M.show_selected(s)
 end
 
---- The commit the cursor is on, or nil when it is not on a commit row.
+--- The row of the commits pane the cursor is on, and what a mark on it would
+--- hold, or nil when it is on neither a commit nor the working tree.
 --- @param s unidiff.Session
---- @return unidiff.Commit?
 --- @return unidiff.ListTarget?
-local function selected_commit(s)
+--- @return string? mark a sha, or `list.WORKTREE`
+local function selected_end(s)
   local target = s.selected
-  if not target or target.kind ~= 'commit' then
+  if target and target.kind == 'worktree' then
+    return target, list.WORKTREE
+  end
+  local commit = target and target.kind == 'commit' and s.commits[target.index]
+  if not commit then
     return nil, nil
   end
-  return s.commits[target.index], target
+  return target, commit.sha
 end
 
 --- Mark the commit under the cursor, or clear the mark if it is already there.
@@ -763,11 +879,11 @@ end
 ---
 --- @param s unidiff.Session
 function M.toggle_mark(s)
-  local commit, target = selected_commit(s)
-  if not commit then
+  local target, mark = selected_end(s)
+  if not target then
     return
   end
-  s.mark = s.mark ~= commit.sha and commit.sha or nil
+  s.mark = s.mark ~= mark and mark or nil
   redraw_list(s, target)
 end
 
@@ -777,19 +893,26 @@ end
 --- The change list is read once, here, and kept: it is what the rows stand for
 --- and what each file's versions are then read against.
 ---
+--- The working tree on its own has nothing to look into that the files pane does
+--- not already list, so there the cursor goes to the files pane instead.
+---
 --- @param s unidiff.Session
 function M.enter(s)
-  local commit, target = selected_commit(s)
-  if not commit then
+  local target, at = selected_end(s)
+  if not target then
     return
   end
-  local range, label = range_of(s, commit, target.index)
+  local range, label = range_of(s, target)
+  if not range then
+    vim.api.nvim_set_current_win(s.files_win)
+    return
+  end
   local changes, err = git.changed_between(range, s.root)
   if not changes then
     util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
     return
   end
-  s.scope = { range = range, label = label, at = commit.sha, changes = changes }
+  s.scope = { range = range, label = label, at = assert(at), changes = changes }
   redraw_list(s, { kind = 'commit_file', index = 1 })
 end
 
@@ -802,7 +925,8 @@ function M.leave(s)
     return
   end
   s.scope = nil
-  local id = { kind = 'commit', id = scope.at } --- @type unidiff.SelectionId
+  local kind = scope.at == list.WORKTREE and 'worktree' or 'commit'
+  local id = { kind = kind, id = scope.at } --- @type unidiff.SelectionId
   -- The log went unread while the range's files stood in front of it, and it may
   -- have moved on since. Reading it here is also what decides whether the commit
   -- being backed out onto is still in it.
@@ -878,6 +1002,10 @@ local function open_listed(s, win)
     item = s.entries[target.index]
   elseif target and target.kind == 'commit_file' then
     item = s.scope and s.scope.changes[target.index]
+  end
+  if target and target.kind == 'worktree' then
+    util.info('the uncommitted changes are many files; open one from the files pane')
+    return
   end
   if not item then
     util.info('a commit is many files; look into it with <CR> to open one')
@@ -1127,7 +1255,7 @@ local function set_diff_keymaps(s)
       -- A whole commit's diff is every file it touched, in one buffer, so
       -- moving between files there means scrolling within it rather than moving
       -- the list's cursor. Every other view holds one file.
-      if t and t.kind == 'commit' then
+      if t and (t.kind == 'commit' or t.kind == 'worktree') then
         keymap.jump_files(dir)
         return
       end

@@ -175,6 +175,7 @@ function M.skipped_note(skipped, unchanged)
     end
   end
   add(#skipped.binary, 'binary')
+  add(#skipped.conflicted, 'conflicted')
   add(unchanged, 'without textual change')
   if #notes > 0 then
     return '(' .. table.concat(notes, ', ') .. ' not shown)'

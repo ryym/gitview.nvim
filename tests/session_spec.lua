@@ -912,8 +912,11 @@ test('session: lists the recent commits in a pane of their own', function()
     local shas = vim.tbl_map(function(c)
       return c.sha
     end, s.commits)
-    eq({ shas[1] .. ' second', shas[2] .. ' first' }, commit_rows(s))
-    eq({ kind = 'commit', index = 1 }, list.target_at(s.commits_buf, 1))
+    -- the working tree heads the list, as the newest end a range can have
+    local zeros = ('0'):rep(#shas[1])
+    eq({ zeros .. ' uncommitted changes', shas[1] .. ' second', shas[2] .. ' first' }, commit_rows(s))
+    eq({ kind = 'worktree', index = 1 }, list.target_at(s.commits_buf, 1))
+    eq({ kind = 'commit', index = 1 }, list.target_at(s.commits_buf, 2))
   end)
 end)
 
@@ -938,7 +941,7 @@ end)
 test('session: entering a pane selects from that pane', function()
   with_session(history, function(s)
     vim.api.nvim_set_current_win(s.commits_win)
-    eq('commit', s.selected.kind)
+    eq('worktree', s.selected.kind)
     vim.api.nvim_set_current_win(s.files_win)
     eq('file', s.selected.kind)
   end)
@@ -1383,8 +1386,9 @@ test('session: the marked commit is shown in the gutter', function()
     goto_commit(s, 3)
     session.toggle_mark(s)
     eq(s.commits[3].sha, s.mark)
-    eq('%#UnidiffStatusMark#>  ', list.state_of(s.commits_buf).rows[3].gutter)
-    eq(nil, list.state_of(s.commits_buf).rows[2].gutter)
+    local rows = list.state_of(s.commits_buf).rows
+    eq('%#UnidiffStatusMark#>  ', rows[list.row_of(s.commits_buf, { kind = 'commit', index = 3 })].gutter)
+    eq(nil, rows[list.row_of(s.commits_buf, { kind = 'commit', index = 2 })].gutter)
   end)
 end)
 
@@ -1394,7 +1398,8 @@ test('session: marking the marked commit again clears it', function()
     session.toggle_mark(s)
     session.toggle_mark(s)
     eq(nil, s.mark)
-    eq(nil, list.state_of(s.commits_buf).rows[2].gutter)
+    local row = list.row_of(s.commits_buf, { kind = 'commit', index = 2 })
+    eq(nil, list.state_of(s.commits_buf).rows[row].gutter)
   end)
 end)
 
@@ -1555,6 +1560,156 @@ test('session: a commit the log has dropped holds the list open', function()
         assert(c.sha ~= dropped, 'the dropped commit should be gone from the list')
       end
     end)
+  end)
+end)
+
+--- `history`, with an untracked file beside the change to a tracked one.
+local function dirty_history(repo)
+  history(repo)
+  repo.write('loose.lua', { 'return 7' })
+end
+
+--- Put the cursor on the working-tree row without drawing.
+--- @param s unidiff.Session
+local function goto_worktree(s)
+  local row = assert(list.row_of(s.commits_buf, { kind = 'worktree', index = 1 }))
+  vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  s.selected = { kind = 'worktree', index = 1 }
+end
+
+--- @param s unidiff.Session
+--- @return string[] the label of every file in the view drawn
+local function view_files(s)
+  return vim.tbl_map(function(f)
+    return f.label
+  end, assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn').files)
+end
+
+-- A clean working tree is HEAD, so a row for it would compare nothing HEAD's
+-- own row does not.
+test('session: a clean working tree has no row of its own', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+  end, function(s, repo)
+    eq({ s.commits[1].sha .. ' first' }, commit_rows(s))
+    repo.write('a.txt', { 'two' })
+    session.refresh(s)
+    settle(s)
+    eq({ kind = 'worktree', index = 1 }, list.target_at(s.commits_buf, 1))
+  end)
+end)
+
+test('session: the working-tree row shows everything uncommitted at once', function()
+  with_session(dirty_history, function(s)
+    goto_worktree(s)
+    session.show_selected(s)
+    eq({ 'a.lua', 'loose.lua' }, view_files(s))
+    -- what the files pane shows a file at a time: staged and unstaged together
+    assert(require('unidiff.diff.render').view_of(s.diff_buf).mixed, 'the view should be mixed')
+  end)
+end)
+
+test('session: a mark and the working-tree row compare the commit with the working tree', function()
+  with_session(dirty_history, function(s)
+    goto_commit(s, 2)
+    session.toggle_mark(s)
+    goto_worktree(s)
+    session.show_selected(s)
+    local label = s.commits[2].sha .. '..working tree'
+    assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
+    -- untracked files are not compared yet
+    eq({ 'a.lua', 'added.lua' }, view_files(s))
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('return 1', 1, true), text)
+    assert(text:find('return 3', 1, true), text)
+    assert(not text:find('return 2', 1, true), text)
+    eq(nil, require('unidiff.diff.render').view_of(s.diff_buf).mixed)
+  end)
+end)
+
+test('session: marking the working-tree row gives the same range', function()
+  with_session(dirty_history, function(s)
+    goto_worktree(s)
+    session.toggle_mark(s)
+    eq(list.WORKTREE, s.mark)
+    eq('%#UnidiffStatusMark#>  ', list.state_of(s.commits_buf).rows[1].gutter)
+    goto_commit(s, 2)
+    session.show_selected(s)
+    local label = s.commits[2].sha .. '..working tree'
+    assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
+  end)
+end)
+
+-- The working tree on its own has nothing to look into that the files pane does
+-- not already list.
+test('session: <CR> on the working-tree row goes to the files pane', function()
+  with_session(dirty_history, function(s)
+    goto_worktree(s)
+    vim.api.nvim_set_current_win(s.commits_win)
+    session.enter(s)
+    eq(s.files_win, vim.api.nvim_get_current_win())
+    eq(nil, s.scope)
+  end)
+end)
+
+test('session: looking into a range ending at the working tree', function()
+  with_session(dirty_history, function(s)
+    goto_commit(s, 2)
+    session.toggle_mark(s)
+    goto_worktree(s)
+    session.enter(s)
+    eq(s.commits[2].sha .. '..working tree', s.scope.label)
+    eq({ 'a.lua', 'added.lua' }, commit_rows(s))
+    session.show_selected(s)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('return 3', 1, true), text)
+    -- backing out lands on the row it went in from
+    session.leave(s)
+    eq({ kind = 'worktree', index = 1 }, s.selected)
+  end)
+end)
+
+test('session: a refresh lists again the files of a range ending at the working tree', function()
+  with_session(history, function(s, repo)
+    goto_commit(s, 1)
+    session.toggle_mark(s)
+    goto_worktree(s)
+    session.enter(s)
+    eq({ 'a.lua' }, commit_rows(s))
+    repo.write('added.lua', { 'return 8' })
+    session.refresh(s)
+    settle(s)
+    eq({ 'a.lua', 'added.lua' }, commit_rows(s))
+  end)
+end)
+
+-- An automatic refresh leaves a commit's view alone, since a sha names contents
+-- that cannot change. The working tree can, whichever end of the range it is.
+test('session: an automatic refresh redraws a range ending at the working tree', function()
+  with_session(history, function(s, repo)
+    goto_worktree(s)
+    session.toggle_mark(s)
+    goto_commit(s, 1)
+    session.show_selected(s)
+    assert(table.concat(diff_rows(s), '\n'):find('return 3', 1, true))
+    repo.write('a.lua', { 'return 4' })
+    session.refresh(s, { auto = true })
+    settle(s)
+    local text = table.concat(diff_rows(s), '\n')
+    assert(text:find('return 4', 1, true), text)
+  end)
+end)
+
+test('session: a mark on the working-tree row goes once nothing is uncommitted', function()
+  with_session(history, function(s, repo)
+    goto_worktree(s)
+    session.toggle_mark(s)
+    repo.commit('third')
+    session.refresh(s)
+    settle(s)
+    eq(nil, s.mark)
+    eq({ kind = 'commit', index = 1 }, list.target_at(s.commits_buf, 1))
   end)
 end)
 

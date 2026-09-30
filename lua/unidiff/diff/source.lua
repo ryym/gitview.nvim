@@ -71,12 +71,14 @@ end
 
 --- @class unidiff.Skipped paths left out of a view, by why they were
 --- @field binary string[]
+--- @field conflicted string[] unmerged paths, which have no index version to
+---        build a mixed view's middle from
 
 --- A `Skipped` with every group empty: what the error paths report, and what
 --- `partition_showable` starts from.
 --- @return unidiff.Skipped
 local function no_skipped()
-  return { binary = {} }
+  return { binary = {}, conflicted = {} }
 end
 
 --- Split a change list into the files that can be shown and those that cannot.
@@ -221,6 +223,24 @@ local function sources_of(entries, root)
     }
   end
   return sources
+end
+
+--- Every entry's three versions, for one view of everything uncommitted.
+--- @param entries unidiff.StatusEntry[]
+--- @param root string repository root
+--- @return unidiff.Source[] sources
+--- @return unidiff.Skipped skipped
+function M.for_entries(entries, root)
+  local showable, skipped = partition_showable(entries)
+  local wanted = {}
+  for _, e in ipairs(showable) do
+    if e.conflicted then
+      skipped.conflicted[#skipped.conflicted + 1] = e.path
+    else
+      wanted[#wanted + 1] = e
+    end
+  end
+  return sources_of(wanted, root), skipped
 end
 
 --- One entry's three versions, for a view showing a single file.

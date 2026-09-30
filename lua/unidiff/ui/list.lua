@@ -13,7 +13,8 @@ local M = {}
 --- the commits themselves
 --- @field range unidiff.Range the two revisions being compared
 --- @field label string what to call it
---- @field at string sha of the commit to put the cursor back on when backing out
+--- @field at string sha of the commit to put the cursor back on when backing out,
+---        or `WORKTREE` for the working-tree row
 --- @field changes unidiff.Change[] what the range changed
 
 --- @class unidiff.ListModel what one pane of the sidebar is showing
@@ -23,14 +24,18 @@ local M = {}
 --- @field notice string? the files pane, shown in place of the entries while
 ---        there are none to show yet
 --- @field commits unidiff.Commit[]? the commits pane
---- @field mark string? sha of the marked commit, the far end of a range
+--- @field worktree boolean? the commits pane, with a row for the working tree
+---        above the commits
+--- @field mark string? sha of the marked commit, the far end of a range, or
+---        `WORKTREE` when that is the working-tree row
 --- @field scope unidiff.ListScope? the commits pane, looking into a range
 --- @field stale boolean? the commits pane, holding a list `git log` no longer
 ---        agrees with; see `ui.session`
 
 --- @class unidiff.ListTarget what a row stands for
---- @field kind 'file'|'commit'|'commit_file'
---- @field index integer into the entries, the commits, or the scope's changes
+--- @field kind 'file'|'commit'|'worktree'|'commit_file'
+--- @field index integer into the entries, the commits, or the scope's changes.
+---        Always 1 for the working tree, which there is only one of
 
 --- @class unidiff.ListRow
 --- @field text string the buffer line, which is the thing itself
@@ -53,6 +58,14 @@ M.NO_COMMITS_NOTICE = 'no commits yet'
 --- Drawn in the gutter of the marked commit. A commit row has no status letters
 --- of its own, so the mark has the width to itself.
 local MARK_GUTTER = '%#UnidiffStatusMark#>  '
+
+--- What `mark` and `ListScope.at` hold for the working-tree row, which has no
+--- sha. It cannot be mistaken for one, since a sha is hexadecimal.
+M.WORKTREE = 'worktree'
+
+--- The working-tree row's subject. The row stands for the working tree as one
+--- end of a range, the way a commit row stands for a commit.
+local WORKTREE_SUBJECT = 'uncommitted changes'
 
 --- Shown in place of the file list of a commit that changed nothing, which
 --- `git commit --allow-empty` makes.
@@ -135,8 +148,17 @@ function M.content(model)
     return { { text = M.NO_COMMITS_NOTICE } }
   end
   local rows = {}
+  if model.worktree then
+    -- Zeros as wide as the shas below, the way git writes the sha of nothing,
+    -- so that the subjects stay in one column.
+    rows[1] = {
+      text = ('%s %s'):format(('0'):rep(#commits[1].sha), WORKTREE_SUBJECT),
+      gutter = model.mark == M.WORKTREE and MARK_GUTTER or nil,
+      target = { kind = 'worktree', index = 1 },
+    }
+  end
   for i, c in ipairs(commits) do
-    rows[i] = {
+    rows[#rows + 1] = {
       text = ('%s %s'):format(c.sha, c.subject),
       gutter = c.sha == model.mark and MARK_GUTTER or nil,
       target = { kind = 'commit', index = i },
