@@ -15,6 +15,8 @@ local M = {}
 --- @field close fun() what `q` does
 --- @field goto_file fun(dir: 1|-1) what `]f` and `[f` do
 --- @field before_jump fun() run before `<CR>` opens the file the cursor is in
+--- @field open_file fun(path: string, lnum: integer) what `gf` does with the
+---        file the cursor is in and the line it stands for
 
 --- The rows of the diff shown in the current window, or nothing when the buffer
 --- holds no diff.
@@ -87,6 +89,76 @@ function M.goto_source(before_jump)
   pcall(vim.api.nvim_win_set_cursor, 0, { lnum, 0 })
 end
 
+--- The line of the new version a row lands on.
+---
+--- A row the new version has is its own line. One it lacks — a deleted line, or
+--- in a mixed view an index line the working tree dropped — lands on the line
+--- that now stands where it was: the one after the nearest row above it that the
+--- new version has.
+--- @param view unidiff.View
+--- @param row integer 1-based, a row of a source kind
+--- @return integer lnum
+local function new_lnum_at(view, row)
+  local l = view.lines[row]
+  if l.new_lnum then
+    return l.new_lnum
+  end
+  for r = row - 1, 1, -1 do
+    local above = view.lines[r]
+    if above.file ~= l.file then
+      break
+    end
+    if above.new_lnum then
+      return above.new_lnum + 1
+    end
+  end
+  return 1
+end
+
+--- The file a row of the diff belongs to, and the line of it to open at.
+---
+--- A file's header, and the blank row that parts it from the next file, open the
+--- file at its top. The rows of a commit's header come before any file and
+--- belong to none.
+--- @param view unidiff.View
+--- @param row integer 1-based
+--- @return string? path absolute
+--- @return integer? lnum
+function M.source_at(view, row)
+  for _, f in ipairs(view.files) do
+    if f.row == row then
+      return f.path, 1
+    end
+  end
+  for r = row, 1, -1 do
+    local l = view.lines[r]
+    if l and l.file then
+      local path = view.files[l.file].path
+      if r ~= row then
+        return path, 1
+      end
+      return path, new_lnum_at(view, row)
+    end
+  end
+  return nil, nil
+end
+
+--- Edit a file in the current window and put the cursor on a line of it.
+---
+--- The line is clamped to the file: a line number taken from a commit can be
+--- past the end of the file as it is now.
+--- @param path string
+--- @param lnum integer
+function M.edit_at(path, lnum)
+  if vim.fn.bufnr(path) ~= vim.api.nvim_get_current_buf() then
+    vim.cmd.edit(vim.fn.fnameescape(path))
+  end
+  -- `:edit` records the jump by itself, but not when the file was already here.
+  vim.cmd("normal! m'")
+  local last = vim.api.nvim_buf_line_count(0)
+  vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(lnum, last)), 0 })
+end
+
 --- What the keys do for a diff that owns the tab page it was opened in.
 --- @return unidiff.DiffKeys
 function M.tab_keys()
@@ -97,6 +169,10 @@ function M.tab_keys()
     goto_file = M.jump_files,
     before_jump = function()
       vim.cmd.tabclose()
+    end,
+    open_file = function(path, lnum)
+      vim.cmd.tabclose()
+      M.edit_at(path, lnum)
     end,
   }
 end
@@ -124,6 +200,18 @@ function M.set(buf, keys)
   map('<CR>', function()
     M.goto_source(keys.before_jump)
   end, 'jump to source line')
+  map('gf', function()
+    local view = render.view_of(buf)
+    local path, lnum = nil, nil
+    if view then
+      path, lnum = M.source_at(view, vim.api.nvim_win_get_cursor(0)[1])
+    end
+    if not path then
+      util.info('no file here')
+      return
+    end
+    keys.open_file(path, lnum)
+  end, 'open the file the cursor is in')
 end
 
 return M

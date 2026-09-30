@@ -22,6 +22,8 @@ local M = {}
 --- @class unidiff.Session
 --- @field tab integer tab page handle
 --- @field root string repository root, resolved once
+--- @field origin integer tab page `gf` opens files in: the one the session was
+---        opened from, or the one opened in its place once that is gone
 --- @field files_win integer
 --- @field files_buf integer
 --- @field commits_win integer
@@ -850,6 +852,62 @@ function M.edit_entry(s)
   vim.cmd.edit(vim.fn.fnameescape(path))
 end
 
+--- Open a file of the working tree in the tab page the session was opened from,
+--- leaving the session as it is.
+---
+--- The point is a look at the whole file while reading its diff, so the session
+--- stays open to come back to. The file goes into whichever window that tab page
+--- last had the cursor in; if that window cannot take it — it is pinned to its
+--- buffer, or holds unsaved changes — the error says so there. A tab page closed
+--- since is replaced by a new one just before the session's, which later files
+--- then go to as well.
+---
+--- The line may come from a commit, and so name a line of the file as it was
+--- then. That is accepted: it is usually close, and the file is what was asked for.
+--- @param s unidiff.Session
+--- @param path string absolute
+--- @param lnum integer
+function M.open_file(s, path, lnum)
+  if vim.fn.filereadable(path) == 0 then
+    util.warn(('%s is not in the working tree'):format(vim.fs.relpath(s.root, path) or path))
+    return
+  end
+  if vim.api.nvim_tabpage_is_valid(s.origin) then
+    vim.api.nvim_set_current_tabpage(s.origin)
+  else
+    vim.api.nvim_set_current_tabpage(s.tab)
+    vim.cmd('-tabnew')
+    s.origin = vim.api.nvim_get_current_tabpage()
+  end
+  local ok, err = pcall(keymap.edit_at, path, lnum)
+  if not ok then
+    -- `vim.cmd` wraps the Ex error in where it was raised from, which says
+    -- nothing to the user.
+    local msg = tostring(err)
+    util.warn(msg:match('Vim:(.*)$') or msg)
+  end
+end
+
+--- Open the file the list's cursor is on; see `open_file`.
+--- @param s unidiff.Session
+--- @param win integer the pane the key was pressed in
+local function open_listed(s, win)
+  local buf = vim.api.nvim_win_get_buf(win)
+  local target = list.target_at(buf, vim.api.nvim_win_get_cursor(win)[1])
+  local item
+  if target and target.kind == 'file' then
+    item = s.entries[target.index]
+  elseif target and target.kind == 'commit_file' then
+    item = s.scope and s.scope.changes[target.index]
+  end
+  if not item then
+    util.info('a commit is many files; look into it with <CR> to open one')
+    return
+  end
+  -- A renamed file is opened under its new name, which is the one it has now.
+  M.open_file(s, vim.fs.joinpath(s.root, item.path), 1)
+end
+
 --- Refuse to stage from panes the session has made out of date, saying why.
 --- @param s unidiff.Session
 --- @return boolean refused
@@ -1007,6 +1065,9 @@ local function set_shared_keymaps(s, buf)
   map('q', function()
     M.close(s)
   end, 'close')
+  map('gf', function()
+    open_listed(s, vim.api.nvim_get_current_win())
+  end, 'open the file under the cursor in the previous tab page')
 end
 
 --- What the keys do in the files pane.
@@ -1100,6 +1161,9 @@ local function set_diff_keymaps(s)
     end,
     before_jump = function()
       M.close(s)
+    end,
+    open_file = function(path, lnum)
+      M.open_file(s, path, lnum)
     end,
   })
 end
@@ -1245,10 +1309,12 @@ function M.open()
     return
   end
   set_hooks()
+  local origin = vim.api.nvim_get_current_tabpage()
   vim.cmd.tabnew()
   local s = { --- @type unidiff.Session
     tab = vim.api.nvim_get_current_tabpage(),
     root = root,
+    origin = origin,
     files_win = vim.api.nvim_get_current_win(),
     files_buf = list.create_buffer(),
     commits_buf = list.create_buffer(),

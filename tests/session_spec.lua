@@ -1078,6 +1078,166 @@ test('session: a file of a commit is shown by itself', function()
   end)
 end)
 
+--- Put an empty buffer in the current window and wipe the one it showed, so
+--- that a file `gf` opened does not linger into the next test. Deleting it
+--- outright would close the window, and with it a tab page it is alone in.
+local function wipe_opened()
+  local buf = vim.api.nvim_get_current_buf()
+  vim.cmd.enew()
+  vim.api.nvim_buf_delete(buf, { force = true })
+end
+
+--- Press `gf` in one of the session's panes, and say where it landed: the file
+--- relative to the repository, and the line the cursor is on.
+--- @param s unidiff.Session
+--- @param win integer
+--- @return string? path nil when the current buffer did not change
+--- @return integer lnum
+local function press_gf(s, win)
+  vim.api.nvim_set_current_win(win)
+  local before = vim.api.nvim_get_current_buf()
+  vim.cmd.normal('gf')
+  local buf = vim.api.nvim_get_current_buf()
+  if buf == before then
+    return nil, 0
+  end
+  local path = vim.fs.relpath(s.root, vim.api.nvim_buf_get_name(buf))
+  local lnum = vim.api.nvim_win_get_cursor(0)[1]
+  wipe_opened()
+  return path, lnum
+end
+
+--- The diff row drawn for this text.
+--- @param s unidiff.Session
+--- @param text string
+--- @param kind string
+--- @return integer
+local function row_of_text(s, text, kind)
+  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
+  for i, l in ipairs(view.lines) do
+    if l.text == text and l.kind == kind then
+      return i
+    end
+  end
+  error(('no %s row for %q'):format(kind, text))
+end
+
+test('session: `gf` opens the file in the tab page it was opened from', function()
+  with_session(base, function(s)
+    local origin = s.origin
+    assert(origin ~= s.tab and vim.api.nvim_tabpage_is_valid(origin), 'no tab page to go back to')
+    vim.api.nvim_win_set_cursor(s.files_win, { 2, 0 }) -- loose.txt
+    vim.api.nvim_set_current_win(s.files_win)
+    vim.cmd.normal('gf')
+    eq(origin, vim.api.nvim_get_current_tabpage())
+    eq(s.root .. '/loose.txt', vim.api.nvim_buf_get_name(0))
+    wipe_opened()
+    -- the session is still there to go back to
+    assert(session.sessions[s.tab], 'the session should still be open')
+  end)
+end)
+
+--- Four lines, of which the second is deleted and a fifth added.
+local function edited(repo)
+  repo.write('f.txt', { 'a', 'b', 'c', 'd' })
+  repo.commit('init')
+  repo.write('f.txt', { 'a', 'c', 'd', 'e' })
+end
+
+test('session: `gf` in the diff opens the file at the line under the cursor', function()
+  with_session(edited, function(s)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'e', 'add'), 0 })
+    eq({ 'f.txt', 4 }, { press_gf(s, s.diff_win) })
+    vim.api.nvim_set_current_tabpage(s.tab)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'd', 'context'), 0 })
+    eq({ 'f.txt', 3 }, { press_gf(s, s.diff_win) })
+  end)
+end)
+
+-- A deleted line is in no version the working tree has; what stands where it
+-- was is the line after the one above it.
+test('session: `gf` on a deleted line opens the line now in its place', function()
+  with_session(edited, function(s)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'b', 'del'), 0 })
+    eq({ 'f.txt', 2 }, { press_gf(s, s.diff_win) })
+  end)
+end)
+
+test('session: `gf` on a file header opens the file at its top', function()
+  with_session(edited, function(s)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'f.txt', 'file'), 0 })
+    eq({ 'f.txt', 1 }, { press_gf(s, s.diff_win) })
+  end)
+end)
+
+test('session: `gf` opens a new tab page when its own has been closed', function()
+  with_session(base, function(s)
+    vim.cmd.tabnew()
+    local gone = vim.api.nvim_get_current_tabpage()
+    vim.cmd.tabclose()
+    s.origin = gone
+    vim.api.nvim_set_current_tabpage(s.tab)
+    local before = #vim.api.nvim_list_tabpages()
+    eq('edit.txt', (press_gf(s, s.files_win)))
+    eq(before + 1, #vim.api.nvim_list_tabpages())
+    -- it stands just before the session's, and is used from then on
+    local tabs = vim.api.nvim_list_tabpages()
+    local at = vim.fn.index(tabs, s.tab)
+    eq(tabs[at], s.origin)
+    vim.api.nvim_set_current_tabpage(s.origin)
+    vim.cmd.tabclose()
+  end)
+end)
+
+-- Choosing another window would make where the file lands hard to predict, so
+-- the refusal is reported instead.
+test('session: `gf` leaves a window pinned to its buffer alone', function()
+  with_session(base, function(s)
+    local win = vim.api.nvim_tabpage_get_win(s.origin)
+    local buf = vim.api.nvim_win_get_buf(win)
+    vim.wo[win].winfixbuf = true
+    vim.api.nvim_set_current_win(s.files_win)
+    vim.cmd.normal('gf')
+    vim.wo[win].winfixbuf = false
+    eq(s.origin, vim.api.nvim_get_current_tabpage())
+    eq(buf, vim.api.nvim_win_get_buf(win))
+  end)
+end)
+
+test('session: `gf` on a file the working tree lacks opens nothing', function()
+  with_session(function(repo)
+    repo.write('gone.txt', { 'x' })
+    repo.commit('init')
+    repo.git('rm', '-q', 'gone.txt')
+  end, function(s)
+    eq(nil, (press_gf(s, s.files_win)))
+    eq(s.tab, vim.api.nvim_get_current_tabpage())
+  end)
+end)
+
+test('session: `gf` opens a file of a commit, at its line of the commit', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'return 9', 'add'), 0 })
+    eq({ 'added.lua', 1 }, { press_gf(s, s.diff_win) })
+    vim.api.nvim_set_current_tabpage(s.tab)
+    session.enter(s)
+    vim.api.nvim_win_set_cursor(s.commits_win, { 2, 0 }) -- added.lua
+    eq({ 'added.lua', 1 }, { press_gf(s, s.commits_win) })
+  end)
+end)
+
+-- A commit is many files, and the row does not say which of them is meant.
+test('session: `gf` on a commit row opens nothing', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    eq(nil, (press_gf(s, s.commits_win)))
+    -- nor does a row of its header, which comes before any file
+    vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
+    eq(nil, (press_gf(s, s.diff_win)))
+  end)
+end)
+
 test('session: backing out returns to the commit that was looked into', function()
   with_session(history, function(s)
     show_commit(s, 1)

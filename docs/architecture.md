@@ -122,7 +122,31 @@ rather than what was there before.
 The keys shared with a standalone diff buffer mean something different here:
 `q` gives up the session rather than one window, and `]f` moves the list's
 cursor rather than scrolling to the next file of a combined view. `diff/keymap`
-takes those three as callbacks instead of branching on where it is used.
+takes those as callbacks instead of branching on where it is used.
+
+#### Opening a file
+
+`gf` opens the file under the cursor from any pane: the file a list row names,
+or the file a diff row belongs to, at the line of it the row stands for. It is
+for a look at the whole file while reading its diff, so the session stays open.
+
+- **It goes to the tab page the session was opened from**, into whichever window
+  had the cursor there last. The session keeps that tab page as `origin`. Once it
+  is closed, a new one is opened just before the session's and becomes `origin`
+  in its place.
+- **A window that cannot take the file is not replaced by another.** One pinned
+  with `'winfixbuf'`, or holding unsaved changes under `'nohidden'`, makes `:edit`
+  fail, and the error is reported. Picking some other window would make where the
+  file lands hard to predict.
+- **A row the new version lacks lands where it was.** A deleted line has no
+  `new_lnum`, so it opens at the line after the nearest row above it that has
+  one: the line that now stands in its place. A file's header and the blank row
+  after its last line open it at the top. A commit's header belongs to no file.
+- **A commit's line numbers are taken as they are.** They name lines of the file
+  as the commit left it, which the working tree may have moved on from, and the
+  line is clamped to the file as it is now. A file the working tree no longer
+  has is refused rather than opened as a new, empty buffer.
+- **A commit row opens nothing**: it stands for every file the commit touched.
 
 ### The commit list
 

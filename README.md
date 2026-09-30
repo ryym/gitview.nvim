@@ -190,8 +190,14 @@ history.
 | `]f` / `[f` |                   |                      | next / previous file          |
 | `]h` / `[h` |                   |                      | next / previous hunk          |
 | `o`         | edit the file     |                      |                               |
+| `gf`        | open the file     | open the file        | open the file at this line    |
 | `R`         | re-read           | re-read              |                               |
 | `q`         | close             | close                | close                         |
+
+`gf` opens the file in the tab page `:UnidiffStatus` was run from, and leaves the
+session open to come back to. From the diff it lands on the line under the
+cursor; a deleted line lands on the line now in its place. A commit's line
+numbers are the commit's, so there it lands near the line rather than on it.
 
 There is one key per direction rather than one key toggling: a file changed in
 the index and in the working tree both has no obvious sense in which it is
