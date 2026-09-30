@@ -100,8 +100,9 @@ end
 --- Read the two versions of every change in a range: the file as the old side
 --- had it, and as the new side left it.
 ---
---- Neither side comes from the working tree. The working tree is not one of the
---- versions being compared here, and it may no longer have the file at all.
+--- A committed side is read from the object database, never from the working
+--- tree, which may no longer have the file at all. Only a range ending at the
+--- working tree reads it, and then for the new side alone.
 ---
 --- @param range unidiff.Range
 --- @param changes unidiff.Change[] not binary; those have nothing to read
@@ -119,7 +120,7 @@ local function range_sources(range, changes, root)
       specs[#specs + 1] = ('%s:%s'):format(range.old, c.old_path)
       old_spec[i] = #specs
     end
-    if c.status ~= 'D' then
+    if range.new and c.status ~= 'D' then
       specs[#specs + 1] = ('%s:%s'):format(range.new, c.path)
       new_spec[i] = #specs
     end
@@ -129,12 +130,18 @@ local function range_sources(range, changes, root)
   local sources = {}
   for i, c in ipairs(changes) do
     local path = vim.fs.joinpath(root, c.path)
+    local new_lines
+    if range.new then
+      new_lines = new_spec[i] and blobs[new_spec[i]] or {}
+    else
+      new_lines = c.status == 'D' and {} or M.working_lines(path)
+    end
     sources[#sources + 1] = {
       path = path,
       label = status.change_label(c),
       ft = M.filetype_of(path),
       old_lines = old_spec[i] and blobs[old_spec[i]] or {},
-      new_lines = new_spec[i] and blobs[new_spec[i]] or {},
+      new_lines = new_lines,
     }
   end
   return sources
@@ -149,7 +156,7 @@ end
 function M.for_range(range, root)
   local changes, err = git.changed_between(range, root)
   if not changes then
-    return nil, no_skipped(), { what = 'git diff ' .. range.new, stderr = err or '' }
+    return nil, no_skipped(), { what = 'git diff ' .. (range.new or range.old), stderr = err or '' }
   end
   local wanted, skipped = partition_showable(changes)
   return range_sources(range, wanted, root), skipped

@@ -416,3 +416,28 @@ test('a range ending at a merge needs no parent chosen', function()
     end, changes))
   end)
 end)
+
+-- A range with no new revision ends at the working tree, so it takes in what is
+-- staged and what is not alike. Untracked files are not in it: `git diff` only
+-- compares what the index names.
+test('a range can end at the working tree', function()
+  helpers.with_repo(function(repo)
+    repo.write('staged.txt', { 'one' })
+    repo.write('unstaged.txt', { 'one' })
+    repo.write('gone.txt', { 'one' })
+    repo.commit('first')
+    local sha = assert(git.log(1, repo.root))[1].sha
+    repo.write('staged.txt', { 'two' })
+    repo.git('add', 'staged.txt')
+    repo.write('unstaged.txt', { 'two' })
+    repo.git('rm', '-q', 'gone.txt')
+    repo.write('loose.txt', { 'new' })
+
+    local changes = assert(git.changed_between({ old = sha }, repo.root))
+    local status = {}
+    for _, c in ipairs(changes) do
+      status[c.path] = c.status
+    end
+    eq({ ['staged.txt'] = 'M', ['unstaged.txt'] = 'M', ['gone.txt'] = 'D' }, status)
+  end)
+end)

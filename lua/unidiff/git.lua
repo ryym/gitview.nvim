@@ -447,7 +447,8 @@ end
 
 --- @class unidiff.Range the two revisions a view compares
 --- @field old string? nil when the new side has no parent, i.e. a root commit
---- @field new string
+--- @field new string? nil for the working tree. The two are never both nil: a
+---        range ending at the working tree starts at a commit
 
 --- The range one commit stands for: its first parent to itself.
 ---
@@ -477,18 +478,26 @@ local function range_command(range)
   return { 'git', 'diff' }
 end
 
---- What `range_command` compares, after its options.
+--- What `range_command` compares, after its options. `git diff` given one
+--- revision compares it with the working tree, which is how a range ends there.
 --- @param range unidiff.Range
 --- @return string[]
 local function range_args(range)
-  return range.old and { range.old, range.new } or { range.new }
+  if not range.old then
+    local new = assert(range.new, 'a range starting nowhere must end at a commit')
+    return { new }
+  end
+  return { range.old, range.new }
 end
 
 --- What changed between the two sides of a range.
 ---
 --- A root commit has no old side to name, and is the one case that needs
 --- `diff-tree --root`. Every other range, including one whose ends are merges,
---- is an ordinary comparison of two trees.
+--- is an ordinary comparison of two trees, or of a tree and the working tree.
+---
+--- A range ending at the working tree leaves out untracked files: `git diff`
+--- only compares what the index names.
 ---
 --- @param range unidiff.Range
 --- @param cwd string
