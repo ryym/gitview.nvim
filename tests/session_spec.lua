@@ -287,34 +287,9 @@ test('session: the list buffer carries its keymaps', function()
     for _, m in ipairs(vim.api.nvim_buf_get_keymap(s.files_buf, 'n')) do
       lhs[m.lhs] = true
     end
-    for _, key in ipairs({ 'R', 'o', 'q' }) do
+    for _, key in ipairs({ 'R', 'gf', 'q' }) do
       assert(lhs[key], 'no mapping for ' .. key)
     end
-  end)
-end)
-
-test('session: opening an entry replaces the session with the file', function()
-  with_session(base, function(s)
-    vim.api.nvim_win_set_cursor(s.files_win, { 2, 0 }) -- loose.txt
-    local tab = s.tab
-    session.edit_entry(s)
-    eq(nil, session.sessions[tab])
-    eq(s.root .. '/loose.txt', vim.api.nvim_buf_get_name(0))
-  end)
-end)
-
--- A staged deletion has no working copy to open, and `:edit` would make an
--- empty buffer for it as if the file were new.
-test('session: a file the working tree lacks is not opened', function()
-  with_session(function(repo)
-    repo.write('gone.txt', { 'x' })
-    repo.commit('init')
-    repo.git('rm', '-q', 'gone.txt')
-  end, function(s)
-    local before = vim.api.nvim_get_current_buf()
-    session.edit_entry(s)
-    eq(before, vim.api.nvim_get_current_buf())
-    assert(session.sessions[s.tab], 'the session should still be open')
   end)
 end)
 
@@ -1008,13 +983,10 @@ test('session: the root commit shows its files as additions', function()
   end)
 end)
 
--- Its line numbers are the commit's. Jumping would land on whatever now
--- occupies that line in the working tree.
-test('session: a commit view is marked historical and is not mixed', function()
+test('session: a commit view is not mixed', function()
   with_session(history, function(s)
     show_commit(s, 1)
     local view = require('unidiff.diff.render').view_of(s.diff_buf)
-    eq(true, view.historical)
     eq(nil, view.mixed)
   end)
 end)
@@ -1069,7 +1041,6 @@ test('session: a file of a commit is shown by itself', function()
     local view = require('unidiff.diff.render').view_of(s.diff_buf)
     eq(1, #view.files)
     eq('a.lua', view.files[1].label)
-    eq(true, view.historical)
     local text = table.concat(diff_rows(s), '\n')
     assert(text:find('return 1', 1, true), text)
     assert(text:find('return 2', 1, true), text)
@@ -1204,6 +1175,8 @@ test('session: `gf` leaves a window pinned to its buffer alone', function()
   end)
 end)
 
+-- A staged deletion has no working copy to open, and `:edit` would make an
+-- empty buffer for it as if the file were new.
 test('session: `gf` on a file the working tree lacks opens nothing', function()
   with_session(function(repo)
     repo.write('gone.txt', { 'x' })

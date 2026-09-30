@@ -5,7 +5,6 @@
 --- buffer inside the file list is one pane of something larger, and moving
 --- between files means moving the list's cursor. The keys are the same either
 --- way, so what they call is passed in rather than branched on here.
-local dlib = require('unidiff.diff.lines')
 local render = require('unidiff.diff.render')
 local util = require('unidiff.util')
 
@@ -14,7 +13,6 @@ local M = {}
 --- @class unidiff.DiffKeys
 --- @field close fun() what `q` does
 --- @field goto_file fun(dir: 1|-1) what `]f` and `[f` do
---- @field before_jump fun() run before `<CR>` opens the file the cursor is in
 --- @field open_file fun(path: string, lnum: integer) what `gf` does with the
 ---        file the cursor is in and the line it stands for
 
@@ -59,34 +57,6 @@ end
 --- @param dir 1|-1
 function M.jump_files(dir)
   M.jump(dir, rows_of('file_rows'))
-end
-
---- Open the file the cursor's row came from, at the line it stands for.
---- @param before_jump fun() gives up whatever the diff was being shown in
-function M.goto_source(before_jump)
-  local buf = vim.api.nvim_get_current_buf()
-  local view = render.view_of(buf)
-  if not view then
-    return
-  end
-  -- Both sides of a historical view are committed versions, so its line
-  -- numbers name lines of the commit rather than of the file on disk. Jumping
-  -- would land on whatever now occupies that line, or on a file the working
-  -- tree no longer has.
-  if view.historical then
-    util.warn('this diff is between commits; there is no working-tree line to jump to')
-    return
-  end
-  local l = view.lines[vim.api.nvim_win_get_cursor(0)[1]]
-  -- separators and file headers point at no single source line
-  if not l or not dlib.source_kinds[l.kind] then
-    return
-  end
-  local path = view.files[l.file].path
-  local lnum = l.new_lnum or l.old_lnum
-  before_jump()
-  vim.cmd.edit(vim.fn.fnameescape(path))
-  pcall(vim.api.nvim_win_set_cursor, 0, { lnum, 0 })
 end
 
 --- The line of the new version a row lands on.
@@ -167,9 +137,6 @@ function M.tab_keys()
       vim.cmd.quit()
     end,
     goto_file = M.jump_files,
-    before_jump = function()
-      vim.cmd.tabclose()
-    end,
     open_file = function(path, lnum)
       vim.cmd.tabclose()
       M.edit_at(path, lnum)
@@ -197,9 +164,6 @@ function M.set(buf, keys)
   map('q', function()
     keys.close()
   end, 'close')
-  map('<CR>', function()
-    M.goto_source(keys.before_jump)
-  end, 'jump to source line')
   map('gf', function()
     local view = render.view_of(buf)
     local path, lnum = nil, nil

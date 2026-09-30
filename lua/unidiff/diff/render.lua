@@ -41,8 +41,6 @@ end
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
 --- @field mixed boolean? staged and unstaged changes in one view; see unidiff.diff.mixed
---- @field historical boolean? the versions compared are both committed, so the
----        line numbers are not the working tree's
 --- @field header_rows integer? how many rows at the top introduce the view rather
 ---        than belong to a file: a commit's message and stat. They fold as one,
 ---        as does each run of `folded` lines.

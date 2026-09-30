@@ -41,14 +41,14 @@ require('unidiff').open_all({ rev = 'main' })
 
 Inside the diff buffer:
 
-| key    | action              |
-| ------ | ------------------- |
-| `]h`   | next hunk           |
-| `[h`   | previous hunk       |
-| `]f`   | next file           |
-| `[f`   | previous file       |
-| `<CR>` | jump to source line |
-| `q`    | close               |
+| key  | action                     |
+| ---- | -------------------------- |
+| `]h` | next hunk                  |
+| `[h` | previous hunk              |
+| `]f` | next file                  |
+| `[f` | previous file              |
+| `gf` | open the file at this line |
+| `q`  | close                      |
 
 ## How it works
 
@@ -150,8 +150,7 @@ no one message and shows no header.
 
 A commit row states its own sha and subject, so yanking one gives something that
 names the commit elsewhere. Two keys mean less there and say so rather than
-acting: `s` and `u` have nothing to stage, and `<CR>` in the diff has no
-working-tree line to jump to, because the line numbers are the commit's.
+acting: `s` and `u` have nothing to stage.
 
 `<CR>` on a commit goes one level in: the pane is replaced by the files that
 commit changed, and selecting one shows that file's diff by itself. The
@@ -180,7 +179,7 @@ history.
 
 | key         | in the files pane | in the commits pane  | in the diff                   |
 | ----------- | ----------------- | -------------------- | ----------------------------- |
-| `<CR>`      | focus the diff    | look into the commit | jump to the source line       |
+| `<CR>`      | focus the diff    | look into the commit |                               |
 | `<BS>`      |                   | back out of it       |                               |
 | `m`         |                   | mark, for a range    |                               |
 | `gw`        | ignore whitespace | ignore whitespace    | ignore whitespace             |
@@ -189,7 +188,6 @@ history.
 | `S` / `U`   |                   |                      | stage / unstage this hunk     |
 | `]f` / `[f` |                   |                      | next / previous file          |
 | `]h` / `[h` |                   |                      | next / previous hunk          |
-| `o`         | edit the file     |                      |                               |
 | `gf`        | open the file     | open the file        | open the file at this line    |
 | `R`         | re-read           | re-read              |                               |
 | `q`         | close             | close                | close                         |

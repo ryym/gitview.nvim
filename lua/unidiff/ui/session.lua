@@ -303,9 +303,6 @@ local function show_commit(s, commit, index)
     render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
     return
   end
-  -- Its line numbers are the range's, not the working tree's, so jumping to the
-  -- source would land on whatever now occupies that line.
-  view.historical = true
   view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), range_note(s, range, commit))
   -- A range between two commits has no one message to show.
   if vim.deep_equal(range, git.commit_range(commit)) then
@@ -345,7 +342,6 @@ local function show_commit_file(s, index)
     render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
     return
   end
-  view.historical = true
   view.note = note_of(s)
   render.draw(s.diff_buf, view)
 end
@@ -835,23 +831,6 @@ function M.close(s)
   end
 end
 
---- Open the file under the cursor in place of the session.
---- @param s unidiff.Session
-function M.edit_entry(s)
-  local row = vim.api.nvim_win_get_cursor(s.files_win)[1]
-  local entry = list.entry_at(s.files_buf, row)
-  if not entry then
-    return
-  end
-  local path = vim.fs.joinpath(s.root, entry.path)
-  if vim.fn.filereadable(path) == 0 then
-    util.warn(('%s is not in the working tree'):format(entry.path))
-    return
-  end
-  M.close(s)
-  vim.cmd.edit(vim.fn.fnameescape(path))
-end
-
 --- Open a file of the working tree in the tab page the session was opened from,
 --- leaving the session as it is.
 ---
@@ -1086,9 +1065,6 @@ local function set_files_keymaps(s)
   map('u', function()
     apply_to_selected(s, stage.unstage)
   end, 'unstage the file under the cursor')
-  map('o', function()
-    M.edit_entry(s)
-  end, 'edit the file under the cursor')
   set_shared_keymaps(s, s.files_buf)
 end
 
@@ -1158,9 +1134,6 @@ local function set_diff_keymaps(s)
       local kind = t and t.kind == 'commit_file' and 'commit_file' or 'file'
       select_nth(s, kind, (t and t.index or 1) + dir)
       vim.api.nvim_set_current_win((pane_of(s, kind)))
-    end,
-    before_jump = function()
-      M.close(s)
     end,
     open_file = function(path, lnum)
       M.open_file(s, path, lnum)

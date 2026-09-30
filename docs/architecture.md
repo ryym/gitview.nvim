@@ -161,9 +161,9 @@ Three things follow from both sides being committed:
   from the object database, in one `git cat-file --batch` as everything else
   does. The working tree is not one of the versions being compared, and may no
   longer have the file.
-- **The view is marked `historical`,** and `<CR>` refuses to jump from it. Its
-  line numbers name lines of the commit, so jumping would land on whatever now
-  occupies that line, or on a file that is no longer there.
+- **Its line numbers are the commit's.** `gf` still opens the file at the line
+  a row names, which is close to where it now is rather than on it; see
+  [Opening a file](#opening-a-file).
 - **Nothing about it can be staged.** `s` and `u` refuse outright rather than
   relying on there being no index contents to write.
 
@@ -184,7 +184,7 @@ comparison as the commit alone, and gets the header too.
 - **It is buffer text**, for the same reasons as the file headers: it can be
   searched and yanked, and `virt_lines` cannot go above the first line anyway.
   Its kinds are outside `dlib.source_kinds`, so the gutter, highlight collection
-  and `<CR>` pass over it without being told about it.
+  and `gf` pass over it without being told about it.
 - **The stat is git's own**, from `git.commit_detail`, rather than counted from
   the view. It covers the binary files and renames the view leaves out, and it
   describes the commit rather than how the view is drawn, so `gw` leaves it
@@ -517,7 +517,7 @@ One row of the rendered buffer.
 
 `side` plus `row` plus `file` is what links a rendered row back to the ghost
 buffer its highlights come from. `old_lnum` / `new_lnum` are for display and for
-jumping to the source; they are not used for highlighting. `index_pos` is there
+opening the source; they are not used for highlighting. `index_pos` is there
 for writing the index back: see `diff/mixed` for how every row is placed against
 it, including the rows the index does not have.
 
@@ -552,7 +552,7 @@ one of the two versions:
 | `body`, `stat`           | a commit's header          | no               |
 
 `dlib.source_kinds` is the test for the first group. Anything that looks a line
-up in a ghost buffer, prints a gutter, or jumps to the source has to check it
+up in a ghost buffer, prints a gutter, or opens the source has to check it
 first, because the other kinds carry no `side`, `row` or `file`.
 
 ### Folded unchanged lines
