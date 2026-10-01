@@ -210,11 +210,11 @@ Some details keep it correct:
 ### The timing log
 
 The steps a reader waits on are timed all the time, and written to
-`stdpath('log')/unidiff-perf.log` when either of these is set:
+`stdpath('log')/gitview-perf.log` when either of these is set:
 
-- `vim.g.unidiff_perf`, which can be set in a running session with
-  `:let g:unidiff_perf = 1`
-- `UNIDIFF_PERF` in the environment, other than `0`
+- `vim.g.gitview_perf`, which can be set in a running session with
+  `:let g:gitview_perf = 1`
+- `GITVIEW_PERF` in the environment, other than `0`
 
 Off, each timed step costs one check of those two. Watching the log with
 `tail -f` while moving through the lists shows where a delay comes from:

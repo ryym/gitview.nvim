@@ -1,9 +1,9 @@
 --- Timings of the steps a reader waits on, written to a log for whoever is
---- working on the plugin. Off unless `vim.g.unidiff_perf` is set or `UNIDIFF_PERF`
+--- working on the plugin. Off unless `vim.g.gitview_perf` is set or `GITVIEW_PERF`
 --- is in the environment.
 ---
 --- Both are read on every call rather than once at startup, so that
---- `:let g:unidiff_perf = 1` in a running session turns it on. Off, a call costs
+--- `:let g:gitview_perf = 1` in a running session turns it on. Off, a call costs
 --- that one check.
 ---
 --- The lines go to a file rather than through `vim.notify`: one per cursor move
@@ -13,15 +13,15 @@ local M = {}
 
 --- Where the lines go. Replaceable, so that a test does not write into the
 --- developer's own log.
-M.file = vim.fs.joinpath(vim.fn.stdpath('log'), 'unidiff-perf.log')
+M.file = vim.fs.joinpath(vim.fn.stdpath('log'), 'gitview-perf.log')
 
 --- @return boolean
 function M.enabled()
-  local g = vim.g.unidiff_perf
+  local g = vim.g.gitview_perf
   if g ~= nil and g ~= false and g ~= 0 then
     return true
   end
-  local env = vim.env.UNIDIFF_PERF
+  local env = vim.env.GITVIEW_PERF
   return env ~= nil and env ~= '' and env ~= '0'
 end
 

@@ -9,14 +9,14 @@ local LOG = vim.fn.fnamemodify('.local/test-perf.log', ':p')
 --- @param fn fun()
 --- @return string[]
 local function logged(fn)
-  local file, g, env = perf.file, vim.g.unidiff_perf, vim.env.UNIDIFF_PERF
+  local file, g, env = perf.file, vim.g.gitview_perf, vim.env.GITVIEW_PERF
   vim.fn.mkdir(vim.fs.dirname(LOG), 'p')
   vim.fn.delete(LOG)
   perf.file = LOG
-  vim.g.unidiff_perf = nil
-  vim.env.UNIDIFF_PERF = nil
+  vim.g.gitview_perf = nil
+  vim.env.GITVIEW_PERF = nil
   local ok, err = pcall(fn)
-  perf.file, vim.g.unidiff_perf, vim.env.UNIDIFF_PERF = file, g, env
+  perf.file, vim.g.gitview_perf, vim.env.GITVIEW_PERF = file, g, env
   if not ok then
     error(err, 0)
   end
@@ -38,23 +38,23 @@ test('perf: writes nothing while off', function()
   )
 end)
 
-test('perf: vim.g.unidiff_perf turns it on', function()
+test('perf: vim.g.gitview_perf turns it on', function()
   eq(
     { 'a' },
     logged(function()
-      vim.g.unidiff_perf = 1
+      vim.g.gitview_perf = 1
       perf.start('a'):finish()
     end)
   )
 end)
 
-test('perf: UNIDIFF_PERF turns it on, unless it is 0', function()
+test('perf: GITVIEW_PERF turns it on, unless it is 0', function()
   eq(
     { 'a' },
     logged(function()
-      vim.env.UNIDIFF_PERF = '0'
+      vim.env.GITVIEW_PERF = '0'
       perf.start('skipped'):finish()
-      vim.env.UNIDIFF_PERF = '1'
+      vim.env.GITVIEW_PERF = '1'
       perf.start('a'):finish()
     end)
   )
@@ -64,7 +64,7 @@ test('perf: a span merges the fields given at start and at finish, once', functi
   eq(
     { 'a dropped=true gen=3 kind=commit' },
     logged(function()
-      vim.g.unidiff_perf = true
+      vim.g.gitview_perf = true
       local span = perf.start('a', { gen = 3, kind = 'commit' })
       span:finish({ dropped = true })
       span:finish()
@@ -75,7 +75,7 @@ end)
 test('perf: measure passes through every result, nils included', function()
   local a, b, c
   local lines = logged(function()
-    vim.g.unidiff_perf = true
+    vim.g.gitview_perf = true
     a, b, c = perf.measure('m', function(x)
       return x, nil, 'z'
     end, 'x')

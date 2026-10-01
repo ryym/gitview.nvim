@@ -99,10 +99,10 @@ test('resolves the git directory of a repository and of a worktree', function()
 
     -- A linked worktree has a `.git` file rather than a directory, and the
     -- directory it names is the one its index lives in.
-    local tree = repo.root .. '/../unidiff-test-worktree'
+    local tree = repo.root .. '/../gitview-test-worktree'
     vim.fn.delete(tree, 'rf')
     repo.git('worktree', 'add', '-q', tree)
-    eq(repo.root .. '/.git/worktrees/unidiff-test-worktree', git.dir(tree))
+    eq(repo.root .. '/.git/worktrees/gitview-test-worktree', git.dir(tree))
     vim.fn.delete(tree, 'rf')
   end)
 end)

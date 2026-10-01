@@ -4,7 +4,7 @@
 --- not written twice.
 local M = {}
 
-local PREFIX = 'unidiff: '
+local PREFIX = 'gitview: '
 
 --- @param msg string
 function M.info(msg)

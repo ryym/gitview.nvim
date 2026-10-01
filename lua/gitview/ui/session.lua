@@ -1312,7 +1312,7 @@ local function set_hooks()
   hooks_set = true
   vim.api.nvim_create_autocmd('TabEnter', {
     group = vim.api.nvim_create_augroup('gitview.ui.session', { clear = true }),
-    desc = 'unidiff: re-read the status tab page',
+    desc = 'gitview: re-read the status tab page',
     callback = function()
       local s = M.current()
       if s then
