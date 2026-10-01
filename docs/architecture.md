@@ -7,7 +7,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 
 | module               | responsibility                                          |
 | -------------------- | ------------------------------------------------------- |
-| `init.lua`           | The `:UnidiffStatus` command, and `setup()`             |
+| `init.lua`           | The `:GitView` command, and `setup()`                   |
 | `config.lua`         | Defaults, and the subset `vim.diff` takes               |
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `status.lua`         | What is uncommitted, as one entry per file               |
@@ -40,7 +40,7 @@ data, so assembling a view looks nothing up for itself.
 
 ## The status tab
 
-`:UnidiffStatus` opens a tab page that outlives the moment it was opened in. A
+`:GitView` opens a tab page that outlives the moment it was opened in. A
 session keeps its repository root, its entries and the tail of the history, so
 that all of them can be re-read — which is what lets it follow a repository that
 moves on while it is open.

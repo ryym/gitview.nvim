@@ -6,10 +6,10 @@ local M = {}
 --- @field context integer unchanged lines left open around each hunk
 --- @field algorithm string vim.diff() algorithm
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
---- @field ignore_whitespace boolean where a diff starts out; `:UnidiffStatus`
+--- @field ignore_whitespace boolean where a diff starts out; `:GitView`
 ---        can turn it on and off while it is open
---- @field list_width integer columns for the file list in `:UnidiffStatus`
---- @field commit_count integer how many recent commits `:UnidiffStatus` lists
+--- @field list_width integer columns for the file list in `:GitView`
+--- @field commit_count integer how many recent commits `:GitView` lists
 --- @field commit_ratio number share of the sidebar height the commit list takes
 --- @field no_highlight string[] filetypes shown without syntax highlighting
 

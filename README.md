@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > **This README is out of date.** `:Unidiff`, `:UnidiffAll` and `:UnidiffMixed`
-> have been removed; `:UnidiffStatus` is now the only entry point, and every
+> have been removed; `:GitView` is now the only entry point, and every
 > feature is offered inside the tab page it opens. The sections below still
 > describe the old commands. [docs/](docs/) is up to date.
 
@@ -25,7 +25,7 @@ works.
 
 :UnidiffMixed     " experimental: staged and unstaged changes in one view
 
-:UnidiffStatus    " work in progress: uncommitted changes, and recent commits
+:GitView          " work in progress: uncommitted changes, and recent commits
 ```
 
 ```lua
@@ -114,7 +114,7 @@ How the three versions are merged is described in
 
 ### The status tab (work in progress)
 
-`:UnidiffStatus` opens a tab with a sidebar on the left and the diff on the
+`:GitView` opens a tab with a sidebar on the left and the diff on the
 right. The sidebar is split in two: the uncommitted changes above, the recent
 commits below. Moving the cursor in either draws whatever it lands on, and moving
 between the two panes switches which list the diff follows.
@@ -203,7 +203,7 @@ compared too, as additions, which `git diff` itself would leave out.
 | `R`         | re-read           | re-read              |                               |
 | `q`         | close             | close                | close                         |
 
-`gf` opens the file in the tab page `:UnidiffStatus` was run from, and leaves the
+`gf` opens the file in the tab page `:GitView` was run from, and leaves the
 session open to come back to. From the diff it lands on the line under the
 cursor; a deleted line lands on the line now in its place. A commit's line
 numbers are the commit's, so there it lands near the line rather than on it.
@@ -237,7 +237,7 @@ context, taken from the index, so staging the rows on screen would write that
 version back and leave the file still modified. `s` and `u` in the files pane are
 unaffected — they run `git add`, which takes the file as it is.
 
-The toggle belongs to `:UnidiffStatus`. The other commands honour the configured
+The toggle belongs to `:GitView`. The other commands honour the configured
 value but have no key for it.
 
 ```lua

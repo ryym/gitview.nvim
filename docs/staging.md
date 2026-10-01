@@ -301,7 +301,7 @@ view will need anyway, so both are one piece of work.
 
 ### Ignoring whitespace and the rows disagree
 
-`:UnidiffStatus` can be told to stop counting lines that differ only in
+`:GitView` can be told to stop counting lines that differ only in
 whitespace as changed. A line folded away by that is drawn as a `context` row,
 and a mixed view reads context from the index — so the row shows the index
 version while the working tree holds another.
