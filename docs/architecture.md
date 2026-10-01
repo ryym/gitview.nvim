@@ -119,10 +119,11 @@ lines, and nothing selected at all — are drawn by `render.notice`, which drops
 the view along with the text so that the gutter and winbar describe nothing
 rather than what was there before.
 
-The keys shared with a standalone diff buffer mean something different here:
-`q` gives up the session rather than one window, and `]f` moves the list's
-cursor rather than scrolling to the next file of a combined view. `diff/keymap`
-takes those as callbacks instead of branching on where it is used.
+Three keys in the diff act on the session rather than on the buffer: `q` gives
+up the whole session, `gf` opens the file as described below, and `]f` moves
+the list's cursor — except in a commit's or the working tree's diff, which holds
+every file and scrolls to the next one's header instead. `diff/keymap` takes
+those as callbacks so that it does not depend on the session.
 
 #### Opening a file
 

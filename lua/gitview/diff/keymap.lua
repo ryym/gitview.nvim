@@ -1,10 +1,9 @@
 --- What the keys do inside a diff buffer.
 ---
---- Three of them depend on what the buffer is shown in. A diff opened by a
---- command owns its tab page, so closing means closing that tab; the same
---- buffer inside the file list is one pane of something larger, and moving
---- between files means moving the list's cursor. The keys are the same either
---- way, so what they call is passed in rather than branched on here.
+--- Three of them depend on the session the buffer is a pane of: closing gives
+--- up the whole session, and moving between files may mean moving the list's
+--- cursor. What they call is passed in, so that this module does not depend on
+--- the session.
 local render = require('gitview.diff.render')
 local util = require('gitview.util')
 
@@ -129,25 +128,9 @@ function M.edit_at(path, lnum)
   vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(lnum, last)), 0 })
 end
 
---- What the keys do for a diff that owns the tab page it was opened in.
---- @return gitview.DiffKeys
-function M.tab_keys()
-  return {
-    close = function()
-      vim.cmd.quit()
-    end,
-    goto_file = M.jump_files,
-    open_file = function(path, lnum)
-      vim.cmd.tabclose()
-      M.edit_at(path, lnum)
-    end,
-  }
-end
-
 --- @param buf integer
---- @param keys? gitview.DiffKeys defaults to `tab_keys()`
+--- @param keys gitview.DiffKeys
 function M.set(buf, keys)
-  keys = vim.tbl_extend('force', M.tab_keys(), keys or {})
   local map = util.buf_mapper(buf)
   map(']h', function()
     M.jump(1, rows_of('hunk_rows'))
