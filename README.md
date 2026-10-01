@@ -1,14 +1,9 @@
 # gitview.nvim
 
-> [!WARNING]
-> **This README is out of date.** `:Unidiff`, `:UnidiffAll` and `:UnidiffMixed`
-> have been removed; `:GitView` is now the only entry point, and every
-> feature is offered inside the tab page it opens. The sections below still
-> describe the old commands. [docs/](docs/) is up to date.
-
-A GitHub-style unified diff view for Neovim: deleted and added lines in one
-column, both syntax highlighted, and the buffer is still just text you can
-select, yank and search.
+A Git view for Neovim: uncommitted changes and recent commits in a sidebar, and
+a GitHub-style unified diff beside it. Deleted and added lines share one column,
+both syntax highlighted, and the buffer is still just text you can select, yank
+and search.
 
 Requires Neovim 0.12+. Highlighting uses Tree-sitter where a parser exists and
 falls back to legacy `:syntax` otherwise, so any language Neovim can colorize
@@ -17,38 +12,19 @@ works.
 ## Usage
 
 ```vim
-:Unidiff          " diff the current buffer against HEAD
-:Unidiff HEAD~3   " ...or against any revision
-
-:UnidiffAll       " every changed file, in one buffer
-:UnidiffAll main  " ...against any revision
-
-:UnidiffMixed     " experimental: staged and unstaged changes in one view
-
-:GitView          " work in progress: uncommitted changes, and recent commits
+:GitView    " open a tab page with the sidebar and the diff
 ```
+
+`:GitView` is the only command; everything else is done inside the tab page it
+opens, described under [The tab page](#the-tab-page) below.
 
 ```lua
 require('gitview').setup({
   context = 3,             -- unchanged lines left open around each hunk
-  rev = 'HEAD',            -- default revision to diff against
   algorithm = 'histogram', -- vim.diff() algorithm
   linematch = 0,           -- see "Agreement with git diff" below
 })
-require('gitview').open({ rev = 'main', context = 5 })
-require('gitview').open_all({ rev = 'main' })
 ```
-
-Inside the diff buffer:
-
-| key  | action                     |
-| ---- | -------------------------- |
-| `]h` | next hunk                  |
-| `[h` | previous hunk              |
-| `]f` | next file                  |
-| `[f` | previous file              |
-| `gf` | open the file at this line |
-| `q`  | close                      |
 
 ## How it works
 
@@ -63,8 +39,9 @@ gutter.
 
 ### Several files in one buffer
 
-`:UnidiffAll` lays every changed file's diff out end to end in one buffer, each
-file highlighted with its own language.
+A commit, a range of commits, or the working tree as a whole is shown with every
+changed file's diff laid out end to end in one buffer, each file highlighted with
+its own language.
 
 - The new side is a **loaded buffer's contents** when the file is open, and the
   file on disk otherwise, so unsaved edits show up.
@@ -73,11 +50,11 @@ file highlighted with its own language.
   have no lines to show. They are counted in the winbar rather than dropped
   silently.
 
-### Staged and unstaged in one view (experimental)
+### Staged and unstaged in one view
 
-`:UnidiffMixed` shows every uncommitted change as one diff from HEAD to the
-working tree, with each changed line marked by whether it is staged. It is
-read-only; nothing is staged or unstaged from the view.
+Uncommitted changes are shown as one diff from HEAD to the working tree, with
+each changed line marked by whether it is staged. Staging from this view is
+described under [The tab page](#the-tab-page).
 
 Untracked files are included, every line of them an unstaged addition. Binary
 ones are left out, as they are elsewhere; since git never diffs an untracked
@@ -95,7 +72,7 @@ are those of HEAD and the working tree, so a line in neither has none.
 | `I-`   | index            | staged addition, removed from work tree    |
 
 - **`S`** lines have faded colors: they are what a commit would record now.
-- **Unmarked** lines look as they do in `:UnidiffAll`: they are what a commit
+- **Unmarked** lines look as they do in a commit's diff: they are what a commit
   would still leave out.
 - **`I-`** is the one to watch for. The line would be committed, yet the
   working tree no longer has it. It appears when a staged line is edited again
@@ -112,7 +89,7 @@ because the index differs from both:
 How the three versions are merged is described in
 [docs/architecture.md](docs/architecture.md#mixed-view).
 
-### The status tab (work in progress)
+### The tab page
 
 `:GitView` opens a tab with a sidebar on the left and the diff on the
 right. The sidebar is split in two: the uncommitted changes above, the recent
@@ -137,8 +114,9 @@ gives something pasteable.
 #### Recent commits
 
 The lower pane lists the most recent commits, and putting the cursor on one draws
-what that commit changed. It is the ordinary diff of `:UnidiffAll`, not a mixed
-view: both sides are committed, so nothing there is staged or unstaged. A merge
+what that commit changed. It is the ordinary diff of
+[several files in one buffer](#several-files-in-one-buffer), not a mixed view:
+both sides are committed, so nothing there is staged or unstaged. A merge
 is compared with its first parent, the way `git show` does, and the winbar says
 so.
 
@@ -237,9 +215,6 @@ context, taken from the index, so staging the rows on screen would write that
 version back and leave the file still modified. `s` and `u` in the files pane are
 unaffected — they run `git add`, which takes the file as it is.
 
-The toggle belongs to `:GitView`. The other commands honour the configured
-value but have no key for it.
-
 ```lua
 require('gitview').setup({
   list_width = 30,          -- columns for the sidebar
@@ -286,8 +261,16 @@ Both sides of the trade-off are measured in
 The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
 `GitViewStagedAddText`, `GitViewStagedDeleteText` and `GitViewStagedSign`.
 
-They default to background-only colors derived from `DiffAdd`/`DiffDelete`, are
-defined the first time a diff is opened, and are redefined on `ColorScheme`.
+File headers and a commit's header use `GitViewFileRule`,
+`GitViewCommitSubject`, `GitViewCommitAuthor`, `GitViewStatAdd` and
+`GitViewStatDelete`.
+
+The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
+`GitViewStatusUntracked`, `GitViewStatusHeader` and `GitViewStatusMark`.
+
+The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`, and
+the rest link to standard groups. All are defined the first time they are
+needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
 carries configuration, and the colors do not depend on it.
 
