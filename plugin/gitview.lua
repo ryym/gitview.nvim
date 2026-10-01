@@ -4,7 +4,7 @@ end
 vim.g.loaded_gitview = true
 
 vim.api.nvim_create_user_command('GitView', function()
-  require('gitview').status()
+  require('gitview').open()
 end, {
   desc = 'Open uncommitted changes and recent commits in a tab page',
 })

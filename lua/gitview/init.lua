@@ -10,7 +10,7 @@ end
 
 --- Open a tab page listing uncommitted changes and recent commits.
 --- @return gitview.Session?
-function M.status()
+function M.open()
   return session.open()
 end
 
