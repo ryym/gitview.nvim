@@ -16,7 +16,7 @@ end
 --- Open a session against a fresh repository, run `fn`, then close it.
 ---
 --- `:lcd` into the repository is what makes the session find it, the same way
---- the commands do for the buffer they were called from.
+--- `:GitView` does when the current buffer has no file.
 --- @param setup fun(repo: gitview.TestRepo)
 --- @param fn fun(s: gitview.Session, repo: gitview.TestRepo)
 --- @param opts? {unsettled?:boolean} `unsettled` to start `fn` while the status

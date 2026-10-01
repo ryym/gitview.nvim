@@ -1,5 +1,5 @@
---- Experimental: one unified diff of HEAD -> working tree in which every changed
---- line also says whether that change is staged.
+--- One unified diff of HEAD -> working tree in which every changed line also
+--- says whether that change is staged.
 ---
 --- The three versions are aligned on the index. HEAD -> index gives the staged
 --- changes and index -> working tree the unstaged ones, and every index line is

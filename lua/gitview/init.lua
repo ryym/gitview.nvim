@@ -8,7 +8,7 @@ function M.setup(opts)
   config.set(opts)
 end
 
---- Open a tab page listing every uncommitted change.
+--- Open a tab page listing uncommitted changes and recent commits.
 --- @return gitview.Session?
 function M.status()
   return session.open()
