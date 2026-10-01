@@ -74,7 +74,7 @@ end)
 test('each file is highlighted with its own language', function()
   vim.cmd('syntax enable')
   local buf, view = build({ LUA, PERL })
-  local ns = vim.api.nvim_get_namespaces()['unidiff.syntax']
+  local ns = vim.api.nvim_get_namespaces()['gitview.syntax']
   local by_file = { {}, {} }
   for i, l in ipairs(view.lines) do
     for _, m in ipairs(
@@ -119,7 +119,7 @@ end)
 
 test('headers and gaps are highlighted as whole lines', function()
   local buf, view = build({ LUA, PERL })
-  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
+  local ns = vim.api.nvim_get_namespaces()['gitview.diff']
   local groups = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     eq(nil, m[4].virt_lines, 'no virtual lines are left')
@@ -154,7 +154,7 @@ end)
 
 test("a rule runs through every file's header, gutter included", function()
   local buf, view = build({ LUA, PERL })
-  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
+  local ns = vim.api.nvim_get_namespaces()['gitview.diff']
   local rules = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     if m[4].virt_text_pos == 'eol' then
@@ -188,7 +188,7 @@ test('each header ends with how many lines its file adds and deletes', function(
     new = { 'local x = 1', 'return x' },
   }
   local buf, view = build({ LUA, only_add })
-  local ns = vim.api.nvim_get_namespaces()['unidiff.diff']
+  local ns = vim.api.nvim_get_namespaces()['gitview.diff']
   local stats = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     if m[4].virt_text_pos == 'right_align' then

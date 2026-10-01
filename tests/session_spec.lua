@@ -1875,7 +1875,7 @@ end)
 test('session: the stat graph is colored as git colors it', function()
   with_session(described_history, function(s)
     show_commit(s, 1)
-    local ns = vim.api.nvim_create_namespace('unidiff.diff')
+    local ns = vim.api.nvim_create_namespace('gitview.diff')
     -- ' a.lua | 2 +-' is row 8
     local marks = vim.api.nvim_buf_get_extmarks(s.diff_buf, ns, { 7, 0 }, { 7, -1 }, {
       details = true,

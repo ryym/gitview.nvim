@@ -1311,7 +1311,7 @@ local function set_hooks()
   end
   hooks_set = true
   vim.api.nvim_create_autocmd('TabEnter', {
-    group = vim.api.nvim_create_augroup('unidiff.ui.session', { clear = true }),
+    group = vim.api.nvim_create_augroup('gitview.ui.session', { clear = true }),
     desc = 'unidiff: re-read the status tab page',
     callback = function()
       local s = M.current()
@@ -1393,7 +1393,7 @@ end
 --- The name of the augroup holding one session's own autocommands.
 --- @param s gitview.Session
 local function augroup_name(s)
-  return 'unidiff.ui.session.' .. s.tab
+  return 'gitview.ui.session.' .. s.tab
 end
 
 --- Drop everything the session holds: its registration, its watcher, its

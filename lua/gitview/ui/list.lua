@@ -170,7 +170,7 @@ end
 --- Status letters are foreground colors, unlike the diff backgrounds, so they
 --- are taken from the groups Neovim already defines for exactly this: `Added`,
 --- `Changed` and `Comment`. Defining any of them yourself takes precedence.
-local highlights = util.highlights('unidiff.ui.highlights', function(set)
+local highlights = util.highlights('gitview.ui.highlights', function(set)
   set('GitViewStatusStaged', { link = 'Added' })
   set('GitViewStatusUnstaged', { link = 'Changed' })
   set('GitViewStatusUntracked', { link = 'Comment' })
@@ -246,7 +246,7 @@ end
 --- @return integer bufnr
 function M.create_buffer()
   M.setup_highlights()
-  return util.scratch_buffer('unidiffstatus', states)
+  return util.scratch_buffer('gitview-list', states)
 end
 
 --- @param buf integer from `create_buffer`

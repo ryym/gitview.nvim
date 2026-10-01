@@ -7,8 +7,8 @@ local vlib = require('gitview.diff.view')
 
 local M = {}
 
-local ns_syntax = vim.api.nvim_create_namespace('unidiff.syntax')
-local ns_diff = vim.api.nvim_create_namespace('unidiff.diff')
+local ns_syntax = vim.api.nvim_create_namespace('gitview.syntax')
+local ns_diff = vim.api.nvim_create_namespace('gitview.diff')
 
 --- Kept off `M` on purpose. The window options call into this module as
 --- `v:lua.require(...).fn()`, which converts `M` into a Vim value on every call:
@@ -48,7 +48,7 @@ end
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
 --- also means the colorscheme is loaded by the time `DiffAdd` is read.
-local highlights = util.highlights('unidiff.highlights', function(set)
+local highlights = util.highlights('gitview.highlights', function(set)
   --- Diff groups are taken background-only. Colorschemes give DiffAdd/DiffDelete
   --- a foreground as well, and a line highlight that carries one would repaint
   --- every character, erasing the syntax colors we just replayed.
@@ -176,7 +176,7 @@ end
 --- keystroke of a file list.
 --- @return integer bufnr
 function M.create_buffer()
-  return util.scratch_buffer('unidiff', views)
+  return util.scratch_buffer('gitview-diff', views)
 end
 
 --- What names a fold across views: `header` for a commit's header, and the

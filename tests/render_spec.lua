@@ -92,7 +92,7 @@ test('a deleted line inside a long string is still highlighted as a string', fun
   end
   assert(row, 'expected a deleted line inside the long string')
   local groups = {}
-  for _, m in ipairs(marks(buf, 'unidiff.syntax', row)) do
+  for _, m in ipairs(marks(buf, 'gitview.syntax', row)) do
     groups[#groups + 1] = m[4].hl_group
   end
   assert(
@@ -113,7 +113,7 @@ test('diff background is a range mark, not line_hl_group', function()
     end
   end
   local found
-  for _, m in ipairs(marks(buf, 'unidiff.diff', row)) do
+  for _, m in ipairs(marks(buf, 'gitview.diff', row)) do
     if m[4].hl_group == 'GitViewAdd' then
       found = m[4]
     end
@@ -129,7 +129,7 @@ test('word-level marks outrank the line background', function()
   local line_prio, word_prio
   for i, l in ipairs(view.lines) do
     if l.kind == 'add' and l.text:find('a, b, c') then
-      for _, m in ipairs(marks(buf, 'unidiff.diff', i - 1)) do
+      for _, m in ipairs(marks(buf, 'gitview.diff', i - 1)) do
         if m[4].hl_group == 'GitViewAdd' then
           line_prio = m[4].priority
         elseif m[4].hl_group == 'GitViewAddText' then
@@ -147,8 +147,8 @@ test('syntax marks sit above the line background and below the word marks', func
   local syn, line_prio, word_prio
   for i, l in ipairs(view.lines) do
     if l.kind == 'add' and l.text:find('a, b, c') then
-      syn = marks(buf, 'unidiff.syntax', i - 1)[1][4].priority
-      for _, m in ipairs(marks(buf, 'unidiff.diff', i - 1)) do
+      syn = marks(buf, 'gitview.syntax', i - 1)[1][4].priority
+      for _, m in ipairs(marks(buf, 'gitview.diff', i - 1)) do
         if m[4].hl_group == 'GitViewAdd' then
           line_prio = m[4].priority
         elseif m[4].hl_group == 'GitViewAddText' then
@@ -164,7 +164,7 @@ end)
 test('highlight ranges never exceed the line they are on', function()
   local buf, view = build()
   for i, l in ipairs(view.lines) do
-    for _, m in ipairs(marks(buf, 'unidiff.syntax', i - 1)) do
+    for _, m in ipairs(marks(buf, 'gitview.syntax', i - 1)) do
       assert(m[4].end_col <= #l.text, ('row %d: end_col %d > %d'):format(i, m[4].end_col, #l.text))
     end
   end
@@ -373,7 +373,7 @@ test('the rows folded away get their syntax too, after the rest', function()
   end
   assert(row, 'expected the fixture to fold the last line away')
   local done = vim.wait(1000, function()
-    return #marks(buf, 'unidiff.syntax', row) > 0
+    return #marks(buf, 'gitview.syntax', row) > 0
   end)
   assert(done, 'the folded row was never highlighted')
   eq(nil, view.files[1].old_buf, 'and the ghost buffers are freed once it is')
@@ -388,7 +388,7 @@ test('colors are defined by rendering, not by setup()', function()
   -- Reproduce a session where setup() was never called: drop the ColorScheme
   -- hook, then load a colorscheme, which clears every highlight group. Only
   -- opening a diff should be needed to get the colors back.
-  vim.api.nvim_create_augroup('unidiff.highlights', { clear = true })
+  vim.api.nvim_create_augroup('gitview.highlights', { clear = true })
   render.ensure_highlights_reset()
   vim.cmd.colorscheme('default')
   for _, name in ipairs(COLOR_GROUPS) do
@@ -412,7 +412,7 @@ end)
 -- groups are the evidence, since a plain `default link` survives on its own and
 -- so cannot tell whether the definition pass ran.
 test('a notice defines the colors as much as a diff does', function()
-  vim.api.nvim_create_augroup('unidiff.highlights', { clear = true })
+  vim.api.nvim_create_augroup('gitview.highlights', { clear = true })
   render.ensure_highlights_reset()
   vim.cmd.colorscheme('default')
   for _, name in ipairs(COLOR_GROUPS) do
@@ -513,7 +513,7 @@ test('draw replaces the previous view entirely', function()
   eq({ 'local z = 1' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
   eq(view, render.view_of(buf))
   -- Marks of the discarded view would sit on rows that no longer exist.
-  for _, ns in ipairs({ 'unidiff.syntax', 'unidiff.diff' }) do
+  for _, ns in ipairs({ 'gitview.syntax', 'gitview.diff' }) do
     local id = vim.api.nvim_get_namespaces()[ns]
     for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, id, 0, -1, {})) do
       assert(m[2] == 0, ns .. ' kept a mark on row ' .. m[2])
@@ -564,7 +564,7 @@ test('a large view is shown first and its syntax filled in afterwards', function
   local ghosts = { view.files[1].old_buf, view.files[3].new_buf }
   local buf = render.render(view)
   eq(#view.lines, vim.api.nvim_buf_line_count(buf))
-  local syntax = vim.api.nvim_get_namespaces()['unidiff.syntax']
+  local syntax = vim.api.nvim_get_namespaces()['gitview.syntax']
   eq({}, vim.api.nvim_buf_get_extmarks(buf, syntax, 0, -1, {}))
 
   assert(vim.wait(5000, function()
@@ -572,7 +572,7 @@ test('a large view is shown first and its syntax filled in afterwards', function
   end), 'syntax was never filled in')
   -- every file got its colors, not only the first
   for _, f in ipairs(view.files) do
-    assert(#marks(buf, 'unidiff.syntax', f.row) > 0, 'no syntax below ' .. f.label)
+    assert(#marks(buf, 'gitview.syntax', f.row) > 0, 'no syntax below ' .. f.label)
   end
   for _, b in ipairs(ghosts) do
     eq(false, vim.api.nvim_buf_is_valid(b))
@@ -588,7 +588,7 @@ test('a view replaced before its syntax is filled in leaves nothing behind', fun
   assert(vim.wait(5000, function()
     return disposed(view)
   end), 'the replaced view was never freed')
-  local syntax = vim.api.nvim_get_namespaces()['unidiff.syntax']
+  local syntax = vim.api.nvim_get_namespaces()['gitview.syntax']
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, syntax, 0, -1, {})) do
     assert(m[2] == 0, 'the replaced view colored row ' .. m[2])
   end
