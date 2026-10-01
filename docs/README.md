@@ -1,6 +1,6 @@
 # Developer documentation
 
-Notes for working on unidiff.nvim. [The main README](../README.md) covers
+Notes for working on gitview.nvim. [The main README](../README.md) covers
 installation, commands and configuration; nothing here is repeated there.
 
 | document                           | what it covers                                                                                |

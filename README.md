@@ -1,4 +1,4 @@
-# unidiff.nvim
+# gitview.nvim
 
 > [!WARNING]
 > **This README is out of date.** `:Unidiff`, `:UnidiffAll` and `:UnidiffMixed`
