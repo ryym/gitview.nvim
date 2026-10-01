@@ -280,11 +280,11 @@ Both sides of the trade-off are measured in
 
 ### Highlight groups
 
-`UnidiffAdd`, `UnidiffDelete`, `UnidiffAddText`, `UnidiffDeleteText`,
-`UnidiffOldLnum`, `UnidiffNewLnum`, `UnidiffSeparator`, `UnidiffFileHeader`.
+`GitViewAdd`, `GitViewDelete`, `GitViewAddText`, `GitViewDeleteText`,
+`GitViewOldLnum`, `GitViewNewLnum`, `GitViewSeparator`, `GitViewFileHeader`.
 
-The mixed view adds `UnidiffStagedAdd`, `UnidiffStagedDelete`,
-`UnidiffStagedAddText`, `UnidiffStagedDeleteText` and `UnidiffStagedSign`.
+The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
+`GitViewStagedAddText`, `GitViewStagedDeleteText` and `GitViewStagedSign`.
 
 They default to background-only colors derived from `DiffAdd`/`DiffDelete`, are
 defined the first time a diff is opened, and are redefined on `ColorScheme`.

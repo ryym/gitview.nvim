@@ -127,7 +127,7 @@ test('headers and gaps are highlighted as whole lines', function()
   end
   for i, l in ipairs(view.lines) do
     if l.kind == 'file' then
-      eq('UnidiffFileHeader', groups[i], 'row ' .. i)
+      eq('GitViewFileHeader', groups[i], 'row ' .. i)
     end
   end
 end)
@@ -158,7 +158,7 @@ test("a rule runs through every file's header, gutter included", function()
   local rules = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     if m[4].virt_text_pos == 'eol' then
-      eq('UnidiffFileRule', m[4].virt_text[1][2])
+      eq('GitViewFileRule', m[4].virt_text[1][2])
       rules[#rules + 1] = m[2] + 1
     end
   end
@@ -174,7 +174,7 @@ test("a rule runs through every file's header, gutter included", function()
   render.configure_window(win, buf)
   vim.g.statusline_winid = win
   vim.v.lnum = view.files[2].row
-  eq('%#UnidiffFileRule#' .. ('─'):rep(11) .. ' ', render.statuscolumn())
+  eq('%#GitViewFileRule#' .. ('─'):rep(11) .. ' ', render.statuscolumn())
   vim.v.lnum = view.files[2].row - 1
   eq((' '):rep(12), render.statuscolumn(), 'the blank line in front is left blank')
   vim.api.nvim_win_close(win, true)
@@ -198,12 +198,12 @@ test('each header ends with how many lines its file adds and deletes', function(
   eq({
     [view.files[1].row] = {
       { ' ' },
-      { '+1', 'UnidiffStatAdd' },
+      { '+1', 'GitViewStatAdd' },
       { ' ' },
-      { '-1', 'UnidiffStatDelete' },
+      { '-1', 'GitViewStatDelete' },
     },
     -- a count of zero is left out
-    [view.files[2].row] = { { ' ' }, { '+1', 'UnidiffStatAdd' } },
+    [view.files[2].row] = { { ' ' }, { '+1', 'GitViewStatAdd' } },
   }, stats)
 end)
 

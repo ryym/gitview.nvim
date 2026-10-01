@@ -57,7 +57,7 @@ M.NO_COMMITS_NOTICE = 'no commits yet'
 
 --- Drawn in the gutter of the marked commit. A commit row has no status letters
 --- of its own, so the mark has the width to itself.
-local MARK_GUTTER = '%#UnidiffStatusMark#>  '
+local MARK_GUTTER = '%#GitViewStatusMark#>  '
 
 --- What `mark` and `ListScope.at` hold for the working-tree row, which has no
 --- sha. It cannot be mistaken for one, since a sha is hexadecimal.
@@ -83,9 +83,9 @@ local BLANK_GUTTER = '   '
 --- @return string
 local function gutter_of(e)
   if status.is_untracked(e) then
-    return '%#UnidiffStatusUntracked#?? '
+    return '%#GitViewStatusUntracked#?? '
   end
-  return ('%%#UnidiffStatusStaged#%s%%#UnidiffStatusUnstaged#%s '):format(
+  return ('%%#GitViewStatusStaged#%s%%#GitViewStatusUnstaged#%s '):format(
     e.index_status,
     e.worktree_status
   )
@@ -111,7 +111,7 @@ local function scope_rows(scope)
       text = status.change_label(c),
       -- One letter, in the color the list already uses for a settled change,
       -- padded to the width the two letters of an entry take.
-      gutter = ('%%#UnidiffStatusStaged#%s  '):format(c.status),
+      gutter = ('%%#GitViewStatusStaged#%s  '):format(c.status),
       target = { kind = 'commit_file', index = i },
     }
   end
@@ -171,11 +171,11 @@ end
 --- are taken from the groups Neovim already defines for exactly this: `Added`,
 --- `Changed` and `Comment`. Defining any of them yourself takes precedence.
 local highlights = util.highlights('unidiff.ui.highlights', function(set)
-  set('UnidiffStatusStaged', { link = 'Added' })
-  set('UnidiffStatusUnstaged', { link = 'Changed' })
-  set('UnidiffStatusUntracked', { link = 'Comment' })
-  set('UnidiffStatusHeader', { link = 'Title' })
-  set('UnidiffStatusMark', { link = 'Special' })
+  set('GitViewStatusStaged', { link = 'Added' })
+  set('GitViewStatusUnstaged', { link = 'Changed' })
+  set('GitViewStatusUntracked', { link = 'Comment' })
+  set('GitViewStatusHeader', { link = 'Title' })
+  set('GitViewStatusMark', { link = 'Special' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -240,7 +240,7 @@ function M.winbar()
       text = text .. '   (history changed)'
     end
   end
-  return '%#UnidiffStatusHeader#' .. util.escape_statusline(text)
+  return '%#GitViewStatusHeader#' .. util.escape_statusline(text)
 end
 
 --- @return integer bufnr

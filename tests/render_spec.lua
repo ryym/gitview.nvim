@@ -114,12 +114,12 @@ test('diff background is a range mark, not line_hl_group', function()
   end
   local found
   for _, m in ipairs(marks(buf, 'unidiff.diff', row)) do
-    if m[4].hl_group == 'UnidiffAdd' then
+    if m[4].hl_group == 'GitViewAdd' then
       found = m[4]
     end
     eq(nil, m[4].line_hl_group, 'line_hl_group must not be used')
   end
-  assert(found, 'no UnidiffAdd range mark')
+  assert(found, 'no GitViewAdd range mark')
   eq(true, found.hl_eol)
   eq(row + 1, found.end_row)
 end)
@@ -130,9 +130,9 @@ test('word-level marks outrank the line background', function()
   for i, l in ipairs(view.lines) do
     if l.kind == 'add' and l.text:find('a, b, c') then
       for _, m in ipairs(marks(buf, 'unidiff.diff', i - 1)) do
-        if m[4].hl_group == 'UnidiffAdd' then
+        if m[4].hl_group == 'GitViewAdd' then
           line_prio = m[4].priority
-        elseif m[4].hl_group == 'UnidiffAddText' then
+        elseif m[4].hl_group == 'GitViewAddText' then
           word_prio = m[4].priority
         end
       end
@@ -149,9 +149,9 @@ test('syntax marks sit above the line background and below the word marks', func
     if l.kind == 'add' and l.text:find('a, b, c') then
       syn = marks(buf, 'unidiff.syntax', i - 1)[1][4].priority
       for _, m in ipairs(marks(buf, 'unidiff.diff', i - 1)) do
-        if m[4].hl_group == 'UnidiffAdd' then
+        if m[4].hl_group == 'GitViewAdd' then
           line_prio = m[4].priority
-        elseif m[4].hl_group == 'UnidiffAddText' then
+        elseif m[4].hl_group == 'GitViewAddText' then
           word_prio = m[4].priority
         end
       end
@@ -332,7 +332,7 @@ test('a closed run reads as its first line and how many lines it holds', functio
   eq('end  3 lines ', text_of(chunks))
   -- the code keeps its syntax
   assert(chunks[1][2]:find('^@keyword'), vim.inspect(chunks[1]))
-  eq({ '  3 lines ', 'UnidiffSeparator' }, chunks[#chunks])
+  eq({ '  3 lines ', 'GitViewSeparator' }, chunks[#chunks])
 end)
 
 test('a closed run skips its blank lines and keeps the indent', function()
@@ -382,7 +382,7 @@ end)
 -- The groups whose colors we compute; the rest are plain `default link`s, which
 -- survive a colorscheme change on their own.
 local COLOR_GROUPS =
-  { 'UnidiffAdd', 'UnidiffDelete', 'UnidiffAddText', 'UnidiffDeleteText' }
+  { 'GitViewAdd', 'GitViewDelete', 'GitViewAddText', 'GitViewDeleteText' }
 
 test('colors are defined by rendering, not by setup()', function()
   -- Reproduce a session where setup() was never called: drop the ColorScheme
@@ -401,12 +401,12 @@ test('colors are defined by rendering, not by setup()', function()
     local h = vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false })
     assert(h.bg, name .. ' should carry a background color')
   end
-  for _, name in ipairs({ 'UnidiffSeparator', 'UnidiffFileHeader' }) do
+  for _, name in ipairs({ 'GitViewSeparator', 'GitViewFileHeader' }) do
     assert(next(vim.api.nvim_get_hl(0, { name = name })), name .. ' should be defined')
   end
 end)
 
--- A notice paints with `UnidiffSeparator`, so it is a first use of the groups
+-- A notice paints with `GitViewSeparator`, so it is a first use of the groups
 -- just as much as a diff is: a session whose first selection has no view to show
 -- would otherwise draw it against a group nothing had defined yet. The computed
 -- groups are the evidence, since a plain `default link` survives on its own and
@@ -433,9 +433,9 @@ test('add and delete backgrounds differ, and each differs from its word color', 
   local function bg(name)
     return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false }).bg
   end
-  assert(bg('UnidiffAdd') ~= bg('UnidiffDelete'), 'add and delete must be distinguishable')
-  assert(bg('UnidiffAdd') ~= bg('UnidiffAddText'), 'word highlight must stand out')
-  assert(bg('UnidiffDelete') ~= bg('UnidiffDeleteText'), 'word highlight must stand out')
+  assert(bg('GitViewAdd') ~= bg('GitViewDelete'), 'add and delete must be distinguishable')
+  assert(bg('GitViewAdd') ~= bg('GitViewAddText'), 'word highlight must stand out')
+  assert(bg('GitViewDelete') ~= bg('GitViewDeleteText'), 'word highlight must stand out')
 end)
 
 -- A colorscheme that leaves the terminal background showing through defines no
@@ -447,18 +447,18 @@ test('word colors stand out even when Normal has no background', function()
   local ok, err = pcall(function()
     -- The groups are defined with `default`, so an earlier test's values would
     -- survive `setup_highlights()` and hide what this one is measuring.
-    vim.cmd('hi clear UnidiffAddText')
-    vim.cmd('hi clear UnidiffDeleteText')
+    vim.cmd('hi clear GitViewAddText')
+    vim.cmd('hi clear GitViewDeleteText')
     render.setup_highlights()
     local function bg(name)
       return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false }).bg
     end
-    assert(bg('UnidiffAdd') ~= bg('UnidiffAddText'), 'word highlight must stand out')
-    assert(bg('UnidiffDelete') ~= bg('UnidiffDeleteText'), 'word highlight must stand out')
+    assert(bg('GitViewAdd') ~= bg('GitViewAddText'), 'word highlight must stand out')
+    assert(bg('GitViewDelete') ~= bg('GitViewDeleteText'), 'word highlight must stand out')
   end)
   vim.api.nvim_set_hl(0, 'Normal', normal)
-  vim.cmd('hi clear UnidiffAddText')
-  vim.cmd('hi clear UnidiffDeleteText')
+  vim.cmd('hi clear GitViewAddText')
+  vim.cmd('hi clear GitViewDeleteText')
   render.setup_highlights()
   assert(ok, err)
 end)
@@ -467,10 +467,10 @@ test('a colorscheme change puts the groups back', function()
   render.setup_highlights()
   vim.cmd.colorscheme('default')
   local after = vim.api.nvim_get_hl(0, {
-    id = vim.api.nvim_get_hl_id_by_name('UnidiffAdd'),
+    id = vim.api.nvim_get_hl_id_by_name('GitViewAdd'),
     link = false,
   })
-  assert(after.bg, 'UnidiffAdd should be redefined after :colorscheme')
+  assert(after.bg, 'GitViewAdd should be redefined after :colorscheme')
   eq(
     vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name('DiffAdd'), link = false }).bg,
     after.bg,

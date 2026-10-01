@@ -93,27 +93,27 @@ local highlights = util.highlights('unidiff.highlights', function(set)
   -- rather than a third, unrelated color.
   local add = bg_only('DiffAdd', '#20301e')
   local del = bg_only('DiffDelete', '#3a1f1c')
-  set('UnidiffAdd', add)
-  set('UnidiffDelete', del)
-  set('UnidiffAddText', scale(add, 1.4))
-  set('UnidiffDeleteText', scale(del, 1.4))
+  set('GitViewAdd', add)
+  set('GitViewDelete', del)
+  set('GitViewAddText', scale(add, 1.4))
+  set('GitViewDeleteText', scale(del, 1.4))
   -- Staged changes in a mixed view are the same hues, faded: they are settled,
   -- and what is still unstaged is what needs attention. The gutter marks them
   -- too, since 256-color terminals get no fading.
-  set('UnidiffStagedAdd', scale(add, 0.5))
-  set('UnidiffStagedDelete', scale(del, 0.5))
-  set('UnidiffStagedAddText', scale(add, 0.9))
-  set('UnidiffStagedDeleteText', scale(del, 0.9))
-  set('UnidiffStagedSign', { link = 'Special' })
-  set('UnidiffOldLnum', { link = 'LineNr' })
-  set('UnidiffNewLnum', { link = 'LineNr' })
-  set('UnidiffSeparator', { link = 'Folded' })
-  set('UnidiffFileHeader', { link = 'Title' })
-  set('UnidiffFileRule', { link = 'WinSeparator' })
-  set('UnidiffCommitSubject', { link = 'Title' })
-  set('UnidiffCommitAuthor', { link = 'Comment' })
-  set('UnidiffStatAdd', { link = 'Added' })
-  set('UnidiffStatDelete', { link = 'Removed' })
+  set('GitViewStagedAdd', scale(add, 0.5))
+  set('GitViewStagedDelete', scale(del, 0.5))
+  set('GitViewStagedAddText', scale(add, 0.9))
+  set('GitViewStagedDeleteText', scale(del, 0.9))
+  set('GitViewStagedSign', { link = 'Special' })
+  set('GitViewOldLnum', { link = 'LineNr' })
+  set('GitViewNewLnum', { link = 'LineNr' })
+  set('GitViewSeparator', { link = 'Folded' })
+  set('GitViewFileHeader', { link = 'Title' })
+  set('GitViewFileRule', { link = 'WinSeparator' })
+  set('GitViewCommitSubject', { link = 'Title' })
+  set('GitViewCommitAuthor', { link = 'Comment' })
+  set('GitViewStatAdd', { link = 'Added' })
+  set('GitViewStatDelete', { link = 'Removed' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -123,16 +123,16 @@ M.ensure_highlights_reset = highlights.forget
 
 local SIGN = { add = '+', del = '-', context = ' ' }
 local LINE_HL = {
-  add = 'UnidiffAdd',
-  del = 'UnidiffDelete',
-  file = 'UnidiffFileHeader',
-  subject = 'UnidiffCommitSubject',
-  author = 'UnidiffCommitAuthor',
+  add = 'GitViewAdd',
+  del = 'GitViewDelete',
+  file = 'GitViewFileHeader',
+  subject = 'GitViewCommitSubject',
+  author = 'GitViewCommitAuthor',
 }
-local TEXT_HL = { add = 'UnidiffAddText', del = 'UnidiffDeleteText' }
-local STAT_HL = { ['%++'] = 'UnidiffStatAdd', ['%-+'] = 'UnidiffStatDelete' }
-local STAGED_LINE_HL = { add = 'UnidiffStagedAdd', del = 'UnidiffStagedDelete' }
-local STAGED_TEXT_HL = { add = 'UnidiffStagedAddText', del = 'UnidiffStagedDeleteText' }
+local TEXT_HL = { add = 'GitViewAddText', del = 'GitViewDeleteText' }
+local STAT_HL = { ['%++'] = 'GitViewStatAdd', ['%-+'] = 'GitViewStatDelete' }
+local STAGED_LINE_HL = { add = 'GitViewStagedAdd', del = 'GitViewStagedDelete' }
+local STAGED_TEXT_HL = { add = 'GitViewStagedAddText', del = 'GitViewStagedDeleteText' }
 
 --- @param l gitview.Line
 --- @return string?
@@ -530,7 +530,7 @@ function M.draw(buf, view)
   --    much the file changed at the right end
   for _, f in ipairs(view.files) do
     vim.api.nvim_buf_set_extmark(buf, ns_diff, f.row - 1, 0, {
-      virt_text = { { RULE, 'UnidiffFileRule' } },
+      virt_text = { { RULE, 'GitViewFileRule' } },
       virt_text_pos = 'eol',
       -- under the count, which is drawn over the rule's right end
       priority = 10,
@@ -539,13 +539,13 @@ function M.draw(buf, view)
   for i, s in ipairs(file_stats(view)) do
     local chunks = {}
     if s.add > 0 then
-      chunks[#chunks + 1] = { '+' .. s.add, 'UnidiffStatAdd' }
+      chunks[#chunks + 1] = { '+' .. s.add, 'GitViewStatAdd' }
     end
     if s.del > 0 then
       if #chunks > 0 then
         chunks[#chunks + 1] = { ' ' }
       end
-      chunks[#chunks + 1] = { '-' .. s.del, 'UnidiffStatDelete' }
+      chunks[#chunks + 1] = { '-' .. s.del, 'GitViewStatDelete' }
     end
     if #chunks > 0 then
       -- a space parts the count from the rule
@@ -574,7 +574,7 @@ end
 --- @param buf integer from `create_buffer`
 --- @param text string
 function M.notice(buf, text)
-  -- A notice is painted with `UnidiffSeparator`, so it is a first use of the
+  -- A notice is painted with `GitViewSeparator`, so it is a first use of the
   -- groups just as much as `draw` is. Without this a session whose first
   -- selection has no view to show - a clean repository, a binary file - would
   -- draw the notice against a group nothing had defined yet.
@@ -588,7 +588,7 @@ function M.notice(buf, text)
   vim.api.nvim_buf_set_extmark(buf, ns_diff, 0, 0, {
     end_row = 1,
     end_col = 0,
-    hl_group = 'UnidiffSeparator',
+    hl_group = 'GitViewSeparator',
     hl_eol = true,
     priority = 10,
   })
@@ -634,7 +634,7 @@ function M.statuscolumn()
   local l = view.lines[vim.v.lnum]
   -- a space parts the rule from the name
   if l and l.kind == 'file' then
-    return '%#UnidiffFileRule#' .. RULE:sub(1, #'─' * (#blank - 1)) .. ' '
+    return '%#GitViewFileRule#' .. RULE:sub(1, #'─' * (#blank - 1)) .. ' '
   end
   -- file headers and the blanks between files stand for no source line and so
   -- have no numbers to show
@@ -653,10 +653,10 @@ function M.statuscolumn()
   end
   local mark = ''
   if view.mixed then
-    mark = '%#UnidiffStagedSign#' .. (STAGE_MARK[l.stage] or ' ') .. '%#UnidiffNewLnum#'
+    mark = '%#GitViewStagedSign#' .. (STAGE_MARK[l.stage] or ' ') .. '%#GitViewNewLnum#'
   end
   return string.format(
-    '%%#UnidiffOldLnum#%s %%#UnidiffNewLnum#%s %s%s ',
+    '%%#GitViewOldLnum#%s %%#GitViewNewLnum#%s %s%s ',
     num(l.old_lnum),
     num(l.new_lnum),
     mark,
@@ -692,7 +692,7 @@ function M.winbar()
   if view.note then
     text = text .. '   ' .. view.note
   end
-  return '%#UnidiffFileHeader#' .. util.escape_statusline(text)
+  return '%#GitViewFileHeader#' .. util.escape_statusline(text)
 end
 
 --- Folds a commit's header into one line, and each run of unchanged lines away
@@ -810,27 +810,27 @@ function M.foldtext()
     local width = info.width - info.textoff - vim.api.nvim_strwidth(label)
     local out = {}
     for _, c in ipairs(first_line_chunks(buf, view, first, last, width)) do
-      out[#out + 1] = { c.text, c.group or 'UnidiffSeparator' }
+      out[#out + 1] = { c.text, c.group or 'GitViewSeparator' }
     end
-    out[#out + 1] = { label, 'UnidiffSeparator' }
+    out[#out + 1] = { label, 'GitViewSeparator' }
     return out
   end
 
-  local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'UnidiffCommitSubject' } }
+  local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'GitViewCommitSubject' } }
   -- the summary git ends a stat with
   local last = view.lines[view.header_rows]
   if last.kind == 'stat' then
     local files = tonumber(last.text:match('(%d+) files? changed'))
     if files then
-      chunks[#chunks + 1] = { '   ' .. util.counted(files, 'file'), 'UnidiffCommitAuthor' }
+      chunks[#chunks + 1] = { '   ' .. util.counted(files, 'file'), 'GitViewCommitAuthor' }
     end
     local ins = last.text:match('(%d+) insertions?')
     if ins then
-      chunks[#chunks + 1] = { ' +' .. ins, 'UnidiffStatAdd' }
+      chunks[#chunks + 1] = { ' +' .. ins, 'GitViewStatAdd' }
     end
     local del = last.text:match('(%d+) deletions?')
     if del then
-      chunks[#chunks + 1] = { ' -' .. del, 'UnidiffStatDelete' }
+      chunks[#chunks + 1] = { ' -' .. del, 'GitViewStatDelete' }
     end
   end
   -- a space between the text and the fill, as the label of a run has

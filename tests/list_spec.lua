@@ -130,12 +130,12 @@ end
 
 test('list: the gutter shows one letter per side', function()
   local entries = { entry('M', 'M', 'a.txt'), entry(' ', 'D', 'b.txt') }
-  eq('%#UnidiffStatusStaged#M%#UnidiffStatusUnstaged#M ', gutter(entries, 1))
-  eq('%#UnidiffStatusStaged# %#UnidiffStatusUnstaged#D ', gutter(entries, 2))
+  eq('%#GitViewStatusStaged#M%#GitViewStatusUnstaged#M ', gutter(entries, 1))
+  eq('%#GitViewStatusStaged# %#GitViewStatusUnstaged#D ', gutter(entries, 2))
 end)
 
 test('list: an untracked file gets both letters in one color', function()
-  eq('%#UnidiffStatusUntracked#?? ', gutter({ entry('?', '?', 'new.txt') }, 1))
+  eq('%#GitViewStatusUntracked#?? ', gutter({ entry('?', '?', 'new.txt') }, 1))
 end)
 
 -- Every row is three columns wide, including the ones standing for no file, or
@@ -202,7 +202,7 @@ end)
 -- the paths line up with everything else the list draws.
 test('list: a commit file gets one status letter', function()
   local rows = list.content(looking_into({ change('D', 'a.txt') }))
-  eq('%#UnidiffStatusStaged#D  ', rows[1].gutter)
+  eq('%#GitViewStatusStaged#D  ', rows[1].gutter)
 end)
 
 test('list: a commit file names both sides of a rename', function()

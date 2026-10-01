@@ -272,7 +272,7 @@ test('session: the window renders its gutter and winbar', function()
     for _, h in ipairs(gutter.highlights) do
       groups[#groups + 1] = h.group
     end
-    eq({ 'UnidiffStatusStaged', 'UnidiffStatusUnstaged' }, groups)
+    eq({ 'GitViewStatusStaged', 'GitViewStatusUnstaged' }, groups)
 
     local bar =
       vim.api.nvim_eval_statusline(vim.wo[win].winbar, { winid = win, use_winbar = true })
@@ -1387,7 +1387,7 @@ test('session: the marked commit is shown in the gutter', function()
     session.toggle_mark(s)
     eq(s.commits[3].sha, s.mark)
     local rows = list.state_of(s.commits_buf).rows
-    eq('%#UnidiffStatusMark#>  ', rows[list.row_of(s.commits_buf, { kind = 'commit', index = 3 })].gutter)
+    eq('%#GitViewStatusMark#>  ', rows[list.row_of(s.commits_buf, { kind = 'commit', index = 3 })].gutter)
     eq(nil, rows[list.row_of(s.commits_buf, { kind = 'commit', index = 2 })].gutter)
   end)
 end)
@@ -1632,7 +1632,7 @@ test('session: marking the working-tree row gives the same range', function()
     goto_worktree(s)
     session.toggle_mark(s)
     eq(list.WORKTREE, s.mark)
-    eq('%#UnidiffStatusMark#>  ', list.state_of(s.commits_buf).rows[1].gutter)
+    eq('%#GitViewStatusMark#>  ', list.state_of(s.commits_buf).rows[1].gutter)
     goto_commit(s, 2)
     session.show_selected(s)
     local label = s.commits[2].sha .. '..working tree'
@@ -1887,7 +1887,7 @@ test('session: the stat graph is colored as git colors it', function()
     table.sort(got, function(a, b)
       return a[1] < b[1]
     end)
-    eq({ { 11, 12, 'UnidiffStatAdd' }, { 12, 13, 'UnidiffStatDelete' } }, got)
+    eq({ { 11, 12, 'GitViewStatAdd' }, { 12, 13, 'GitViewStatDelete' } }, got)
   end)
 end)
 
@@ -1903,10 +1903,10 @@ test('session: the header starts folded, and reads as its subject', function()
       return require('gitview.diff.render').foldtext()
     end)
     eq({
-      { '\u{25b8} second', 'UnidiffCommitSubject' },
-      { '   2 files', 'UnidiffCommitAuthor' },
-      { ' +3', 'UnidiffStatAdd' },
-      { ' -1 ', 'UnidiffStatDelete' },
+      { '\u{25b8} second', 'GitViewCommitSubject' },
+      { '   2 files', 'GitViewCommitAuthor' },
+      { ' +3', 'GitViewStatAdd' },
+      { ' -1 ', 'GitViewStatDelete' },
     }, text)
   end)
 end)
