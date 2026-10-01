@@ -13,7 +13,7 @@ local M = {}
 --- for `git status` to report in the repository under development.
 local ROOT = vim.fn.fnamemodify('.local/test-repo', ':p'):gsub('/$', '')
 
---- @class unidiff.TestRepo
+--- @class gitview.TestRepo
 --- @field root string absolute path
 --- @field git fun(...: string): string run a git command, erroring on failure
 --- @field write fun(path: string, lines: string[]) create or overwrite a file
@@ -24,7 +24,7 @@ local ROOT = vim.fn.fnamemodify('.local/test-repo', ':p'):gsub('/$', '')
 --- The repository starts initialised and configured but empty, so a spec
 --- decides for itself what HEAD should be — including having no HEAD at all.
 ---
---- @param fn fun(repo: unidiff.TestRepo)
+--- @param fn fun(repo: gitview.TestRepo)
 function M.with_repo(fn)
   vim.fn.delete(ROOT, 'rf')
   vim.fn.mkdir(ROOT, 'p')

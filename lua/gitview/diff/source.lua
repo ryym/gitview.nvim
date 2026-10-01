@@ -3,21 +3,21 @@
 ---
 --- This is the only part of the pipeline that reads git and the editor. What it
 --- hands back is plain data, so `view.build` has nothing left to look up.
-local config = require('unidiff.config')
-local git = require('unidiff.git')
-local status = require('unidiff.status')
-local util = require('unidiff.util')
+local config = require('gitview.config')
+local git = require('gitview.git')
+local status = require('gitview.status')
+local util = require('gitview.util')
 
 local M = {}
 
---- @class unidiff.Source
+--- @class gitview.Source
 --- @field path string absolute path
 --- @field label string
 --- @field ft string filetype, resolved here so that building a view needs no
 ---       editor state. Empty for a file that is not to be highlighted.
 --- @field old_lines string[]
 --- @field new_lines string[]
---- @field index_lines string[]? given only for a mixed view; see unidiff.diff.mixed
+--- @field index_lines string[]? given only for a mixed view; see gitview.diff.mixed
 
 --- The new side of the diff is whatever the user is looking at: a loaded buffer
 --- with unsaved changes, otherwise the file on disk.
@@ -69,14 +69,14 @@ function M.repo_root()
   return root
 end
 
---- @class unidiff.Skipped paths left out of a view, by why they were
+--- @class gitview.Skipped paths left out of a view, by why they were
 --- @field binary string[]
 --- @field conflicted string[] unmerged paths, which have no index version to
 ---        build a mixed view's middle from
 
 --- A `Skipped` with every group empty: what the error paths report, and what
 --- `partition_showable` starts from.
---- @return unidiff.Skipped
+--- @return gitview.Skipped
 local function no_skipped()
   return { binary = {}, conflicted = {} }
 end
@@ -86,7 +86,7 @@ end
 --- @generic T: {binary:boolean, path:string}
 --- @param entries T[]
 --- @return T[] wanted
---- @return unidiff.Skipped skipped
+--- @return gitview.Skipped skipped
 local function partition_showable(entries)
   local wanted, skipped = {}, no_skipped()
   for _, e in ipairs(entries) do
@@ -106,10 +106,10 @@ end
 --- tree, which may no longer have the file at all. Only a range ending at the
 --- working tree reads it, and then for the new side alone.
 ---
---- @param range unidiff.Range
---- @param changes unidiff.Change[] not binary; those have nothing to read
+--- @param range gitview.Range
+--- @param changes gitview.Change[] not binary; those have nothing to read
 --- @param root string repository root
---- @return unidiff.Source[]
+--- @return gitview.Source[]
 local function range_sources(range, changes, root)
   -- One `git cat-file` for every version: a process per file is what makes a
   -- large diff slow, not the diffing itself. A version the file does not have is
@@ -150,12 +150,12 @@ local function range_sources(range, changes, root)
 end
 
 --- Every file a range changed, in one view.
---- @param range unidiff.Range
+--- @param range gitview.Range
 --- @param root string repository root
 --- @param untracked string[]? passed on to `git.changed_between`
---- @return unidiff.Source[]? sources
---- @return unidiff.Skipped skipped
---- @return unidiff.GitError? err
+--- @return gitview.Source[]? sources
+--- @return gitview.Skipped skipped
+--- @return gitview.GitError? err
 function M.for_range(range, root, untracked)
   local changes, err = git.changed_between(range, root, untracked)
   if not changes then
@@ -166,10 +166,10 @@ function M.for_range(range, root, untracked)
 end
 
 --- One change of a range, for a view showing a single file.
---- @param range unidiff.Range
---- @param change unidiff.Change
+--- @param range gitview.Range
+--- @param change gitview.Change
 --- @param root string repository root
---- @return unidiff.Source? source nil when there is nothing to read
+--- @return gitview.Source? source nil when there is nothing to read
 function M.for_range_change(range, change, root)
   if change.binary then
     return nil
@@ -185,10 +185,10 @@ end
 --- the first two, a staged deletion has no index version, and a file deleted
 --- from the working tree has no third.
 ---
---- @param entries unidiff.StatusEntry[] neither binary nor unmerged; those have
+--- @param entries gitview.StatusEntry[] neither binary nor unmerged; those have
 ---        nothing to read
 --- @param root string repository root
---- @return unidiff.Source[]
+--- @return gitview.Source[]
 local function sources_of(entries, root)
   -- `:path` is the index's copy of a path. As in `range_sources`, a version that
   -- does not exist is left out of the request.
@@ -227,10 +227,10 @@ local function sources_of(entries, root)
 end
 
 --- Every entry's three versions, for one view of everything uncommitted.
---- @param entries unidiff.StatusEntry[]
+--- @param entries gitview.StatusEntry[]
 --- @param root string repository root
---- @return unidiff.Source[] sources
---- @return unidiff.Skipped skipped
+--- @return gitview.Source[] sources
+--- @return gitview.Skipped skipped
 function M.for_entries(entries, root)
   local showable, skipped = partition_showable(entries)
   local wanted = {}
@@ -245,9 +245,9 @@ function M.for_entries(entries, root)
 end
 
 --- One entry's three versions, for a view showing a single file.
---- @param entry unidiff.StatusEntry
+--- @param entry gitview.StatusEntry
 --- @param root string repository root
---- @return unidiff.Source? source nil when there is nothing to read: a binary
+--- @return gitview.Source? source nil when there is nothing to read: a binary
 ---         file, or an unmerged one, whose index version is not at stage 0
 function M.for_entry(entry, root)
   if entry.binary or entry.conflicted then

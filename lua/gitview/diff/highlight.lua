@@ -1,6 +1,6 @@
 local M = {}
 
---- @class unidiff.Seg
+--- @class gitview.Seg
 --- @field row integer 0-based
 --- @field start_col integer byte column, inclusive
 --- @field end_col integer byte column, exclusive
@@ -86,7 +86,7 @@ end
 --- @param buf integer
 --- @param parser vim.treesitter.LanguageTree
 --- @param rows table<integer, true>? rows of interest; nil means all
---- @return table<integer, unidiff.Seg[]>
+--- @return table<integer, gitview.Seg[]>
 local function collect_treesitter(buf, parser, rows)
   local by_row = {}
   -- Headless/unrendered buffers are never parsed implicitly, so force it here.
@@ -146,7 +146,7 @@ end
 ---
 --- @param buf integer
 --- @param rows table<integer, true>? 0-based rows to collect; nil means all
---- @return table<integer, unidiff.Seg[]>
+--- @return table<integer, gitview.Seg[]>
 local function collect_syntax(buf, rows)
   local by_row = {}
 
@@ -220,7 +220,7 @@ end
 --- @param buf integer
 --- @param lang string
 --- @param rows table<integer, true>? 0-based rows of interest; nil means all
---- @return table<integer, unidiff.Seg[]> segments keyed by 0-based row
+--- @return table<integer, gitview.Seg[]> segments keyed by 0-based row
 function M.collect(buf, lang, rows)
   local ok, parser = pcall(vim.treesitter.get_parser, buf, lang)
   if ok and parser then

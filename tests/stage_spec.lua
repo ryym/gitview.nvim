@@ -1,11 +1,11 @@
-local stage = require('unidiff.stage')
-local status = require('unidiff.status')
+local stage = require('gitview.stage')
+local status = require('gitview.status')
 local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq
 
 --- @param fields table
---- @return unidiff.StatusEntry
+--- @return gitview.StatusEntry
 local function entry(fields)
   return vim.tbl_extend('force', {
     path = 'a.txt',
@@ -17,9 +17,9 @@ local function entry(fields)
 end
 
 --- The entry for one path, as the session would have it.
---- @param repo unidiff.TestRepo
+--- @param repo gitview.TestRepo
 --- @param path string
---- @return unidiff.StatusEntry
+--- @return gitview.StatusEntry
 local function entry_for(repo, path)
   local entries = assert(status.list(repo.root))
   for _, e in ipairs(entries) do

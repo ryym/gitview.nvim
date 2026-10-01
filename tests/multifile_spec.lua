@@ -1,13 +1,13 @@
-local dlib = require('unidiff.diff.lines')
-local hl = require('unidiff.diff.highlight')
-local render = require('unidiff.diff.render')
+local dlib = require('gitview.diff.lines')
+local hl = require('gitview.diff.highlight')
+local render = require('gitview.diff.render')
 
 local test, eq = _G.test, _G.eq
 
 --- Assemble a view the way init.build_view does, so the concatenation rules are
 --- exercised without needing a git repository.
 --- @param sources {label:string, lang:string, old:string[], new:string[]}[]
---- @return integer bufnr, unidiff.View
+--- @return integer bufnr, gitview.View
 local function build(sources)
   local lines, files, hunk_rows = {}, {}, {}
   for _, src in ipairs(sources) do

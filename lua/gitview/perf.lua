@@ -62,12 +62,12 @@ local function write(name, ms, fields)
   end
 end
 
---- @class unidiff.PerfSpan
---- @field finish fun(self: unidiff.PerfSpan, fields: table<string, any>?)
+--- @class gitview.PerfSpan
+--- @field finish fun(self: gitview.PerfSpan, fields: table<string, any>?)
 
 --- What `start` hands out while logging is off, so that callers need no check of
 --- their own.
---- @type unidiff.PerfSpan
+--- @type gitview.PerfSpan
 local NOOP = { finish = function() end }
 
 --- Start timing something that may end in another callback, such as a draw
@@ -78,7 +78,7 @@ local NOOP = { finish = function() end }
 ---
 --- @param name string
 --- @param fields table<string, any>?
---- @return unidiff.PerfSpan
+--- @return gitview.PerfSpan
 function M.start(name, fields)
   if not M.enabled() then
     return NOOP

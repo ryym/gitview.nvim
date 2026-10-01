@@ -7,12 +7,12 @@
 ---
 --- Only whole files are handled here. Staging part of a file means writing a new
 --- index entry, which is a different mechanism entirely.
-local git = require('unidiff.git')
-local status = require('unidiff.status')
+local git = require('gitview.git')
+local status = require('gitview.status')
 
 local M = {}
 
---- @class unidiff.StageAction
+--- @class gitview.StageAction
 --- @field what string the command, as the user would recognise it in an error
 --- @field args string[] argv after `git`
 
@@ -26,8 +26,8 @@ local M = {}
 --- which is how git itself is told that the file in the working tree is the
 --- answer. Unstaging has no such reading; see `unstage`.
 ---
---- @param e unidiff.StatusEntry
---- @return unidiff.StageAction? action
+--- @param e gitview.StatusEntry
+--- @return gitview.StageAction? action
 --- @return string? why nothing to do, phrased for the user
 function M.stage(e)
   if not status.has_unstaged(e) then
@@ -54,9 +54,9 @@ end
 ---   refuses to drop an index entry that matches neither the file nor HEAD —
 ---   which, before the first commit, is every staged file that was edited again.
 ---
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @param has_head boolean whether the repository has a commit; see `git.has_head`
---- @return unidiff.StageAction? action
+--- @return gitview.StageAction? action
 --- @return string? why nothing to do, phrased for the user
 function M.unstage(e, has_head)
   if e.conflicted then
@@ -75,9 +75,9 @@ function M.unstage(e, has_head)
   return { what = 'git restore --staged', args = args }
 end
 
---- @param action unidiff.StageAction
+--- @param action gitview.StageAction
 --- @param root string repository root
---- @return unidiff.GitError? err
+--- @return gitview.GitError? err
 function M.run(action, root)
   local res = git.run(vim.list_extend({ 'git' }, action.args), root)
   if res.ok then

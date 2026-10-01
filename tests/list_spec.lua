@@ -1,4 +1,4 @@
-local list = require('unidiff.ui.list')
+local list = require('gitview.ui.list')
 
 local test, eq = _G.test, _G.eq
 
@@ -6,7 +6,7 @@ local test, eq = _G.test, _G.eq
 --- @param y string worktree status
 --- @param path string
 --- @param head_path string?
---- @return unidiff.StatusEntry
+--- @return gitview.StatusEntry
 local function entry(x, y, path, head_path)
   return {
     path = path,
@@ -17,7 +17,7 @@ local function entry(x, y, path, head_path)
   }
 end
 
---- @param rows unidiff.ListRow[]
+--- @param rows gitview.ListRow[]
 --- @return string[]
 local function texts(rows)
   return vim.tbl_map(function(r)
@@ -27,7 +27,7 @@ end
 
 --- @param sha string
 --- @param subject string
---- @return unidiff.Commit
+--- @return gitview.Commit
 local function commit(sha, subject)
   return { sha = sha, parents = { 'p' }, subject = subject, author = 'a', when = 'now' }
 end
@@ -107,7 +107,7 @@ test('list: a target resolves back to the row showing it', function()
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
---- @param entries unidiff.StatusEntry[]
+--- @param entries gitview.StatusEntry[]
 --- @param lnum integer
 --- @return string
 local function gutter(entries, lnum)
@@ -173,13 +173,13 @@ end)
 --- @param status string
 --- @param path string
 --- @param old_path string?
---- @return unidiff.Change
+--- @return gitview.Change
 local function change(status, path, old_path)
   return { status = status, path = path, old_path = old_path or path, binary = false }
 end
 
---- @param changes unidiff.Change[]
---- @return unidiff.ListModel
+--- @param changes gitview.Change[]
+--- @return gitview.ListModel
 local function looking_into(changes)
   return {
     pane = 'commits',

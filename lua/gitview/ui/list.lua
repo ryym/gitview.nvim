@@ -4,43 +4,43 @@
 --- are drawn rather than written. Here that means the buffer holds paths and
 --- nothing else, so yanking a line gives a path that can be pasted somewhere
 --- useful, while the two status letters are painted by `'statuscolumn'`.
-local status = require('unidiff.status')
-local util = require('unidiff.util')
+local status = require('gitview.status')
+local util = require('gitview.util')
 
 local M = {}
 
---- @class unidiff.ListScope what the commits pane is looking into, in place of
+--- @class gitview.ListScope what the commits pane is looking into, in place of
 --- the commits themselves
---- @field range unidiff.Range the two revisions being compared
+--- @field range gitview.Range the two revisions being compared
 --- @field label string what to call it
 --- @field at string sha of the commit to put the cursor back on when backing out,
 ---        or `WORKTREE` for the working-tree row
---- @field changes unidiff.Change[] what the range changed
+--- @field changes gitview.Change[] what the range changed
 
---- @class unidiff.ListModel what one pane of the sidebar is showing
+--- @class gitview.ListModel what one pane of the sidebar is showing
 --- @field pane 'files'|'commits' which of the two it is
 --- @field root string repository root
---- @field entries unidiff.StatusEntry[]? the files pane
+--- @field entries gitview.StatusEntry[]? the files pane
 --- @field notice string? the files pane, shown in place of the entries while
 ---        there are none to show yet
---- @field commits unidiff.Commit[]? the commits pane
+--- @field commits gitview.Commit[]? the commits pane
 --- @field worktree boolean? the commits pane, with a row for the working tree
 ---        above the commits
 --- @field mark string? sha of the marked commit, the far end of a range, or
 ---        `WORKTREE` when that is the working-tree row
---- @field scope unidiff.ListScope? the commits pane, looking into a range
+--- @field scope gitview.ListScope? the commits pane, looking into a range
 --- @field stale boolean? the commits pane, holding a list `git log` no longer
 ---        agrees with; see `ui.session`
 
---- @class unidiff.ListTarget what a row stands for
+--- @class gitview.ListTarget what a row stands for
 --- @field kind 'file'|'commit'|'worktree'|'commit_file'
 --- @field index integer into the entries, the commits, or the scope's changes.
 ---        Always 1 for the working tree, which there is only one of
 
---- @class unidiff.ListRow
+--- @class gitview.ListRow
 --- @field text string the buffer line, which is the thing itself
 --- @field gutter string? what `'statuscolumn'` draws, highlight groups included
---- @field target unidiff.ListTarget? absent on a row standing for nothing
+--- @field target gitview.ListTarget? absent on a row standing for nothing
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
@@ -79,7 +79,7 @@ local BLANK_GUTTER = '   '
 --- line is drawn, because rows no longer all stand for the same kind of thing:
 --- an entry has two status letters, a commit has none, and `'statuscolumn'`
 --- would otherwise have to know about every kind.
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @return string
 local function gutter_of(e)
   if status.is_untracked(e) then
@@ -99,8 +99,8 @@ end
 --- pane holds. Which commit that is, is named by the pane's `'winbar'`, so no
 --- row of the buffer has to stand for it.
 ---
---- @param scope unidiff.ListScope
---- @return unidiff.ListRow[]
+--- @param scope gitview.ListScope
+--- @return gitview.ListRow[]
 local function scope_rows(scope)
   if #scope.changes == 0 then
     return { { text = M.EMPTY_COMMIT_NOTICE } }
@@ -118,8 +118,8 @@ local function scope_rows(scope)
   return rows
 end
 
---- @param model unidiff.ListModel
---- @return unidiff.ListRow[]
+--- @param model gitview.ListModel
+--- @return gitview.ListRow[]
 function M.content(model)
   if model.pane == 'files' then
     if model.notice then
@@ -185,12 +185,12 @@ M.setup_highlights = highlights.apply
 ---
 --- Kept off `M` on purpose: the window options call into this module as
 --- `v:lua.require(...).fn()`, which converts `M` into a Vim value on every call.
---- @type table<integer, unidiff.ListModel|{rows:unidiff.ListRow[]}>
+--- @type table<integer, gitview.ListModel|{rows:gitview.ListRow[]}>
 local states = {}
 
 --- What `buf` is showing, if it is a list.
 --- @param buf integer
---- @return (unidiff.ListModel|{rows:unidiff.ListRow[]})?
+--- @return (gitview.ListModel|{rows:gitview.ListRow[]})?
 function M.state_of(buf)
   return states[buf]
 end
@@ -250,7 +250,7 @@ function M.create_buffer()
 end
 
 --- @param buf integer from `create_buffer`
---- @param model unidiff.ListModel
+--- @param model gitview.ListModel
 function M.draw(buf, model)
   local rows = M.content(model)
   local texts = {}
@@ -279,8 +279,8 @@ end
 function M.configure_window(win, width)
   vim.api.nvim_win_set_width(win, width)
   util.configure_window_options(win, {
-    winbar = '%!v:lua.require("unidiff.ui.list").winbar()',
-    statuscolumn = '%!v:lua.require("unidiff.ui.list").statuscolumn()',
+    winbar = '%!v:lua.require("gitview.ui.list").winbar()',
+    statuscolumn = '%!v:lua.require("gitview.ui.list").statuscolumn()',
     number = false,
     relativenumber = false,
     signcolumn = 'no',
@@ -295,7 +295,7 @@ end
 --- What a row stands for, if it stands for anything.
 --- @param buf integer
 --- @param row integer 1-based
---- @return unidiff.ListTarget?
+--- @return gitview.ListTarget?
 function M.target_at(buf, row)
   local state = states[buf]
   local r = state and state.rows[row]
@@ -305,7 +305,7 @@ end
 --- The entry a row stands for, if it stands for a file.
 --- @param buf integer
 --- @param row integer 1-based
---- @return unidiff.StatusEntry?
+--- @return gitview.StatusEntry?
 function M.entry_at(buf, row)
   local target = M.target_at(buf, row)
   if not target or target.kind ~= 'file' then
@@ -317,7 +317,7 @@ end
 --- Where a target is shown. The reverse of `target_at`, for moving the cursor
 --- to something chosen from outside the list.
 --- @param buf integer
---- @param target unidiff.ListTarget?
+--- @param target gitview.ListTarget?
 --- @return integer? row 1-based
 function M.row_of(buf, target)
   local state = states[buf]
@@ -334,8 +334,8 @@ end
 
 --- Whether two targets name the same thing. They are compared by value because
 --- each lookup builds a fresh table.
---- @param a unidiff.ListTarget?
---- @param b unidiff.ListTarget?
+--- @param a gitview.ListTarget?
+--- @param b gitview.ListTarget?
 --- @return boolean
 function M.same_target(a, b)
   if not a or not b then

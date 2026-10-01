@@ -1,9 +1,9 @@
-local dlib = require('unidiff.diff.lines')
+local dlib = require('gitview.diff.lines')
 
 local test, eq = _G.test, _G.eq
 
 --- Render a view as compact strings so expectations stay readable.
---- @param lines unidiff.Line[]
+--- @param lines gitview.Line[]
 --- @return string[]
 local function dump(lines)
   local out = {}

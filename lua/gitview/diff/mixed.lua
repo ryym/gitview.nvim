@@ -18,11 +18,11 @@
 --- A line in HEAD and the working tree but not in the index cannot appear as
 --- one row: the index has nowhere to put it, so it shows up as a staged
 --- deletion and an unstaged addition of the same text.
-local dlib = require('unidiff.diff.lines')
+local dlib = require('gitview.diff.lines')
 
 local M = {}
 
---- @class unidiff.Alignment
+--- @class gitview.Alignment
 --- @field old_to_new table<integer, integer> unchanged lines, old lnum -> new lnum
 --- @field new_to_old table<integer, integer> unchanged lines, new lnum -> old lnum
 --- @field old_only table<integer, integer[]> deleted old lnums, keyed by the new
@@ -34,7 +34,7 @@ local M = {}
 --- line N", with N one past the end for anything at the very end.
 --- @param hunks integer[][]
 --- @param n_old integer
---- @return unidiff.Alignment
+--- @return gitview.Alignment
 function M.align(hunks, n_old)
   local a = { old_to_new = {}, new_to_old = {}, old_only = {}, new_only = {} }
   local o, n = 1, 1
@@ -75,7 +75,7 @@ end
 --- @param index string[]
 --- @param work string[]
 --- @param opts? {algorithm?:string, linematch?:integer}
---- @return unidiff.Line[]
+--- @return gitview.Line[]
 function M.merge(head, index, work, opts)
   local staged = M.align(dlib.hunks(head, index, opts), #head)
   local unstaged = M.align(dlib.hunks(index, work, opts), #index)
@@ -153,9 +153,9 @@ end
 ---
 --- The rows are marked in place and none is dropped, so a row's position in
 --- `lines` is its row in the view.
---- @param lines unidiff.Line[]
+--- @param lines gitview.Line[]
 --- @param context integer
---- @return unidiff.Line[] lines
+--- @return gitview.Line[] lines
 --- @return integer[] hunk_rows
 function M.fold(lines, context)
   local hunk_rows = {}
@@ -190,7 +190,7 @@ end
 --- @param work string[]
 --- @param context integer
 --- @param opts? {algorithm?:string, linematch?:integer}
---- @return unidiff.Line[]? lines nil when none of the three versions differ
+--- @return gitview.Line[]? lines nil when none of the three versions differ
 --- @return integer[] hunk_rows
 function M.build(head, index, work, context, opts)
   -- `fold` counts a hunk for every run of non-context lines, so an empty

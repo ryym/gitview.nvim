@@ -1,6 +1,6 @@
-local dlib = require('unidiff.diff.lines')
-local hl = require('unidiff.diff.highlight')
-local render = require('unidiff.diff.render')
+local dlib = require('gitview.diff.lines')
+local hl = require('gitview.diff.highlight')
+local render = require('gitview.diff.render')
 
 local test, eq = _G.test, _G.eq
 
@@ -34,7 +34,7 @@ local NEW = {
 --- @param context integer? defaults to 3, which keeps the fixture fold-free
 --- @param old string[]? defaults to `OLD`
 --- @param new string[]? defaults to `NEW`
---- @return integer bufnr, unidiff.View
+--- @return integer bufnr, gitview.View
 local function build(context, old, new)
   old, new = old or OLD, new or NEW
   local hunks = dlib.hunks(old, new)
@@ -316,7 +316,7 @@ local function text_of(chunks)
 end
 
 --- Wait for the syntax of every row, folded ones included, to be replayed.
---- @param view unidiff.View
+--- @param view gitview.View
 local function wait_filled(view)
   assert(vim.wait(1000, function()
     return view.files[1].old_buf == nil
@@ -481,7 +481,7 @@ end)
 --- A view of a single-line file, small enough that redrawing into a buffer that
 --- held a bigger one leaves visibly fewer rows.
 --- @param text string
---- @return unidiff.View
+--- @return gitview.View
 local function tiny_view(text)
   return {
     lines = { { text = text, kind = 'add', new_lnum = 1, side = 'new', row = 0, file = 1 } },
@@ -525,7 +525,7 @@ end)
 
 --- A view of several Lua files with every line changed: enough rows that its
 --- syntax is filled in after the draw rather than during it.
---- @return unidiff.View
+--- @return gitview.View
 local function large_view()
   local sources = {}
   for i = 1, 3 do
@@ -542,13 +542,13 @@ local function large_view()
       new_lines = new,
     }
   end
-  local view = require('unidiff.diff.view').build(sources, 'HEAD', 3, { algorithm = 'histogram' })
+  local view = require('gitview.diff.view').build(sources, 'HEAD', 3, { algorithm = 'histogram' })
   return assert(view)
 end
 
 --- Whether every ghost buffer of `view` has been freed, which is the last thing
 --- filling in its syntax does.
---- @param view unidiff.View
+--- @param view gitview.View
 --- @return boolean
 local function disposed(view)
   for _, f in ipairs(view.files) do

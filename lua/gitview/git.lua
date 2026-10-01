@@ -1,8 +1,8 @@
-local perf = require('unidiff.perf')
+local perf = require('gitview.perf')
 
 local M = {}
 
---- @class unidiff.Change
+--- @class gitview.Change
 --- @field status 'A'|'M'|'D'|'R'|'C'|'T'|'U' `U` is an unmerged path
 --- @field path string repo-relative path in the working tree
 --- @field old_path string repo-relative path in the revision (differs on rename)
@@ -20,7 +20,7 @@ local function blob_lines(text)
   return vim.split((text:gsub('\n$', '')), '\n', { plain = true })
 end
 
---- @class unidiff.GitResult
+--- @class gitview.GitResult
 --- @field ok boolean
 --- @field stdout string
 --- @field stderr string what to show the user when `ok` is false
@@ -40,7 +40,7 @@ local async_threads = setmetatable({}, { __mode = 'k' })
 --- @param cmd string[]
 --- @param cwd string
 --- @param opts? table extra `vim.system` options; `text = false` reads stdout raw
---- @return unidiff.GitResult
+--- @return gitview.GitResult
 function M.run(cmd, cwd, opts)
   local sys = vim.tbl_extend('force', { text = true, cwd = cwd }, opts or {})
   local resume = async_threads[coroutine.running()]
@@ -184,7 +184,7 @@ end
 --- similarity score.
 ---
 --- @param out string
---- @return unidiff.Change[]
+--- @return gitview.Change[]
 function M.parse_name_status(out)
   local fields = vim.split(out, '\0', { plain = true })
   local changes = {}
@@ -270,7 +270,7 @@ end
 --- @param args string[] what to compare, appended after the format flags
 --- @param cwd string
 --- @param opts? table passed on to `M.run`
---- @return unidiff.Change[]? changes
+--- @return gitview.Change[]? changes
 --- @return string? err why the command failed
 local function changes_of(prefix, args, cwd, opts)
   local function listing(format)
@@ -297,7 +297,7 @@ end
 
 --- @param args string[] what to compare, as passed to `git diff`
 --- @param cwd string
---- @return unidiff.Change[]? changes
+--- @return gitview.Change[]? changes
 --- @return string? err why the command failed
 local function diff_changes(args, cwd)
   return changes_of({ 'git', 'diff' }, args, cwd)
@@ -305,7 +305,7 @@ end
 
 --- List everything that differs between HEAD and the index.
 --- @param cwd string
---- @return unidiff.Change[]? changes
+--- @return gitview.Change[]? changes
 --- @return string? err
 function M.changed_staged(cwd)
   return diff_changes({ '--cached' }, cwd)
@@ -313,7 +313,7 @@ end
 
 --- List everything that differs between the index and the working tree.
 --- @param cwd string
---- @return unidiff.Change[]? changes
+--- @return gitview.Change[]? changes
 --- @return string? err
 function M.changed_unstaged(cwd)
   return diff_changes({}, cwd)
@@ -393,7 +393,7 @@ function M.remove_index_entry(path, cwd)
   return res.stderr
 end
 
---- @class unidiff.Commit
+--- @class gitview.Commit
 --- @field sha string abbreviated
 --- @field parents string[] abbreviated; empty for the root commit
 --- @field subject string
@@ -412,7 +412,7 @@ local LOG_FORMAT = '%h%x1f%p%x1f%s%x1f%an%x1f%ar'
 --- space-separated parent list and is empty for the root commit.
 ---
 --- @param out string
---- @return unidiff.Commit[]
+--- @return gitview.Commit[]
 function M.parse_log(out)
   local commits = {}
   for _, rec in ipairs(vim.split(out, '\0', { plain = true, trimempty = true })) do
@@ -436,7 +436,7 @@ end
 ---
 --- @param count integer how many to ask for
 --- @param cwd string
---- @return unidiff.Commit[]? commits
+--- @return gitview.Commit[]? commits
 --- @return string? err
 function M.log(count, cwd)
   local res = M.run({ 'git', 'log', '-z', '--format=' .. LOG_FORMAT, '-n', tostring(count) }, cwd)
@@ -446,7 +446,7 @@ function M.log(count, cwd)
   return M.parse_log(res.stdout)
 end
 
---- @class unidiff.Range the two revisions a view compares
+--- @class gitview.Range the two revisions a view compares
 --- @field old string? nil when the new side has no parent, i.e. a root commit
 --- @field new string? nil for the working tree. The two are never both nil: a
 ---        range ending at the working tree starts at a commit
@@ -460,8 +460,8 @@ end
 --- parent explicitly avoids the question, and keeps the decision here rather
 --- than in everything that reads a range.
 ---
---- @param commit unidiff.Commit
---- @return unidiff.Range
+--- @param commit gitview.Commit
+--- @return gitview.Range
 function M.commit_range(commit)
   return { old = commit.parents[1], new = commit.sha }
 end
@@ -470,7 +470,7 @@ end
 --- Both print the same records for the same options, so whatever is asked of a
 --- range is asked the same way of a root commit.
 ---
---- @param range unidiff.Range
+--- @param range gitview.Range
 --- @return string[]
 local function range_command(range)
   if not range.old then
@@ -481,7 +481,7 @@ end
 
 --- What `range_command` compares, after its options. `git diff` given one
 --- revision compares it with the working tree, which is how a range ends there.
---- @param range unidiff.Range
+--- @param range gitview.Range
 --- @return string[]
 local function range_args(range)
   if not range.old then
@@ -507,7 +507,7 @@ end
 --- @param old string
 --- @param untracked string[]
 --- @param cwd string
---- @return unidiff.Change[]? changes
+--- @return gitview.Change[]? changes
 --- @return string? err
 local function changed_since(old, untracked, cwd)
   if #untracked == 0 then
@@ -548,12 +548,12 @@ end
 --- `diff-tree --root`. Every other range, including one whose ends are merges,
 --- is an ordinary comparison of two trees, or of a tree and the working tree.
 ---
---- @param range unidiff.Range
+--- @param range gitview.Range
 --- @param cwd string
 --- @param untracked string[]? for a range ending at the working tree, the files
 ---        git is not tracking, when the caller has already listed them. Read
 ---        here otherwise, which walks the whole working tree
---- @return unidiff.Change[]? changes
+--- @return gitview.Change[]? changes
 --- @return string? err
 function M.changed_between(range, cwd, untracked)
   if range.new or not range.old then
@@ -569,7 +569,7 @@ function M.changed_between(range, cwd, untracked)
   return changed_since(range.old, untracked, cwd)
 end
 
---- @class unidiff.CommitDetail what a commit says beyond its row in the log
+--- @class gitview.CommitDetail what a commit says beyond its row in the log
 --- @field author string name and email
 --- @field date string the author date, as `git show` prints it
 --- @field message string[] the subject, then the body as it was written
@@ -583,10 +583,10 @@ end
 --- commit rather than how the view happens to be drawn, so ignoring whitespace
 --- does not change it.
 ---
---- @param commit unidiff.Commit
+--- @param commit gitview.Commit
 --- @param cwd string
---- @return unidiff.CommitDetail? detail
---- @return unidiff.GitError? err
+--- @return gitview.CommitDetail? detail
+--- @return gitview.GitError? err
 function M.commit_detail(commit, cwd)
   -- `log.showSignature` would put the signature check in front of the format.
   local log = M.run({

@@ -4,22 +4,22 @@
 --- A session outlives the moment it was opened in. It keeps enough state to be
 --- redrawn when the repository changes underneath it — which it does by itself
 --- on entering its tab page — and to follow the cursor from one file to the next.
-local config = require('unidiff.config')
-local git = require('unidiff.git')
-local index = require('unidiff.index')
-local keymap = require('unidiff.diff.keymap')
-local list = require('unidiff.ui.list')
-local perf = require('unidiff.perf')
-local render = require('unidiff.diff.render')
-local source = require('unidiff.diff.source')
-local stage = require('unidiff.stage')
-local status = require('unidiff.status')
-local util = require('unidiff.util')
-local vlib = require('unidiff.diff.view')
+local config = require('gitview.config')
+local git = require('gitview.git')
+local index = require('gitview.index')
+local keymap = require('gitview.diff.keymap')
+local list = require('gitview.ui.list')
+local perf = require('gitview.perf')
+local render = require('gitview.diff.render')
+local source = require('gitview.diff.source')
+local stage = require('gitview.stage')
+local status = require('gitview.status')
+local util = require('gitview.util')
+local vlib = require('gitview.diff.view')
 
 local M = {}
 
---- @class unidiff.Session
+--- @class gitview.Session
 --- @field tab integer tab page handle
 --- @field root string repository root, resolved once
 --- @field origin integer tab page `gf` opens files in: the one the session was
@@ -30,7 +30,7 @@ local M = {}
 --- @field commits_buf integer
 --- @field diff_win integer
 --- @field diff_buf integer drawn into repeatedly, never swapped out
---- @field entries unidiff.StatusEntry[] empty until the first read finishes
+--- @field entries gitview.StatusEntry[] empty until the first read finishes
 --- @field files_notice string? shown in place of the files while there are none
 ---        to show yet: until the first read finishes, or after it failed
 --- @field reads integer bumped by every read of the status, so a read can tell
@@ -39,7 +39,7 @@ local M = {}
 --- @field outdated boolean? whether the session has changed the index since the
 ---        panes were drawn. Staging from them then would write back the state
 ---        they show, undoing the change, so it waits for the read to catch up
---- @field commits unidiff.Commit[] the tail of the history, newest first
+--- @field commits gitview.Commit[] the tail of the history, newest first
 --- @field ignore_whitespace boolean whether lines differing only in whitespace
 ---        count as changed; starts from the configuration and is toggled while
 ---        the session is open
@@ -47,10 +47,10 @@ local M = {}
 ---        working-tree row. While it is set the commits pane compares it with
 ---        whatever the cursor is on, rather than showing one commit against its
 ---        parent
---- @field scope unidiff.ListScope? the range being looked into, whose files
+--- @field scope gitview.ListScope? the range being looked into, whose files
 ---        replace the commits pane while it is set
---- @field selected unidiff.ListTarget? what the diff pane is showing
---- @field shown unidiff.SelectionId? what it is currently showing, so that
+--- @field selected gitview.ListTarget? what the diff pane is showing
+--- @field shown gitview.SelectionId? what it is currently showing, so that
 ---        redrawing the same thing can keep the scroll position
 --- @field generation integer bumped by every draw, so a deferred one can tell
 ---        whether it is still wanted
@@ -63,13 +63,13 @@ local M = {}
 ---        git directory could not be resolved
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
---- @field details table<string, unidiff.CommitDetail> commits' messages and
+--- @field details table<string, gitview.CommitDetail> commits' messages and
 ---        stats by sha, read once: a commit never changes
 
---- @type table<integer, unidiff.Session>
+--- @type table<integer, gitview.Session>
 M.sessions = {}
 
---- @return unidiff.Session?
+--- @return gitview.Session?
 function M.current()
   return M.sessions[vim.api.nvim_get_current_tabpage()]
 end
@@ -78,10 +78,10 @@ end
 --- revision here: the point of the view is what has not been committed.
 local REV = 'HEAD, staged + unstaged'
 
---- @alias unidiff.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file', id:string}
+--- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file', id:string}
 
---- @param s unidiff.Session
---- @return unidiff.SelectionId?
+--- @param s gitview.Session
+--- @return gitview.SelectionId?
 local function selection_id(s)
   local t = s.selected
   if not t then
@@ -108,7 +108,7 @@ end
 --- Ignoring whitespace is session state rather than configuration: it is a way
 --- of looking at one thing, turned on and off again while reading, and the
 --- configured value is only where it starts.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return {algorithm:string, linematch:integer, ignore_whitespace:boolean}
 local function diff_opts(s)
   local opts = config.diff_opts(config.values)
@@ -117,7 +117,7 @@ local function diff_opts(s)
 end
 
 --- Everything the winbar should say about a view beyond what it compares.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param ... string? notes, in order, nils skipped
 --- @return string?
 local function note_of(s, ...)
@@ -139,7 +139,7 @@ end
 ---
 --- With whitespace ignored, a file whose only change is whitespace yields no
 --- rows, and calling that "no textual change" would be a lie.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string
 local function no_view_reason(s)
   if s.ignore_whitespace then
@@ -150,7 +150,7 @@ end
 
 --- Which pane a kind of target lives in. The sidebar holds two lists, and a
 --- selection belongs to exactly one of them.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param kind 'file'|'commit'|'worktree'|'commit_file'
 --- @return integer win
 --- @return integer buf
@@ -167,7 +167,7 @@ end
 --- outlives the contents it belonged to. Without this, a shorter diff drawn
 --- after a longer one opens at its end rather than its beginning, because the
 --- cursor is merely clamped to the new line count.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function reset_view(s)
   if vim.api.nvim_win_is_valid(s.diff_win) then
     vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
@@ -178,8 +178,8 @@ end
 ---
 --- `git log` fails outright in a repository with no commit rather than printing
 --- an empty log, so the question has to be asked before the command is run.
---- @param s unidiff.Session
---- @return unidiff.Commit[]
+--- @param s gitview.Session
+--- @return gitview.Commit[]
 local function read_commits(s)
   if not s.has_head then
     return {}
@@ -193,9 +193,9 @@ local function read_commits(s)
 end
 
 --- The commit with this sha, and where it sits in the list.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param sha string?
---- @return unidiff.Commit?
+--- @return gitview.Commit?
 --- @return integer? index
 local function commit_by_sha(s, sha)
   if not sha then
@@ -215,7 +215,7 @@ end
 --- a row for it would compare nothing HEAD's own row does not. Nor before the
 --- status is in, since until then there is no telling, nor without a commit for
 --- it to be compared with.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return boolean
 local function has_worktree_row(s)
   return s.has_head and not s.files_notice and #s.entries > 0
@@ -225,7 +225,7 @@ end
 ---
 --- A range ending at the working tree compares them too, and listing them again
 --- for every view would walk the whole working tree each time.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string[]
 local function untracked_paths(s)
   local paths = {}
@@ -239,7 +239,7 @@ end
 
 --- Where the row a mark names sits among the ends a range can have: 0 for the
 --- working tree, which is newer than any commit, then the commits newest first.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param mark string? a sha, or `list.WORKTREE`
 --- @return integer?
 local function place_of(s, mark)
@@ -258,9 +258,9 @@ end
 --- date: the list is what the user is reading, and a rebase or a cherry-pick can
 --- leave dates out of order.
 ---
---- @param s unidiff.Session
---- @param target unidiff.ListTarget a commit or the working tree
---- @return unidiff.Range? range nil for the working tree on its own, which is
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit or the working tree
+--- @return gitview.Range? range nil for the working tree on its own, which is
 ---         not a range but the uncommitted changes as the files pane has them
 --- @return string label
 local function range_of(s, target)
@@ -289,9 +289,9 @@ end
 --- a comparison the user asked for. The working tree stands on HEAD, so a range
 --- ending there is asked about HEAD.
 ---
---- @param s unidiff.Session
---- @param range unidiff.Range
---- @param target unidiff.ListTarget the row under the cursor
+--- @param s gitview.Session
+--- @param range gitview.Range
+--- @param target gitview.ListTarget the row under the cursor
 --- @return string?
 local function range_note(s, range, target)
   if not range.old then
@@ -312,9 +312,9 @@ local function range_note(s, range, target)
 end
 
 --- The message and stat of a commit, read on first use.
---- @param s unidiff.Session
---- @param commit unidiff.Commit
---- @return unidiff.CommitDetail?
+--- @param s gitview.Session
+--- @param commit gitview.Commit
+--- @return gitview.CommitDetail?
 local function commit_detail(s, commit)
   if not s.details[commit.sha] then
     local detail, err = git.commit_detail(commit, s.root)
@@ -333,7 +333,7 @@ end
 ---
 --- Nothing is staged from here. It is many files, and the index contents a
 --- partial stage writes back are read for one.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function show_worktree(s)
   local sources, skipped = perf.measure('source', source.for_entries, s.entries, s.root)
   local view, unchanged =
@@ -352,8 +352,8 @@ end
 ---
 --- A range is a two-version view: there is no index between the sides and so
 --- nothing to mark as staged, even when one side is the working tree.
---- @param s unidiff.Session
---- @param target unidiff.ListTarget a commit or the working tree
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit or the working tree
 local function show_commit(s, target)
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
   if target.kind == 'commit' and not commit then
@@ -395,7 +395,7 @@ end
 --- This is the same two-version view `show_commit` draws, narrowed to one file:
 --- one entry of the change list the scope already holds, so nothing has to be
 --- listed again.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param index integer into the scope's changes
 local function show_commit_file(s, index)
   local scope = s.scope
@@ -424,7 +424,7 @@ end
 
 --- Whether what is selected is compared with the working tree, which can change
 --- under a name that stays the same.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return boolean
 local function reads_worktree(s)
   local t = s.selected
@@ -444,7 +444,7 @@ end
 ---
 --- The index contents are kept, since staging writes the chosen rows into them.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param keep_unchanged boolean? leave the pane as it is when it already shows
 ---        what the selection names. Only for a caller that knows the contents
 ---        cannot have changed; see `refresh`.
@@ -528,7 +528,7 @@ end
 --- somewhere. A file row costs a single file's view and is still drawn at once.
 local COMMIT_DELAY_MS = 60
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param win integer the pane whose cursor decides the selection
 --- @param force boolean? draw even when the selection has not moved
 --- @param keep_unchanged boolean? passed on to `show_selected`
@@ -573,7 +573,7 @@ end
 ---
 --- Which list that is depends on where the session is: the uncommitted changes,
 --- or the files of the commit being looked into.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param kind 'file'|'commit_file'
 --- @param index integer
 local function select_nth(s, kind, index)
@@ -582,7 +582,7 @@ local function select_nth(s, kind, index)
     return
   end
   index = math.max(1, math.min(count, index))
-  local target = { kind = kind, index = index } --- @type unidiff.ListTarget
+  local target = { kind = kind, index = index } --- @type gitview.ListTarget
   local win, buf = pane_of(s, kind)
   local row = list.row_of(buf, target)
   if row then
@@ -594,7 +594,7 @@ local function select_nth(s, kind, index)
 end
 
 --- Put the list's cursor on one of the uncommitted files and show it.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param index integer
 function M.select(s, index)
   select_nth(s, 'file', index)
@@ -607,9 +607,9 @@ end
 --- it, and a file removed from the list shifts the indices of the rest.
 ---
 --- The reverse of `selection_id` against the lists as they now are.
---- @param s unidiff.Session
---- @param id unidiff.SelectionId?
---- @return unidiff.ListTarget?
+--- @param s gitview.Session
+--- @param id gitview.SelectionId?
+--- @return gitview.ListTarget?
 local function target_of_id(s, id)
   if not id then
     return nil
@@ -650,8 +650,8 @@ end
 --- Failing that — the file was committed away, say — each pane keeps the row it
 --- was on, and the selection is taken from whichever pane it was already in.
 ---
---- @param s unidiff.Session
---- @param target unidiff.ListTarget? where the cursor should end up
+--- @param s gitview.Session
+--- @param target gitview.ListTarget? where the cursor should end up
 --- @param keep_unchanged boolean? passed on to `show_selected`
 local function redraw_list(s, target, keep_unchanged)
   list.draw(s.files_buf, {
@@ -691,7 +691,7 @@ end
 --- working-tree row once nothing is uncommitted, would go on widening every range
 --- while no row showed where it was. It is only ever cleared along with the list
 --- it pointed into.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function drop_lost_mark(s)
   if s.mark and not place_of(s, s.mark) then
     s.mark = nil
@@ -708,8 +708,8 @@ end
 --- commit that row now holds would silently be selected in its place. The old
 --- list is kept until the cursor leaves it, and the pane says so in its winbar.
 ---
---- @param s unidiff.Session
---- @param id unidiff.SelectionId? what is selected, named before the re-read
+--- @param s gitview.Session
+--- @param id gitview.SelectionId? what is selected, named before the re-read
 local function read_log(s, id)
   -- Re-read rather than kept from `open`: the first commit can be made while
   -- the session is open, and it is one process against the several `status.list`
@@ -737,7 +737,7 @@ end
 --- List again what a range ending at the working tree changed, since the working
 --- tree may have moved on. A range between commits cannot have, and is left as
 --- it is; so is the list when it cannot be read, being the best there is.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function reread_scope(s)
   local scope = assert(s.scope)
   if scope.range.new then
@@ -760,7 +760,7 @@ end
 --- single cheap process, and reading it along with the status keeps the two
 --- panes describing the same moment.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param report boolean whether to tell the user when git fails
 --- @param keep_unchanged boolean? passed on to `show_selected`
 local function read_status(s, report, keep_unchanged)
@@ -820,7 +820,7 @@ local REFRESH_THROTTLE_MS = 300
 --- A range ending at the working tree is the exception, and its files are listed
 --- again.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param opts? {auto?:boolean} `auto` for a refresh nothing asked for. It is
 ---        throttled, it says nothing when git fails, since the trigger will come
 ---        again and a message per attempt would be noise, and it leaves the diff
@@ -843,7 +843,7 @@ end
 --- afterwards, so the row it lands on is the one it chose rather than the one it
 --- happened to be on.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param win integer the pane whose cursor decides the selection
 function M.follow_cursor(s, win)
   if s.commits_stale then
@@ -863,7 +863,7 @@ end
 ---
 --- The view is rebuilt rather than redrawn, because which lines differ is what
 --- changed. The position in it is kept: it is the same file being read.
---- @param s unidiff.Session
+--- @param s gitview.Session
 function M.toggle_whitespace(s)
   s.ignore_whitespace = not s.ignore_whitespace
   s.generation = s.generation + 1
@@ -872,8 +872,8 @@ end
 
 --- The row of the commits pane the cursor is on, and what a mark on it would
 --- hold, or nil when it is on neither a commit nor the working tree.
---- @param s unidiff.Session
---- @return unidiff.ListTarget?
+--- @param s gitview.Session
+--- @return gitview.ListTarget?
 --- @return string? mark a sha, or `list.WORKTREE`
 local function selected_end(s)
   local target = s.selected
@@ -894,7 +894,7 @@ end
 --- The commits pane is short and a range is often long, which is what makes
 --- moving the better half to leave free.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 function M.toggle_mark(s)
   local target, mark = selected_end(s)
   if not target then
@@ -913,7 +913,7 @@ end
 --- The working tree on its own has nothing to look into that the files pane does
 --- not already list, so there the cursor goes to the files pane instead.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 function M.enter(s)
   local target, at = selected_end(s)
   if not target then
@@ -935,7 +935,7 @@ end
 
 --- Go back to the uncommitted changes, with the cursor on the commit that was
 --- being looked into.
---- @param s unidiff.Session
+--- @param s gitview.Session
 function M.leave(s)
   local scope = s.scope
   if not scope then
@@ -943,7 +943,7 @@ function M.leave(s)
   end
   s.scope = nil
   local kind = scope.at == list.WORKTREE and 'worktree' or 'commit'
-  local id = { kind = kind, id = scope.at } --- @type unidiff.SelectionId
+  local id = { kind = kind, id = scope.at } --- @type gitview.SelectionId
   -- The log went unread while the range's files stood in front of it, and it may
   -- have moved on since. Reading it here is also what decides whether the commit
   -- being backed out onto is still in it.
@@ -951,7 +951,7 @@ function M.leave(s)
   redraw_list(s, target_of_id(s, id))
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 function M.close(s)
   if not vim.api.nvim_tabpage_is_valid(s.tab) then
     return
@@ -984,7 +984,7 @@ end
 ---
 --- The line may come from a commit, and so name a line of the file as it was
 --- then. That is accepted: it is usually close, and the file is what was asked for.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param path string absolute
 --- @param lnum integer
 function M.open_file(s, path, lnum)
@@ -1009,7 +1009,7 @@ function M.open_file(s, path, lnum)
 end
 
 --- Open the file the list's cursor is on; see `open_file`.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param win integer the pane the key was pressed in
 local function open_listed(s, win)
   local buf = vim.api.nvim_win_get_buf(win)
@@ -1033,7 +1033,7 @@ local function open_listed(s, win)
 end
 
 --- Refuse to stage from panes the session has made out of date, saying why.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return boolean refused
 local function wait_for_read(s)
   if not s.outdated then
@@ -1053,8 +1053,8 @@ end
 --- file from the list — it still differs from HEAD either way — and the list is
 --- ordered by path, so the row goes on meaning the same file.
 ---
---- @param s unidiff.Session
---- @param decide fun(e: unidiff.StatusEntry, has_head: boolean): unidiff.StageAction?, string?
+--- @param s gitview.Session
+--- @param decide fun(e: gitview.StatusEntry, has_head: boolean): gitview.StageAction?, string?
 local function apply_to_selected(s, decide)
   local target = s.selected
   if not target or wait_for_read(s) then
@@ -1089,7 +1089,7 @@ end
 --- enough to state what to write. Which rows those are — one, a visual
 --- selection, a hunk — is the caller's business.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param op 'stage'|'unstage'
 --- @param first integer 1-based row of the diff buffer
 --- @param last integer inclusive
@@ -1156,7 +1156,7 @@ end
 --- Inside the diff, `s` and `u` work on lines rather than on the whole file:
 --- the rows under the cursor or the visual selection, and with a capital, the
 --- whole change the cursor is in.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function set_diff_stage_keymaps(s)
   local map = util.buf_mapper(s.diff_buf)
   for _, op in ipairs({ 'stage', 'unstage' }) do
@@ -1179,7 +1179,7 @@ local function set_diff_stage_keymaps(s)
 end
 
 --- The keys both panes of the sidebar share.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param buf integer
 local function set_shared_keymaps(s, buf)
   local map = util.buf_mapper(buf)
@@ -1195,7 +1195,7 @@ local function set_shared_keymaps(s, buf)
 end
 
 --- What the keys do in the files pane.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function set_files_keymaps(s)
   local map = util.buf_mapper(s.files_buf)
   map('<CR>', function()
@@ -1220,7 +1220,7 @@ end
 --- say why they do nothing, since leaving them unmapped would let `s` reach a
 --- buffer that cannot be modified and error.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function set_commits_keymaps(s)
   local map = util.buf_mapper(s.commits_buf)
   map('<CR>', function()
@@ -1252,7 +1252,7 @@ end
 --- `gw` is mapped in every buffer of the session, since what it changes is what
 --- the diff pane shows wherever the cursor happens to be. It shadows the `gw`
 --- format operator, which means nothing in a buffer that cannot be modified.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function set_whitespace_keymap(s)
   for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
     util.buf_mapper(buf)('gw', function()
@@ -1261,7 +1261,7 @@ local function set_whitespace_keymap(s)
   end
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function set_diff_keymaps(s)
   keymap.set(s.diff_buf, {
     close = function()
@@ -1349,7 +1349,7 @@ local INDEX_POLL_MS = 1000
 --- holding the file nobody writes to again, while `fs_poll` stats the path by
 --- name and follows the replacement.
 ---
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function watch_index(s)
   local dir = git.dir(s.root)
   if not dir then
@@ -1381,7 +1381,7 @@ local function watch_index(s)
 end
 
 --- Give up the index watcher, which outlives the tab page otherwise.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function unwatch_index(s)
   if s.watcher then
     s.watcher:stop()
@@ -1391,7 +1391,7 @@ local function unwatch_index(s)
 end
 
 --- The name of the augroup holding one session's own autocommands.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function augroup_name(s)
   return 'unidiff.ui.session.' .. s.tab
 end
@@ -1400,7 +1400,7 @@ end
 --- autocommands and its buffers. Deleting the buffers closes whatever windows
 --- still show them, except a window that is the last one there is, which is
 --- handed another buffer instead.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function teardown(s)
   M.sessions[s.tab] = nil
   unwatch_index(s)
@@ -1420,7 +1420,7 @@ local function teardown(s)
 end
 
 --- Open a tab page listing everything uncommitted.
---- @return unidiff.Session?
+--- @return gitview.Session?
 function M.open()
   local root = source.repo_root()
   if not root then
@@ -1429,7 +1429,7 @@ function M.open()
   set_hooks()
   local origin = vim.api.nvim_get_current_tabpage()
   vim.cmd.tabnew()
-  local s = { --- @type unidiff.Session
+  local s = { --- @type gitview.Session
     tab = vim.api.nvim_get_current_tabpage(),
     root = root,
     origin = origin,

@@ -1,4 +1,4 @@
-local worddiff = require('unidiff.diff.worddiff')
+local worddiff = require('gitview.diff.worddiff')
 
 local test, eq = _G.test, _G.eq
 

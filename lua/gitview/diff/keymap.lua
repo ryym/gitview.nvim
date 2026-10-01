@@ -5,12 +5,12 @@
 --- buffer inside the file list is one pane of something larger, and moving
 --- between files means moving the list's cursor. The keys are the same either
 --- way, so what they call is passed in rather than branched on here.
-local render = require('unidiff.diff.render')
-local util = require('unidiff.util')
+local render = require('gitview.diff.render')
+local util = require('gitview.util')
 
 local M = {}
 
---- @class unidiff.DiffKeys
+--- @class gitview.DiffKeys
 --- @field close fun() what `q` does
 --- @field goto_file fun(dir: 1|-1) what `]f` and `[f` do
 --- @field open_file fun(path: string, lnum: integer) what `gf` does with the
@@ -65,7 +65,7 @@ end
 --- in a mixed view an index line the working tree dropped — lands on the line
 --- that now stands where it was: the one after the nearest row above it that the
 --- new version has.
---- @param view unidiff.View
+--- @param view gitview.View
 --- @param row integer 1-based, a row of a source kind
 --- @return integer lnum
 local function new_lnum_at(view, row)
@@ -90,7 +90,7 @@ end
 --- A file's header, and the blank row that parts it from the next file, open the
 --- file at its top. The rows of a commit's header come before any file and
 --- belong to none.
---- @param view unidiff.View
+--- @param view gitview.View
 --- @param row integer 1-based
 --- @return string? path absolute
 --- @return integer? lnum
@@ -130,7 +130,7 @@ function M.edit_at(path, lnum)
 end
 
 --- What the keys do for a diff that owns the tab page it was opened in.
---- @return unidiff.DiffKeys
+--- @return gitview.DiffKeys
 function M.tab_keys()
   return {
     close = function()
@@ -145,7 +145,7 @@ function M.tab_keys()
 end
 
 --- @param buf integer
---- @param keys? unidiff.DiffKeys defaults to `tab_keys()`
+--- @param keys? gitview.DiffKeys defaults to `tab_keys()`
 function M.set(buf, keys)
   keys = vim.tbl_extend('force', M.tab_keys(), keys or {})
   local map = util.buf_mapper(buf)

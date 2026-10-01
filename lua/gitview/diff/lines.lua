@@ -7,7 +7,7 @@ local M = {}
 --- `body` and `stat` make up a commit's header. None of those carry line numbers
 --- or a `side`/`row`/`file` to look their syntax up by.
 ---
---- @class unidiff.Line
+--- @class gitview.Line
 --- @field text string source text without any gutter
 --- @field kind 'context'|'add'|'del'|'file'|'blank'|'subject'|'author'|'body'|'stat'
 --- @field old_lnum integer? 1-based line number in the old version
@@ -15,11 +15,11 @@ local M = {}
 --- @field side 'old'|'new'|'index'? which version `text` came from; `index`
 ---       only in a mixed view
 --- @field row integer? 0-based row of `text` in its version
---- @field file integer? index into `unidiff.View.files`
+--- @field file integer? index into `gitview.View.files`
 --- @field folded true? a `context` line away from every change, which starts
 ---       out folded away. Each run of them is one fold.
 --- @field stage 'staged'|'unstaged'|'index'? which layer a change belongs to, in
----       a mixed view only; see unidiff.diff.mixed
+---       a mixed view only; see gitview.diff.mixed
 --- @field index_pos integer? where the row sits in the index, in a mixed view
 ---       only: its own line number when the index has the row, and the line it
 ---       sits in front of otherwise. Staging a single line needs a patch stated
@@ -67,10 +67,10 @@ end
 --- @param old_lines string[]
 --- @param new_lines string[]
 --- @param context integer number of unchanged lines kept around each hunk
---- @return unidiff.Line[] lines
+--- @return gitview.Line[] lines
 --- @return integer[] hunk_rows 1-based row of the first changed line of each hunk
 function M.build(hunks, old_lines, new_lines, context)
-  local out = {} --- @type unidiff.Line[]
+  local out = {} --- @type gitview.Line[]
   local hunk_rows = {}
   local offset = 0 -- new_lnum - old_lnum for unchanged lines at this point
 
@@ -149,7 +149,7 @@ end
 --- the same file. In a mixed view they must also belong to the same stage: a
 --- staged deletion followed by an unstaged addition is two separate changes.
 ---
---- @param lines unidiff.Line[]
+--- @param lines gitview.Line[]
 --- @return [integer, integer][] pairs of 1-based rows {del_row, add_row}
 function M.change_pairs(lines)
   local pairs_ = {}

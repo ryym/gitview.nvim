@@ -1,4 +1,4 @@
-local hl = require('unidiff.diff.highlight')
+local hl = require('gitview.diff.highlight')
 
 local test, eq = _G.test, _G.eq
 
@@ -15,7 +15,7 @@ local PERL = {
   '}',
 }
 
---- @param segs table<integer, unidiff.Seg[]>
+--- @param segs table<integer, gitview.Seg[]>
 --- @return string[]
 local function groups(segs, row)
   local out = {}
@@ -175,8 +175,8 @@ test('a ghost buffer sets syntax alone when the legacy path is needed', function
 end)
 
 test('a filetype listed in no_highlight counts as none', function()
-  local config = require('unidiff.config')
-  local source = require('unidiff.diff.source')
+  local config = require('gitview.config')
+  local source = require('gitview.diff.source')
   local kept = config.values.no_highlight
   eq('scss', source.filetype_of('/tmp/a.scss'))
   config.values.no_highlight = { 'scss' }

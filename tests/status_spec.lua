@@ -1,4 +1,4 @@
-local status = require('unidiff.status')
+local status = require('gitview.status')
 local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq
@@ -6,13 +6,13 @@ local test, eq = _G.test, _G.eq
 --- @param s string letter
 --- @param path string
 --- @param old_path string?
---- @return unidiff.Change
+--- @return gitview.Change
 local function change(s, path, old_path)
   return { status = s, path = path, old_path = old_path or path, binary = false }
 end
 
 --- `<X><Y> <path>`, plus ` <- <head path>` when HEAD names the file differently
---- @param entries unidiff.StatusEntry[]
+--- @param entries gitview.StatusEntry[]
 --- @return string[]
 local function dump(entries)
   local out = {}
@@ -163,7 +163,7 @@ test('status: an ordinary change is not conflicted', function()
 end)
 
 --- Leave the repository mid-merge with one conflicted file.
---- @param repo unidiff.TestRepo
+--- @param repo gitview.TestRepo
 local function conflict(repo)
   repo.write('fight.txt', { 'base' })
   repo.write('calm.txt', { 'quiet' })

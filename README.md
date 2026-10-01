@@ -29,14 +29,14 @@ works.
 ```
 
 ```lua
-require('unidiff').setup({
+require('gitview').setup({
   context = 3,             -- unchanged lines left open around each hunk
   rev = 'HEAD',            -- default revision to diff against
   algorithm = 'histogram', -- vim.diff() algorithm
   linematch = 0,           -- see "Agreement with git diff" below
 })
-require('unidiff').open({ rev = 'main', context = 5 })
-require('unidiff').open_all({ rev = 'main' })
+require('gitview').open({ rev = 'main', context = 5 })
+require('gitview').open_all({ rev = 'main' })
 ```
 
 Inside the diff buffer:
@@ -241,7 +241,7 @@ The toggle belongs to `:UnidiffStatus`. The other commands honour the configured
 value but have no key for it.
 
 ```lua
-require('unidiff').setup({
+require('gitview').setup({
   list_width = 30,          -- columns for the sidebar
   commit_count = 20,        -- how many recent commits it lists
   commit_ratio = 0.4,       -- share of the sidebar height the commit list takes
@@ -258,7 +258,7 @@ touching many of them can take noticeably longer to open. Listing a filetype
 shows its diffs with the diff colors only:
 
 ```lua
-require('unidiff').setup({ no_highlight = { 'scss' } })
+require('gitview').setup({ no_highlight = { 'scss' } })
 ```
 
 Installing the language's Tree-sitter parser avoids the cost without giving up
@@ -272,7 +272,7 @@ hunks whose deleted and added blocks differ in size, at the cost of that
 agreement:
 
 ```lua
-require('unidiff').setup({ linematch = 60 })
+require('gitview').setup({ linematch = 60 })
 ```
 
 Both sides of the trade-off are measured in

@@ -20,12 +20,12 @@ end
 --- write hundreds; the first few say what went wrong.
 local STDERR_LINES = 5
 
---- @class unidiff.GitError
+--- @class gitview.GitError
 --- @field what string the command, as the user would recognise it
 --- @field stderr string what it said, possibly empty
 
 --- Report a git command that failed, quoting what it said.
---- @param err unidiff.GitError
+--- @param err gitview.GitError
 function M.git_error(err)
   local msg = PREFIX .. err.what .. ' failed'
   if err.stderr ~= '' then

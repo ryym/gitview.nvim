@@ -7,7 +7,7 @@
 --- That keeps the concepts already in the pipeline and nothing else, and it
 --- cannot be rejected the way applying a patch can: there is no context to
 --- match, so there is no `--unidiff-zero` and no failure mode to report.
-local git = require('unidiff.git')
+local git = require('gitview.git')
 
 local M = {}
 
@@ -31,11 +31,11 @@ local MOVES = {
 --- Rows come back in display order, which is what keeps several insertions at
 --- one index position in the order they are read on screen.
 ---
---- @param lines unidiff.Line[] the view's rows
+--- @param lines gitview.Line[] the view's rows
 --- @param first integer 1-based row
 --- @param last integer 1-based row, inclusive
 --- @param op 'stage'|'unstage'
---- @return unidiff.Line[]
+--- @return gitview.Line[]
 function M.selection(lines, first, last, op)
   local moves = MOVES[op]
   local out = {}
@@ -55,7 +55,7 @@ end
 --- of the file's rows. Walking out from the cursor finds the same run without
 --- having to match a row against `hunk_rows` and guess where it ends.
 ---
---- @param lines unidiff.Line[]
+--- @param lines gitview.Line[]
 --- @param row integer 1-based
 --- @return integer? first nil when the cursor is not on a changed row
 --- @return integer? last
@@ -98,7 +98,7 @@ end
 --- order they are given in.
 ---
 --- @param index_lines string[] the index as it stands
---- @param rows unidiff.Line[] in display order
+--- @param rows gitview.Line[] in display order
 --- @return string[] lines
 function M.apply(index_lines, rows)
   local insert, drop = {}, {}
@@ -137,7 +137,7 @@ end
 --- one, an empty blob is what belongs in the index.
 ---
 --- @param op 'stage'|'unstage'
---- @param entry unidiff.StatusEntry
+--- @param entry gitview.StatusEntry
 --- @param root string
 --- @return boolean
 local function drops_entry(op, entry, root)
@@ -162,10 +162,10 @@ end
 --- Make `lines` the index contents for a file.
 ---
 --- @param op 'stage'|'unstage' which direction this came from; see `drops_entry`
---- @param entry unidiff.StatusEntry
+--- @param entry gitview.StatusEntry
 --- @param lines string[] the new index contents
 --- @param root string repository root
---- @return unidiff.GitError? err
+--- @return gitview.GitError? err
 function M.write(op, entry, lines, root)
   local path = entry.path
   if #lines == 0 and drops_entry(op, entry, root) then

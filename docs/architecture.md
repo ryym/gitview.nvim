@@ -54,13 +54,13 @@ nothing more, so yanking one gives something that names the thing elsewhere; the
 status letters are painted by `'statuscolumn'`, and what the pane is holding by
 `'winbar'`.
 
-A row stands for a `unidiff.ListTarget` — a kind and an index — rather than for
+A row stands for a `gitview.ListTarget` — a kind and an index — rather than for
 an entry, because a row is no longer always a file: it can be a commit, the
 working tree standing in the commit list, or a file of a range. A row can also stand for nothing, which is what the notices are. The
 mapping is kept in both directions: the cursor picks a target, but `]f` picks a
 file from inside the diff.
 
-What a pane draws is a `unidiff.ListModel` rather than a list of entries, and the
+What a pane draws is a `gitview.ListModel` rather than a list of entries, and the
 session hands each pane a fresh one on every redraw. The gutter is computed while
 those rows are built rather than when the screen line is drawn: an entry has two
 status letters, a commit's file has one and a commit has none, and putting that
@@ -199,7 +199,7 @@ comparison as the commit alone, and gets the header too.
 
 #### What is compared with what
 
-Everything downstream takes a `unidiff.Range`, an old revision and a new one,
+Everything downstream takes a `gitview.Range`, an old revision and a new one,
 rather than a commit. The whole question of which parent a commit is compared
 with then lives in `git.commit_range` and nowhere else.
 
@@ -257,7 +257,7 @@ the working tree. The use is `git diff HEAD~3`: from some commit to the state of
 things now, committed or not, read as a range like any other.
 
 - **It is the newest end a range can have**, so it sits above the commits and is
-  the new side whenever it is one end. `unidiff.Range.new` is nil for it, which
+  the new side whenever it is one end. `gitview.Range.new` is nil for it, which
   `git diff` given one revision already means, and `source.for_range` reads the
   new side from the files rather than the object database.
 - **On its own it is not a range.** Against HEAD it would compare what the files
@@ -303,8 +303,8 @@ intents to add (`git add -N`), and `GIT_INDEX_FILE` pointing the diff at the cop
 or a marked range — and the commits pane is **replaced** by the files it
 changed. The files pane above is left
 alone, so what is uncommitted stays in view. Replacing rather than merging the
-two lists is what a commit's `unidiff.Change` and an uncommitted
-`unidiff.StatusEntry` being different shapes — one status letter against two, a
+two lists is what a commit's `gitview.Change` and an uncommitted
+`gitview.StatusEntry` being different shapes — one status letter against two, a
 parent against three versions — makes right.
 
 Which commit is being looked into is named by the pane's `'winbar'`, so no row of
@@ -553,7 +553,7 @@ out as a string: the fragment alone carries no such information.
 
 ## Data shapes
 
-### `unidiff.Line`
+### `gitview.Line`
 
 One row of the rendered buffer.
 
@@ -572,13 +572,13 @@ opening the source; they are not used for highlighting. `index_pos` is there
 for writing the index back: see `diff/mixed` for how every row is placed against
 it, including the rows the index does not have.
 
-### `unidiff.View`
+### `gitview.View`
 
 Everything one diff buffer needs, stored in `render.views[bufnr]` and dropped on
 `BufWipeout`.
 
-- `lines` — the `unidiff.Line[]`, one per buffer row
-- `files` — `unidiff.File[]`, each with its ghost buffers, language, label, and
+- `lines` — the `gitview.Line[]`, one per buffer row
+- `files` — `gitview.File[]`, each with its ghost buffers, language, label, and
   the 1-based row of its header line
 - `hunk_rows` — 1-based rows to jump between with `]h` / `[h`
 - `rev`, `note` — shown in the winbar
@@ -591,7 +591,7 @@ running offset, and `view.prepend` shifts them all once more for a header.
 
 ### Line kinds
 
-Every buffer row has a `unidiff.Line`, but only some of them stand for a line of
+Every buffer row has a `gitview.Line`, but only some of them stand for a line of
 one of the two versions:
 
 | kind                     | text                       | has line numbers |

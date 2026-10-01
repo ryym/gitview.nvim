@@ -1,5 +1,5 @@
-local git = require('unidiff.git')
-local source = require('unidiff.diff.source')
+local git = require('gitview.git')
+local source = require('gitview.diff.source')
 local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq

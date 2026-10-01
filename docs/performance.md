@@ -149,7 +149,7 @@ else. `git cat-file --batch` takes every spec on stdin and answers in order.
 ### Keep module state off what `v:lua` converts
 
 `'foldexpr'`, `'foldtext'`, `'statuscolumn'` and `'winbar'` call into the plugin
-as `v:lua.require("unidiff.diff.render").fn()`. Evaluating that converts the
+as `v:lua.require("gitview.diff.render").fn()`. Evaluating that converts the
 module table `require` returns into a Vim value on every call, following every
 table it holds; the function being called does not have to touch any of it. The
 cost of one call is therefore proportional to the data reachable from the

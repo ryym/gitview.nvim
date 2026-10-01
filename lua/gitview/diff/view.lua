@@ -1,7 +1,7 @@
 --- Turning sources into the one structure a diff buffer is drawn from.
-local dlib = require('unidiff.diff.lines')
-local hl = require('unidiff.diff.highlight')
-local mixed = require('unidiff.diff.mixed')
+local dlib = require('gitview.diff.lines')
+local hl = require('gitview.diff.highlight')
+local mixed = require('gitview.diff.mixed')
 
 local M = {}
 
@@ -11,11 +11,11 @@ local M = {}
 --- and its filetype. The ghost buffers it creates are the view's only resource,
 --- and `dispose` is what frees them.
 ---
---- @param sources unidiff.Source[]
+--- @param sources gitview.Source[]
 --- @param rev string
 --- @param context integer
 --- @param diff_opts {algorithm:string, linematch:integer}
---- @return unidiff.View? view nil when nothing differs
+--- @return gitview.View? view nil when nothing differs
 --- @return string[] unchanged labels of sources with no textual difference,
 ---         such as a pure rename or a mode change
 function M.build(sources, rev, context, diff_opts)
@@ -88,8 +88,8 @@ end
 --- The lines that introduce a commit: its subject, who wrote it and when, the
 --- body, and the stat. Blank lines part them, and the body's own blank lines are
 --- kept as written.
---- @param detail unidiff.CommitDetail
---- @return unidiff.Line[]
+--- @param detail gitview.CommitDetail
+--- @return gitview.Line[]
 function M.commit_header(detail)
   local out = {}
   local function add(text, kind)
@@ -124,8 +124,8 @@ end
 ---
 --- A blank line parts it from the first file, as one parts two files, and is
 --- not part of the header: it stays in view while the header is folded.
---- @param view unidiff.View
---- @param header unidiff.Line[]
+--- @param view gitview.View
+--- @param header gitview.Line[]
 function M.prepend(view, header)
   local shift = #header + 1
   local lines = vim.list_extend({}, header)
@@ -149,7 +149,7 @@ end
 ---
 --- The handles are cleared as well, so that a later attempt to read a version
 --- fails outright rather than addressing some unrelated buffer.
---- @param view unidiff.View
+--- @param view gitview.View
 function M.dispose(view)
   for _, f in ipairs(view.files) do
     for _, key in ipairs({ 'old_buf', 'new_buf', 'index_buf' }) do
@@ -164,7 +164,7 @@ end
 --- What a view could not show, for its winbar. Dropping either silently would
 --- hide a real change: a pure rename or a mode change produces no hunks, and a
 --- binary file has no versions that can be diffed.
---- @param skipped unidiff.Skipped
+--- @param skipped gitview.Skipped
 --- @param unchanged integer
 --- @return string?
 function M.skipped_note(skipped, unchanged)

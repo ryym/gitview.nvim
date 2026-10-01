@@ -1,4 +1,4 @@
-local perf = require('unidiff.perf')
+local perf = require('gitview.perf')
 
 local test, eq = _G.test, _G.eq
 

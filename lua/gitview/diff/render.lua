@@ -1,9 +1,9 @@
-local hl = require('unidiff.diff.highlight')
-local util = require('unidiff.util')
-local worddiff = require('unidiff.diff.worddiff')
-local dlib = require('unidiff.diff.lines')
-local perf = require('unidiff.perf')
-local vlib = require('unidiff.diff.view')
+local hl = require('gitview.diff.highlight')
+local util = require('gitview.util')
+local worddiff = require('gitview.diff.worddiff')
+local dlib = require('gitview.diff.lines')
+local perf = require('gitview.perf')
+local vlib = require('gitview.diff.view')
 
 local M = {}
 
@@ -14,17 +14,17 @@ local ns_diff = vim.api.nvim_create_namespace('unidiff.diff')
 --- `v:lua.require(...).fn()`, which converts `M` into a Vim value on every call:
 --- a view reachable from it would be copied once per line on each redraw, and
 --- once per line per line whenever 'foldexpr' reevaluates the whole buffer.
---- @type table<integer, unidiff.View>
+--- @type table<integer, gitview.View>
 local views = {}
 
 --- The view `buf` is showing, if it is showing one.
 --- @param buf integer
---- @return unidiff.View?
+--- @return gitview.View?
 function M.view_of(buf)
   return views[buf]
 end
 
---- @class unidiff.File
+--- @class gitview.File
 --- @field path string absolute path in the working tree
 --- @field label string what the header shows
 --- @field old_buf integer ghost buffer holding the old version
@@ -33,14 +33,14 @@ end
 --- @field lang string language for highlight collection
 --- @field row integer 1-based row of this file's header line
 
---- @class unidiff.View
---- @field lines unidiff.Line[]
---- @field files unidiff.File[]
+--- @class gitview.View
+--- @field lines gitview.Line[]
+--- @field files gitview.File[]
 --- @field hunk_rows integer[] rows worth jumping between, ascending
 --- @field file_rows integer[] the rows of `files`' header lines, ascending
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. skipped files
---- @field mixed boolean? staged and unstaged changes in one view; see unidiff.diff.mixed
+--- @field mixed boolean? staged and unstaged changes in one view; see gitview.diff.mixed
 --- @field header_rows integer? how many rows at the top introduce the view rather
 ---        than belong to a file: a commit's message and stat. They fold as one,
 ---        as does each run of `folded` lines.
@@ -134,13 +134,13 @@ local STAT_HL = { ['%++'] = 'UnidiffStatAdd', ['%-+'] = 'UnidiffStatDelete' }
 local STAGED_LINE_HL = { add = 'UnidiffStagedAdd', del = 'UnidiffStagedDelete' }
 local STAGED_TEXT_HL = { add = 'UnidiffStagedAddText', del = 'UnidiffStagedDeleteText' }
 
---- @param l unidiff.Line
+--- @param l gitview.Line
 --- @return string?
 local function line_hl_of(l)
   return l.stage == 'staged' and STAGED_LINE_HL[l.kind] or LINE_HL[l.kind]
 end
 
---- @param l unidiff.Line
+--- @param l gitview.Line
 --- @return string
 local function text_hl_of(l)
   return l.stage == 'staged' and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
@@ -154,7 +154,7 @@ local RULE = ('─'):rep(512)
 
 --- How many lines each file adds and deletes, from HEAD to the working tree in
 --- a mixed view: a row only the index has is in neither.
---- @param view unidiff.View
+--- @param view gitview.View
 --- @return {add:integer, del:integer}[] by file
 local function file_stats(view)
   local stats = {}
@@ -183,7 +183,7 @@ end
 --- file and the new line number of its first row for a run of unchanged lines.
 --- Staging leaves the working tree alone, and a commit never changes, so a run
 --- keeps its name for as long as the same thing is being redrawn.
---- @param view unidiff.View
+--- @param view gitview.View
 --- @param row integer 1-based first row of the fold
 --- @return string
 local function fold_key(view, row)
@@ -195,7 +195,7 @@ local function fold_key(view, row)
 end
 
 --- The first row of every fold `view` makes.
---- @param view unidiff.View
+--- @param view gitview.View
 --- @return integer[]
 local function fold_starts(view)
   local starts = view.header_rows and { 1 } or {}
@@ -234,7 +234,7 @@ local function fold_states(buf)
   return states
 end
 
---- @param view unidiff.View
+--- @param view gitview.View
 --- @param states table<integer, table<string, boolean>> from `fold_states`
 local function restore_folds(view, states)
   local starts = fold_starts(view)
@@ -269,8 +269,8 @@ local STEP_BUDGET_MS = 10
 
 --- The rows of one file whose syntax is collected together, and the rows of
 --- each version they show.
---- @class unidiff.FillJob
---- @field file integer index into `unidiff.View.files`
+--- @class gitview.FillJob
+--- @field file integer index into `gitview.View.files`
 --- @field rows integer[] 1-based rows of the view
 --- @field want table<string, table<integer, true>> rows of each version
 
@@ -280,9 +280,9 @@ local STEP_BUDGET_MS = 10
 --- Only a fraction of each version is open to begin with. The legacy syntax path
 --- probes byte by byte, so telling it which rows matter keeps what the reader
 --- waits for bounded by the size of the diff rather than the size of the file.
---- @param view unidiff.View
---- @return unidiff.FillJob[] open by file
---- @return unidiff.FillJob[] folded by file
+--- @param view gitview.View
+--- @return gitview.FillJob[] open by file
+--- @return gitview.FillJob[] folded by file
 local function rows_by_file(view)
   local open, folded = {}, {}
   for i = 1, #view.files do
@@ -301,8 +301,8 @@ end
 
 --- Collect one file's syntax from its ghost buffers and replay it onto `buf`.
 --- @param buf integer
---- @param view unidiff.View
---- @param job unidiff.FillJob from `rows_by_file`
+--- @param view gitview.View
+--- @param job gitview.FillJob from `rows_by_file`
 local function fill_file(buf, view, job)
   local f = view.files[job.file]
   local want = job.want
@@ -332,7 +332,7 @@ end
 --- without asking the window what it shows, which it does not know until it has
 --- been redrawn.
 --- @param buf integer
---- @param view unidiff.View
+--- @param view gitview.View
 --- @return integer[]
 local function fill_order(buf, view)
   local win = vim.fn.win_findbuf(buf)[1]
@@ -367,10 +367,10 @@ end
 --- a step's timer always is by then, so the text would otherwise appear only
 --- together with the last of the colors.
 --- @param buf integer
---- @param view unidiff.View
+--- @param view gitview.View
 local function fill_syntax(buf, view)
   local open, folded = rows_by_file(view)
-  local jobs = {} --- @type unidiff.FillJob[]
+  local jobs = {} --- @type gitview.FillJob[]
   local order = fill_order(buf, view)
   local open_rows = 0
   for _, file in ipairs(order) do
@@ -431,7 +431,7 @@ end
 --- The view's ghost buffers are this function's to free from here on: its
 --- syntax may still be being collected from them after it returns.
 --- @param buf integer from `create_buffer`
---- @param view unidiff.View
+--- @param view gitview.View
 function M.draw(buf, view)
   -- Up to the text being on screen; `syntax.background` covers what is left.
   local span = perf.start('draw', { rows = #view.lines })
@@ -598,7 +598,7 @@ end
 
 --- Make a buffer and draw a view in it. Callers that keep a buffer of their own
 --- use `create_buffer` and `draw` apart.
---- @param view unidiff.View
+--- @param view gitview.View
 --- @return integer bufnr
 function M.render(view)
   local buf = M.create_buffer()
@@ -725,7 +725,7 @@ end
 --- The syntax of a folded row is filled in after the rest of the view, so a run
 --- shown before then reads as plain text, and is redrawn once it is colored.
 --- @param buf integer
---- @param view unidiff.View
+--- @param view gitview.View
 --- @param first integer 1-based first row of the run
 --- @param last integer
 --- @param width integer
@@ -842,16 +842,16 @@ end
 --- @param buf integer
 function M.configure_window(win, buf)
   util.configure_window_options(win, {
-    winbar = '%!v:lua.require("unidiff.diff.render").winbar()',
-    statuscolumn = '%!v:lua.require("unidiff.diff.render").statuscolumn()',
+    winbar = '%!v:lua.require("gitview.diff.render").winbar()',
+    statuscolumn = '%!v:lua.require("gitview.diff.render").statuscolumn()',
     number = false,
     relativenumber = false,
     signcolumn = 'no',
     wrap = false,
     cursorline = false,
     foldmethod = 'expr',
-    foldexpr = 'v:lua.require("unidiff.diff.render").foldexpr()',
-    foldtext = 'v:lua.require("unidiff.diff.render").foldtext()',
+    foldexpr = 'v:lua.require("gitview.diff.render").foldexpr()',
+    foldtext = 'v:lua.require("gitview.diff.render").foldtext()',
     foldenable = true,
     -- a commit's header and the unchanged lines start folded: the changes are
     -- what is being read

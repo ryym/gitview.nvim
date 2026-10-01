@@ -1,11 +1,11 @@
-local list = require('unidiff.ui.list')
-local session = require('unidiff.ui.session')
+local list = require('gitview.ui.list')
+local session = require('gitview.ui.session')
 local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq
 
 --- Wait for the status being read in the background to be drawn.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function settle(s)
   local done = vim.wait(5000, function()
     return not s.reading
@@ -17,8 +17,8 @@ end
 ---
 --- `:lcd` into the repository is what makes the session find it, the same way
 --- the commands do for the buffer they were called from.
---- @param setup fun(repo: unidiff.TestRepo)
---- @param fn fun(s: unidiff.Session, repo: unidiff.TestRepo)
+--- @param setup fun(repo: gitview.TestRepo)
+--- @param fn fun(s: gitview.Session, repo: gitview.TestRepo)
 --- @param opts? {unsettled?:boolean} `unsettled` to start `fn` while the status
 ---        is still being read, rather than once it has been drawn
 local function with_session(setup, fn, opts)
@@ -45,21 +45,21 @@ local function with_session(setup, fn, opts)
 end
 
 --- The files pane. The commits pane below it has tests of its own.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string[]
 local function rows(s)
   return vim.api.nvim_buf_get_lines(s.files_buf, 0, -1, false)
 end
 
 --- The commits pane, which holds the commit list or, inside one, its files.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string[]
 local function commit_rows(s)
   return vim.api.nvim_buf_get_lines(s.commits_buf, 0, -1, false)
 end
 
 --- Which file is selected, for the tests that only care about that.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return integer?
 local function selected(s)
   return s.selected and s.selected.index or nil
@@ -140,7 +140,7 @@ end)
 -- rather than news: the next trigger will come along regardless.
 test('session: only a manual refresh reports a git failure', function()
   with_session(base, function(s)
-    local status = require('unidiff.status')
+    local status = require('gitview.status')
     local list_entries, notify = status.list, vim.notify
     local messages = {}
     status.list = function()
@@ -209,7 +209,7 @@ end)
 
 --- Wait for the session to be dropped, which closing a pane does on the next
 --- turn of the event loop.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function wait_dropped(s)
   local done = vim.wait(1000, function()
     return session.sessions[s.tab] == nil
@@ -293,7 +293,7 @@ test('session: the list buffer carries its keymaps', function()
   end)
 end)
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string[]
 local function diff_rows(s)
   return vim.api.nvim_buf_get_lines(s.diff_buf, 0, -1, false)
@@ -316,7 +316,7 @@ test('session: opens showing the first entry', function()
     assert(text:find('return 3', 1, true), text)
     -- one diff carries both layers, which is the whole point of the model
     local stages = {}
-    for _, l in ipairs(require('unidiff.diff.render').view_of(s.diff_buf).lines) do
+    for _, l in ipairs(require('gitview.diff.render').view_of(s.diff_buf).lines) do
       if l.stage then
         stages[l.stage] = true
       end
@@ -365,7 +365,7 @@ test('session: a change with no lines says so instead of showing nothing', funct
     repo.git('mv', 'doc.md', 'guide.md')
   end, function(s)
     eq({ 'doc.md -> guide.md   (no textual change)' }, diff_rows(s))
-    eq(nil, require('unidiff.diff.render').view_of(s.diff_buf))
+    eq(nil, require('gitview.diff.render').view_of(s.diff_buf))
   end)
 end)
 
@@ -406,7 +406,7 @@ end)
 
 test('session: the diff pane takes what the list leaves', function()
   with_session(two, function(s)
-    local width = require('unidiff.config').values.list_width
+    local width = require('gitview.config').values.list_width
     eq(width, vim.api.nvim_win_get_width(s.files_win))
     eq(width, vim.api.nvim_win_get_width(s.commits_win))
     assert(vim.api.nvim_win_get_width(s.diff_win) > 0, 'the diff pane has no width')
@@ -454,8 +454,8 @@ end)
 -- one it overtook started from an older repository.
 test('session: a read overtaken by a later one is dropped', function()
   with_session(base, function(s)
-    local git = require('unidiff.git')
-    local status = require('unidiff.status')
+    local git = require('gitview.git')
+    local status = require('gitview.status')
     local list_entries = status.list
     local slow_done = false
     local calls = 0
@@ -484,7 +484,7 @@ test('session: a read overtaken by a later one is dropped', function()
 end)
 
 test('session: a first read that fails says so in place of the files', function()
-  local status = require('unidiff.status')
+  local status = require('gitview.status')
   local list_entries, notify = status.list, vim.notify
   local messages = {}
   local ok, err = pcall(function()
@@ -508,7 +508,7 @@ end)
 
 --- Press a key in one of the sidebar panes, so that the buffer-local mapping is
 --- what is being tested rather than the function behind it.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param key string
 --- @param win integer? which pane; the files pane by default
 local function press(s, key, win)
@@ -626,7 +626,7 @@ end)
 
 --- Press a key in the diff pane, where `s` and `u` work on lines rather than on
 --- the whole file. Mappings are applied, so the mapping is what is tested.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param keys string
 local function press_diff(s, keys)
   vim.api.nvim_set_current_win(s.diff_win)
@@ -635,11 +635,11 @@ local function press_diff(s, keys)
 end
 
 --- The diff row a changed line of this text is drawn on.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param text string
 --- @return integer
 local function changed_row(s, text)
-  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
+  local view = assert(require('gitview.diff.render').view_of(s.diff_buf), 'no view drawn')
   for i, l in ipairs(view.lines) do
     if l.text == text and l.stage then
       return i
@@ -648,7 +648,7 @@ local function changed_row(s, text)
   error('no changed row reading ' .. text)
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param row integer
 local function put_cursor(s, row)
   vim.api.nvim_set_current_win(s.diff_win)
@@ -705,7 +705,7 @@ test('session: staging in the diff redraws the pane as staged', function()
   with_session(partial, function(s)
     put_cursor(s, changed_row(s, 'six'))
     press_diff(s, 's')
-    local view = require('unidiff.diff.render').view_of(s.diff_buf)
+    local view = require('gitview.diff.render').view_of(s.diff_buf)
     eq('staged', view.lines[changed_row(s, 'six')].stage)
   end)
 end)
@@ -737,11 +737,11 @@ local function spread(repo)
 end
 
 --- The diff row a folded line of this text is drawn on.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param text string
 --- @return integer
 local function folded_row(s, text)
-  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
+  local view = assert(require('gitview.diff.render').view_of(s.diff_buf), 'no view drawn')
   for i, l in ipairs(view.lines) do
     if l.folded and l.text == text then
       return i
@@ -750,7 +750,7 @@ local function folded_row(s, text)
   error('no folded row reading ' .. text)
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param text string
 --- @return boolean
 local function fold_open(s, text)
@@ -760,7 +760,7 @@ local function fold_open(s, text)
   end)
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param text string
 local function open_fold(s, text)
   put_cursor(s, folded_row(s, text))
@@ -805,7 +805,7 @@ end)
 test('session: a row with nothing to stage leaves the index alone', function()
   with_session(partial, function(s, repo)
     -- `three` is unchanged in all three versions, so it is a context row.
-    local view = require('unidiff.diff.render').view_of(s.diff_buf)
+    local view = require('gitview.diff.render').view_of(s.diff_buf)
     local row
     for i, l in ipairs(view.lines) do
       if l.text == 'three' then
@@ -828,7 +828,7 @@ test('session: staging part of an untracked file from the diff', function()
 end)
 
 --- Leave the repository mid-merge with one conflicted file and one clean change.
---- @param repo unidiff.TestRepo
+--- @param repo gitview.TestRepo
 local function mid_merge(repo)
   repo.write('fight.txt', { 'base' })
   repo.commit('init')
@@ -893,7 +893,7 @@ end
 --- Put the cursor on a commit row and draw it. `sync_selection` defers a commit
 --- so that sweeping the list does not build one view per row; the tests assert
 --- what is drawn, not when.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param index integer into the commits
 local function show_commit(s, index)
   local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = index }))
@@ -976,10 +976,10 @@ end)
 test('session: the root commit shows its files as additions', function()
   with_session(history, function(s)
     show_commit(s, 2)
-    local view = require('unidiff.diff.render').view_of(s.diff_buf)
+    local view = require('gitview.diff.render').view_of(s.diff_buf)
     assert(view, 'the root commit should have a view')
     for _, l in ipairs(view.lines) do
-      if require('unidiff.diff.lines').source_kinds[l.kind] then
+      if require('gitview.diff.lines').source_kinds[l.kind] then
         eq('add', l.kind)
       end
     end
@@ -989,7 +989,7 @@ end)
 test('session: a commit view is not mixed', function()
   with_session(history, function(s)
     show_commit(s, 1)
-    local view = require('unidiff.diff.render').view_of(s.diff_buf)
+    local view = require('gitview.diff.render').view_of(s.diff_buf)
     eq(nil, view.mixed)
   end)
 end)
@@ -1041,7 +1041,7 @@ test('session: a file of a commit is shown by itself', function()
     show_commit(s, 1)
     session.enter(s)
     session.show_selected(s)
-    local view = require('unidiff.diff.render').view_of(s.diff_buf)
+    local view = require('gitview.diff.render').view_of(s.diff_buf)
     eq(1, #view.files)
     eq('a.lua', view.files[1].label)
     local text = table.concat(diff_rows(s), '\n')
@@ -1063,7 +1063,7 @@ end
 
 --- Press `gf` in one of the session's panes, and say where it landed: the file
 --- relative to the repository, and the line the cursor is on.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param win integer
 --- @return string? path nil when the current buffer did not change
 --- @return integer lnum
@@ -1082,12 +1082,12 @@ local function press_gf(s, win)
 end
 
 --- The diff row drawn for this text.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param text string
 --- @param kind string
 --- @return integer
 local function row_of_text(s, text, kind)
-  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
+  local view = assert(require('gitview.diff.render').view_of(s.diff_buf), 'no view drawn')
   for i, l in ipairs(view.lines) do
     if l.text == text and l.kind == kind then
       return i
@@ -1281,7 +1281,7 @@ local function long_history(repo)
 end
 
 --- Where the diff pane is looking.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return integer row
 local function diff_row(s)
   return vim.api.nvim_win_get_cursor(s.diff_win)[1]
@@ -1320,7 +1320,7 @@ test('session: staging keeps the position in the diff', function()
     local row = changed_row(s, 'again 20')
     put_cursor(s, row)
     press_diff(s, 's')
-    eq('staged', require('unidiff.diff.render').view_of(s.diff_buf).lines[row].stage)
+    eq('staged', require('gitview.diff.render').view_of(s.diff_buf).lines[row].stage)
     eq(row, diff_row(s))
   end)
 end)
@@ -1366,7 +1366,7 @@ local function forked_history(repo)
 end
 
 --- Put the cursor on a commit row without drawing, so a test can mark it.
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @param index integer
 local function goto_commit(s, index)
   local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = index }))
@@ -1374,11 +1374,11 @@ local function goto_commit(s, index)
   s.selected = { kind = 'commit', index = index }
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string
 local function diff_winbar(s)
   vim.g.statusline_winid = s.diff_win
-  return (require('unidiff.diff.render').winbar():gsub('%%#%w+#', ''))
+  return (require('gitview.diff.render').winbar():gsub('%%#%w+#', ''))
 end
 
 test('session: the marked commit is shown in the gutter', function()
@@ -1416,7 +1416,7 @@ test('session: a mark and the cursor compare the stretch between them', function
     -- first -> merge side adds both branches' files
     eq({ 'main.txt', 'side.txt' }, vim.tbl_map(function(f)
       return f.label
-    end, require('unidiff.diff.render').view_of(s.diff_buf).files))
+    end, require('gitview.diff.render').view_of(s.diff_buf).files))
   end)
 end)
 
@@ -1475,7 +1475,7 @@ test('session: a merge on its own is still first parent', function()
     -- only the side branch's file, not main's
     eq({ 'side.txt' }, vim.tbl_map(function(f)
       return f.label
-    end, require('unidiff.diff.render').view_of(s.diff_buf).files))
+    end, require('gitview.diff.render').view_of(s.diff_buf).files))
   end)
 end)
 
@@ -1489,7 +1489,7 @@ test('session: looking into a range lists the files it changed', function()
     eq(('%s..%s'):format(s.commits[4].sha, s.commits[1].sha), s.scope.label)
     eq({ 'main.txt', 'side.txt' }, commit_rows(s))
     session.show_selected(s)
-    eq('main.txt', require('unidiff.diff.render').view_of(s.diff_buf).files[1].label)
+    eq('main.txt', require('gitview.diff.render').view_of(s.diff_buf).files[1].label)
     -- backing out returns to the commit the cursor was on, not to the mark
     session.leave(s)
     eq({ kind = 'commit', index = 1 }, s.selected)
@@ -1501,7 +1501,7 @@ end)
 --- @param n integer
 --- @param fn fun()
 local function with_commit_count(n, fn)
-  local config = require('unidiff.config')
+  local config = require('gitview.config')
   local kept = config.values.commit_count
   config.values.commit_count = n
   local ok, err = pcall(fn)
@@ -1509,7 +1509,7 @@ local function with_commit_count(n, fn)
   assert(ok, err)
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string
 local function commits_winbar(s)
   vim.g.statusline_winid = s.commits_win
@@ -1570,19 +1570,19 @@ local function dirty_history(repo)
 end
 
 --- Put the cursor on the working-tree row without drawing.
---- @param s unidiff.Session
+--- @param s gitview.Session
 local function goto_worktree(s)
   local row = assert(list.row_of(s.commits_buf, { kind = 'worktree', index = 1 }))
   vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
   s.selected = { kind = 'worktree', index = 1 }
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string[] the label of every file in the view drawn
 local function view_files(s)
   return vim.tbl_map(function(f)
     return f.label
-  end, assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn').files)
+  end, assert(require('gitview.diff.render').view_of(s.diff_buf), 'no view drawn').files)
 end
 
 -- A clean working tree is HEAD, so a row for it would compare nothing HEAD's
@@ -1606,7 +1606,7 @@ test('session: the working-tree row shows everything uncommitted at once', funct
     session.show_selected(s)
     eq({ 'a.lua', 'loose.lua' }, view_files(s))
     -- what the files pane shows a file at a time: staged and unstaged together
-    assert(require('unidiff.diff.render').view_of(s.diff_buf).mixed, 'the view should be mixed')
+    assert(require('gitview.diff.render').view_of(s.diff_buf).mixed, 'the view should be mixed')
   end)
 end)
 
@@ -1623,7 +1623,7 @@ test('session: a mark and the working-tree row compare the commit with the worki
     assert(text:find('return 1', 1, true), text)
     assert(text:find('return 3', 1, true), text)
     assert(not text:find('return 2', 1, true), text)
-    eq(nil, require('unidiff.diff.render').view_of(s.diff_buf).mixed)
+    eq(nil, require('gitview.diff.render').view_of(s.diff_buf).mixed)
   end)
 end)
 
@@ -1720,13 +1720,13 @@ local function whitespace(repo)
   repo.write('a.txt', { 'a', '  b  ', 'C' })
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return string[] the text of every row standing for a source line
 local function source_rows(s)
-  local view = assert(require('unidiff.diff.render').view_of(s.diff_buf), 'no view drawn')
+  local view = assert(require('gitview.diff.render').view_of(s.diff_buf), 'no view drawn')
   local out = {}
   for _, l in ipairs(view.lines) do
-    if require('unidiff.diff.lines').source_kinds[l.kind] then
+    if require('gitview.diff.lines').source_kinds[l.kind] then
       out[#out + 1] = ('%s %s'):format(l.kind, l.text)
     end
   end
@@ -1826,13 +1826,13 @@ local function described_history(repo)
   repo.write('a.lua', { 'return 5' })
 end
 
---- @param s unidiff.Session
---- @return unidiff.View
+--- @param s gitview.Session
+--- @return gitview.View
 local function diff_view(s)
-  return assert(require('unidiff.diff.render').view_of(s.diff_buf))
+  return assert(require('gitview.diff.render').view_of(s.diff_buf))
 end
 
---- @param s unidiff.Session
+--- @param s gitview.Session
 --- @return integer? first row of the closed fold over row 1, nil when open
 local function header_closed(s)
   return vim.api.nvim_win_call(s.diff_win, function()
@@ -1865,7 +1865,7 @@ test('session: a commit is introduced by its message and stat', function()
     eq(10, view.header_rows)
     eq({ 12, 16 }, view.file_rows)
     eq(12, view.files[1].row)
-    local dlib = require('unidiff.diff.lines')
+    local dlib = require('gitview.diff.lines')
     for _, r in ipairs(view.hunk_rows) do
       assert(dlib.source_kinds[view.lines[r].kind], 'hunk row ' .. r)
     end
@@ -1900,7 +1900,7 @@ test('session: the header starts folded, and reads as its subject', function()
     assert(vim.api.nvim_get_current_win() ~= s.diff_win)
     eq(10, header_closed(s))
     local text = vim.api.nvim_win_call(s.diff_win, function()
-      return require('unidiff.diff.render').foldtext()
+      return require('gitview.diff.render').foldtext()
     end)
     eq({
       { '\u{25b8} second', 'UnidiffCommitSubject' },

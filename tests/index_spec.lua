@@ -1,13 +1,13 @@
-local index = require('unidiff.index')
-local mixed = require('unidiff.diff.mixed')
-local source = require('unidiff.diff.source')
-local status = require('unidiff.status')
+local index = require('gitview.index')
+local mixed = require('gitview.diff.mixed')
+local source = require('gitview.diff.source')
+local status = require('gitview.status')
 local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq
 
 --- @param fields table
---- @return unidiff.Line
+--- @return gitview.Line
 local function row(fields)
   return vim.tbl_extend('force', { text = '', kind = 'add', side = 'new' }, fields)
 end
@@ -108,11 +108,11 @@ end)
 
 --- The mixed view's rows for one file of a real repository, untrimmed so that
 --- every row is addressable by position.
---- @param repo unidiff.TestRepo
+--- @param repo gitview.TestRepo
 --- @param path string
---- @return unidiff.Line[] rows
---- @return unidiff.StatusEntry entry
---- @return unidiff.Source src
+--- @return gitview.Line[] rows
+--- @return gitview.StatusEntry entry
+--- @return gitview.Source src
 local function view_rows(repo, path)
   local entry
   for _, e in ipairs(assert(status.list(repo.root))) do
@@ -126,7 +126,7 @@ local function view_rows(repo, path)
 end
 
 --- Apply one operation to every row of the view that it moves, then write it.
---- @param repo unidiff.TestRepo
+--- @param repo gitview.TestRepo
 --- @param path string
 --- @param op 'stage'|'unstage'
 local function apply_all(repo, path, op)

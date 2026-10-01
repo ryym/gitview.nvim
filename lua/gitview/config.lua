@@ -2,7 +2,7 @@
 --- read it without depending on `init`.
 local M = {}
 
---- @class unidiff.Config
+--- @class gitview.Config
 --- @field context integer unchanged lines left open around each hunk
 --- @field algorithm string vim.diff() algorithm
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
@@ -13,7 +13,7 @@ local M = {}
 --- @field commit_ratio number share of the sidebar height the commit list takes
 --- @field no_highlight string[] filetypes shown without syntax highlighting
 
---- @type unidiff.Config
+--- @type gitview.Config
 M.values = {
   context = 3,
   algorithm = 'histogram',
@@ -25,14 +25,14 @@ M.values = {
   no_highlight = {},
 }
 
---- @param opts? unidiff.Config
+--- @param opts? gitview.Config
 function M.set(opts)
   M.values = vim.tbl_extend('force', M.values, opts or {})
 end
 
 --- The subset `vim.diff` takes. A fresh table each call, so a caller with state
 --- of its own can layer it on top.
---- @param opts unidiff.Config
+--- @param opts gitview.Config
 --- @return {algorithm:string, linematch:integer, ignore_whitespace:boolean}
 function M.diff_opts(opts)
   return {

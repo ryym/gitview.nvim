@@ -1,4 +1,4 @@
-local git = require('unidiff.git')
+local git = require('gitview.git')
 local helpers = dofile('tests/helpers.lua')
 
 local test, eq = _G.test, _G.eq
@@ -353,7 +353,7 @@ end)
 
 --- A history that forks and merges: `side` and `main` are on branches that
 --- diverged, so neither is an ancestor of the other.
---- @param repo unidiff.TestRepo
+--- @param repo gitview.TestRepo
 --- @return table<string, string> sha by subject
 local function forked(repo)
   repo.write('base.txt', { 'base' })

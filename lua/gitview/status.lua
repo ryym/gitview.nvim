@@ -5,7 +5,7 @@
 --- "unstaged". A file can differ from HEAD in the index, in the working tree,
 --- or both, so each entry carries a status letter for each side; the diff for
 --- an entry is always built from all three versions and needs no such split.
-local git = require('unidiff.git')
+local git = require('gitview.git')
 
 local M = {}
 
@@ -24,7 +24,7 @@ local UNTRACKED = '?'
 --- is unmerged is recorded, so all of them are shown as `UU`.
 local UNMERGED = 'U'
 
---- @class unidiff.StatusEntry
+--- @class gitview.StatusEntry
 --- @field path string repo-relative, as the index and the working tree name it
 --- @field head_path string? repo-relative in HEAD; nil for a file HEAD lacks
 --- @field index_status string one character, as `git status --short` prints X
@@ -43,12 +43,12 @@ local UNMERGED = 'U'
 --- but then edited again is `old -> new` in the first list and `new` in the
 --- second: the index path is the only key both agree on.
 ---
---- @param staged unidiff.Change[] HEAD -> index
---- @param unstaged unidiff.Change[] index -> working tree
+--- @param staged gitview.Change[] HEAD -> index
+--- @param unstaged gitview.Change[] index -> working tree
 --- @param untracked string[] paths git is not tracking
---- @return unidiff.StatusEntry[] sorted by path
+--- @return gitview.StatusEntry[] sorted by path
 function M.entries(staged, unstaged, untracked)
-  local entries, by_path = {}, {} --- @type unidiff.StatusEntry[], table<string, unidiff.StatusEntry>
+  local entries, by_path = {}, {} --- @type gitview.StatusEntry[], table<string, gitview.StatusEntry>
 
   local function add(e)
     entries[#entries + 1], by_path[e.path] = e, e
@@ -114,21 +114,21 @@ end
 --- An untracked file is in neither, so it counts as unstaged only. Both letters
 --- are `?` for it, which is why the test is not simply "not unchanged".
 ---
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @return boolean
 function M.has_staged(e)
   return e.index_status ~= UNCHANGED and e.index_status ~= UNTRACKED
 end
 
 --- Whether the working tree differs from the index for this entry.
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @return boolean
 function M.has_unstaged(e)
   return e.worktree_status ~= UNCHANGED
 end
 
 --- Whether git is tracking the file at all.
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @return boolean
 function M.is_untracked(e)
   return e.index_status == UNTRACKED
@@ -136,7 +136,7 @@ end
 
 --- Whether the working tree no longer has the file, so its new version is no
 --- lines rather than something to read from disk.
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @return boolean
 function M.is_deleted(e)
   return e.worktree_status == 'D'
@@ -149,7 +149,7 @@ end
 --- untracked file was never in it, and an unmerged path has the three merge
 --- stages but no stage 0, which is the only one anything can be read from.
 ---
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @return boolean
 function M.in_index(e)
   local x = e.index_status
@@ -180,8 +180,8 @@ end
 
 --- Every uncommitted change in the repository.
 --- @param root string repository root
---- @return unidiff.StatusEntry[]? entries
---- @return unidiff.GitError? err
+--- @return gitview.StatusEntry[]? entries
+--- @return gitview.GitError? err
 function M.list(root)
   local staged, staged_err = git.changed_staged(root)
   if not staged then
@@ -207,7 +207,7 @@ end
 
 --- The name to show for an entry. A rename is the one case where the file has
 --- two names worth printing.
---- @param e unidiff.StatusEntry
+--- @param e gitview.StatusEntry
 --- @return string
 function M.label(e)
   if e.head_path and e.head_path ~= e.path then
@@ -219,7 +219,7 @@ end
 --- The same for a change, which names its two sides differently. Both labels
 --- live here because the list, a view's file header and the notice shown in
 --- place of a diff all have to agree on what a file is called.
---- @param c unidiff.Change
+--- @param c gitview.Change
 --- @return string
 function M.change_label(c)
   if c.status == 'R' or c.status == 'C' then
