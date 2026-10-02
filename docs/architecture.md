@@ -180,8 +180,11 @@ passed over. Instead:
   whatever was waiting, and a generation counter drops a result the selection
   has moved on from.
 - What a range between two commits was read as is kept, for the last few dozen
-  ranges, since neither end can change. A commit read before is drawn at once,
-  with no placeholder. A range ending at the working tree is read every time.
+  ranges, since neither end can change. A range ending at the working tree is
+  read every time.
+- A commit read before has nothing to wait for but its draw, which is still the
+  costly part of a large one. It is drawn on the next turn of the event loop
+  with no placeholder, so a row passed over before then is never drawn.
 
 The working-tree row is read the same way. A file row costs a single file's
 view and is drawn at once, as is anything drawn by a refresh.

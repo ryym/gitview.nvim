@@ -564,19 +564,47 @@ local function read_pending(s)
   end)
 end
 
---- Draw a commit or the working tree, many files each, either at once or by
---- reading it in the background behind a placeholder. One read before is
---- drawn at once regardless, since there is nothing left to wait for.
+--- Draw a commit read before on the next turn of the event loop, if it is
+--- still selected by then.
+---
+--- There is nothing to read, but drawing is still the costly part of a large
+--- commit. Drawn from `CursorMoved` itself, every such row a sweep passes over
+--- would hold the cursor up for its whole draw. A timer rather than
+--- `vim.schedule`, so that a keystroke already waiting gets in first and makes
+--- the draw stale. No placeholder is drawn: the view takes a moment at most,
+--- and a placeholder would only blink before it.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit
+--- @param span gitview.PerfSpan
+local function draw_kept(s, target, span)
+  local generation = s.generation
+  vim.defer_fn(function()
+    local wanted = s.generation == generation
+      and M.sessions[s.tab] == s
+      and vim.api.nvim_buf_is_valid(s.diff_buf)
+    if not wanted then
+      span:finish({ kept = true, dropped = true })
+      return
+    end
+    read_commit(s, target)()
+    span:finish({ kept = true })
+  end, 0)
+end
+
+--- Draw a commit or the working tree, many files each, either at once or in
+--- the background: read behind a placeholder, or for one read before, just
+--- drawn a moment later.
 --- @param s gitview.Session
 --- @param target gitview.ListTarget a commit or the working tree
---- @param span gitview.PerfSpan? given, the view is read in the background, and
----        the span is finished once it is drawn or found to be stale
+--- @param span gitview.PerfSpan? given, the view is drawn in the background,
+---        and the span is finished once it is drawn or found to be stale
 local function show_commit(s, target, span)
-  if not span or is_kept(s, target) then
+  if not span then
     read_commit(s, target)()
-    if span then
-      span:finish({ kept = true })
-    end
+    return
+  end
+  if is_kept(s, target) then
+    draw_kept(s, target, span)
     return
   end
   draw_loading(s, target)

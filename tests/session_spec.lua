@@ -1983,17 +1983,59 @@ test('session: a commit the cursor lands on shows its header while it is read', 
   end)
 end)
 
-test('session: a commit read once is drawn at once the next time', function()
+--- Wait for the diff pane to show the view of `subject`.
+--- @param s gitview.Session
+--- @param subject string
+local function wait_shown(s, subject)
+  local done = vim.wait(1000, function()
+    local rows = diff_rows(s)
+    return rows[1] == subject and not vim.tbl_contains(rows, '(loading…)')
+  end)
+  assert(done, table.concat(diff_rows(s), '\n'))
+end
+
+test('session: a commit read once is drawn without a placeholder the next time', function()
   with_session(described_history, function(s)
     land_on(s, { kind = 'commit', index = 1 })
     wait_read(s)
     land_on(s, { kind = 'commit', index = 2 })
     wait_read(s)
     land_on(s, { kind = 'commit', index = 1 })
+    -- nothing to read, and the previous view stays until the next turn
     eq(nil, s.loading)
     eq(nil, s.pending)
+    eq('first', diff_rows(s)[1])
+    wait_shown(s, 'second')
     eq(10, diff_view(s).header_rows)
-    assert(vim.tbl_contains(diff_rows(s), 'a.lua'), table.concat(diff_rows(s), '\n'))
+  end)
+end)
+
+-- A commit read before is drawn a turn later, so that one passed over in the
+-- meantime is never drawn at all.
+test('session: sweeping commits read before draws only the last', function()
+  with_session(described_history, function(s)
+    land_on(s, { kind = 'commit', index = 1 })
+    wait_read(s)
+    land_on(s, { kind = 'commit', index = 2 })
+    wait_read(s)
+
+    local vlib = require('gitview.diff.view')
+    local build = vlib.build
+    local builds = 0
+    vlib.build = function(...)
+      builds = builds + 1
+      return build(...)
+    end
+    local ok, err = pcall(function()
+      land_on(s, { kind = 'commit', index = 1 })
+      land_on(s, { kind = 'commit', index = 2 })
+      land_on(s, { kind = 'commit', index = 1 })
+      wait_shown(s, 'second')
+      vim.wait(50)
+      eq(1, builds)
+    end)
+    vlib.build = build
+    assert(ok, err)
   end)
 end)
 

@@ -247,8 +247,9 @@ A line is written when its step ends, so a step comes after the ones inside it.
 
 - A `select` with `dropped=true` was passed over before its view was read, and
   drew nothing past its placeholder.
-- A `select` with `kept=true` drew a range read before, with no git run and no
-  `source` line of its own.
+- A `select` with `kept=true` was for a range read before, with no git run and
+  no `source` line of its own. With `dropped=true` as well, it was passed over
+  before its turn to be drawn came.
 - `syntax.background` appears only for a view large enough to be filled in
   steps; see [Fill large views progressively](#fill-large-views-progressively).
   `replaced=true` means another view took its place before it finished.
