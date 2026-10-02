@@ -120,6 +120,39 @@ function M.commit_header(detail)
   return out
 end
 
+--- The header a commit can be given from the log alone: its subject, and who
+--- wrote it how long ago. It stands in for `commit_header` while the message
+--- and stat are still being read.
+--- @param commit gitview.Commit
+--- @return gitview.Line[]
+function M.commit_summary(commit)
+  return {
+    { text = commit.subject, kind = 'subject' },
+    { text = ('%s   %s'):format(commit.author, commit.when), kind = 'author' },
+  }
+end
+
+--- A view of nothing yet: one line saying why, under a header when there is
+--- one. Being a view rather than a notice, it keeps the header's fold for the
+--- view that replaces it.
+--- @param rev string
+--- @param text string
+--- @param header gitview.Line[]?
+--- @return gitview.View
+function M.placeholder(rev, text, header)
+  local view = {
+    lines = { { text = text, kind = 'notice' } },
+    files = {},
+    hunk_rows = {},
+    file_rows = {},
+    rev = rev,
+  }
+  if header then
+    M.prepend(view, header)
+  end
+  return view
+end
+
 --- Put a header above everything a view shows.
 ---
 --- A blank line parts it from the first file, as one parts two files, and is

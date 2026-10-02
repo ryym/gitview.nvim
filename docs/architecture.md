@@ -169,11 +169,19 @@ Three things follow from both sides being committed:
 - **Nothing about it can be staged.** `s` and `u` refuse outright rather than
   relying on there being no index contents to write.
 
-Building the view is deferred by a few tens of milliseconds while a commit is
-selected, and a generation counter drops the result if the selection has moved
-on. A commit's diff is every file it touched, so without that, sweeping the
-cursor down the list would run the whole pipeline once per row passed over. A
-file row costs a single file's view and is still drawn at once.
+A commit the cursor lands on is read without blocking. Its diff is every file it
+touched, and reading it in the foreground would stall the cursor on every row
+passed over. Instead:
+
+- A placeholder is drawn at once: the commit's subject and author as the log
+  gave them, or its whole header when its message has been read before.
+- The view is read in the background and replaces the placeholder once read.
+- One view is read at a time. A row asked for meanwhile waits, replacing
+  whatever was waiting, and a generation counter drops a result the selection
+  has moved on from.
+
+The working-tree row is read the same way. A file row costs a single file's
+view and is drawn at once, as is anything drawn by a refresh.
 
 #### The commit header
 

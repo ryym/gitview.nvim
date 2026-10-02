@@ -890,9 +890,9 @@ local function history(repo)
   repo.write('a.lua', { 'return 3' })
 end
 
---- Put the cursor on a commit row and draw it. `sync_selection` defers a commit
---- so that sweeping the list does not build one view per row; the tests assert
---- what is drawn, not when.
+--- Put the cursor on a commit row and draw it. `sync_selection` reads a commit
+--- in the background, behind a placeholder; the tests assert what is drawn, not
+--- when, except those that use `land_on`.
 --- @param s gitview.Session
 --- @param index integer into the commits
 local function show_commit(s, index)
@@ -1949,6 +1949,84 @@ test('session: a short header folds whatever the user has foldminlines at', func
   end)
   vim.o.foldminlines = saved
   assert(ok, err)
+end)
+
+--- Move the commits pane's cursor onto a row and follow it, as `CursorMoved`
+--- does: unlike `show_commit`, a commit is then read in the background.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget
+local function land_on(s, target)
+  local row = assert(list.row_of(s.commits_buf, target))
+  vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  session.follow_cursor(s, s.commits_win)
+end
+
+--- Wait for what is being read in the background to be drawn.
+--- @param s gitview.Session
+local function wait_read(s)
+  local done = vim.wait(5000, function()
+    return not s.loading and not s.pending
+  end)
+  assert(done, 'the view was never read')
+end
+
+test('session: a commit the cursor lands on shows its header while it is read', function()
+  with_session(described_history, function(s)
+    land_on(s, { kind = 'commit', index = 1 })
+    -- what the log already gave, before anything else is read
+    eq({ 'second', 'test   ' .. s.commits[1].when, '', '(loading…)' }, diff_rows(s))
+    eq(2, diff_view(s).header_rows)
+
+    wait_read(s)
+    eq(10, diff_view(s).header_rows)
+    assert(vim.tbl_contains(diff_rows(s), 'a.lua'), table.concat(diff_rows(s), '\n'))
+
+    -- a message read once stands in for itself the next time
+    land_on(s, { kind = 'commit', index = 2 })
+    wait_read(s)
+    land_on(s, { kind = 'commit', index = 1 })
+    eq(10, diff_view(s).header_rows)
+    eq('(loading…)', diff_rows(s)[12])
+    wait_read(s)
+  end)
+end)
+
+-- Every row passed over asks for its view, and only the one the cursor stops on
+-- is still wanted by the time a read could start.
+test('session: sweeping the commits reads only the one in progress and the last', function()
+  with_session(described_history, function(s)
+    land_on(s, { kind = 'worktree', index = 1 })
+    land_on(s, { kind = 'commit', index = 1 })
+    land_on(s, { kind = 'commit', index = 2 })
+    wait_read(s)
+    eq(nil, s.details[s.commits[1].sha])
+    eq('first', diff_rows(s)[1])
+    eq(5, diff_view(s).header_rows)
+  end)
+end)
+
+test('session: a file selected while a commit is read is not drawn over', function()
+  with_session(described_history, function(s)
+    land_on(s, { kind = 'commit', index = 1 })
+    session.select(s, 1)
+    wait_read(s)
+    eq('file', s.selected.kind)
+    eq(nil, diff_view(s).header_rows)
+  end)
+end)
+
+-- The placeholder has the header's fold, so the reader's choice survives it.
+test('session: an opened header stays open across a commit read in the background', function()
+  with_session(described_history, function(s)
+    show_commit(s, 1)
+    vim.api.nvim_win_call(s.diff_win, function()
+      vim.cmd('normal! zo')
+    end)
+    land_on(s, { kind = 'commit', index = 2 })
+    eq(nil, header_closed(s))
+    wait_read(s)
+    eq(nil, header_closed(s))
+  end)
 end)
 
 -- A mark on a commit's own parent compares exactly what the commit alone does,

@@ -52,8 +52,11 @@ local M = {}
 --- @field selected gitview.ListTarget? what the diff pane is showing
 --- @field shown gitview.SelectionId? what it is currently showing, so that
 ---        redrawing the same thing can keep the scroll position
---- @field generation integer bumped by every draw, so a deferred one can tell
----        whether it is still wanted
+--- @field generation integer bumped by every draw, so one read in the
+---        background can tell whether it is still wanted
+--- @field pending {generation:integer, span:gitview.PerfSpan}? the view waiting
+---        to be read in the background; see `read_pending`
+--- @field loading boolean? whether a view is being read in the background
 --- @field has_head boolean whether the repository has a commit; re-read on refresh
 --- @field commits_stale boolean? whether `commits` is a list `git log` no longer
 ---        agrees with, held open because the cursor is on a commit it dropped
@@ -328,66 +331,167 @@ local function commit_detail(s, commit)
   return s.details[commit.sha]
 end
 
---- Draw everything uncommitted in one view, as the files pane has it file by
+--- Read everything uncommitted for one view, as the files pane has it file by
 --- file: HEAD, the index and the working tree at once.
+---
+--- What is read is returned as the function that draws it, so that the reading
+--- can be done without blocking and the drawing skipped once nobody wants it.
+--- Building the view is left to the drawing: it makes ghost buffers, which a
+--- view that is never drawn would have to free.
 ---
 --- Nothing is staged from here. It is many files, and the index contents a
 --- partial stage writes back are read for one.
 --- @param s gitview.Session
-local function show_worktree(s)
+--- @return fun() draw
+local function read_worktree(s)
   local sources, skipped = perf.measure('source', source.for_entries, s.entries, s.root)
-  local view, unchanged =
-    perf.measure('build', vlib.build, sources, REV, config.values.context, diff_opts(s))
-  if not view then
-    render.notice(s.diff_buf, ('%s   %s'):format(REV, no_view_reason(s)))
-    return
+  return function()
+    local view, unchanged =
+      perf.measure('build', vlib.build, sources, REV, config.values.context, diff_opts(s))
+    if not view then
+      render.notice(s.diff_buf, ('%s   %s'):format(REV, no_view_reason(s)))
+      return
+    end
+    view.note = note_of(s, vlib.skipped_note(skipped, #unchanged))
+    render.draw(s.diff_buf, view)
   end
-  view.note = note_of(s, vlib.skipped_note(skipped, #unchanged))
-  render.draw(s.diff_buf, view)
 end
 
---- Draw what the commits pane's cursor compares: one commit against its first
+--- Whether the commits pane shows this commit on its own, against its first
+--- parent, rather than as one end of a range.
+--- @param commit gitview.Commit?
+--- @param range gitview.Range?
+--- @return boolean
+local function is_whole_commit(commit, range)
+  return commit ~= nil and range ~= nil and vim.deep_equal(range, git.commit_range(commit))
+end
+
+--- Read what the commits pane's cursor compares: one commit against its first
 --- parent, the stretch between it and the mark, or on the working-tree row by
---- itself, everything uncommitted.
+--- itself, everything uncommitted. Returned as `read_worktree` returns it.
 ---
 --- A range is a two-version view: there is no index between the sides and so
 --- nothing to mark as staged, even when one side is the working tree.
 --- @param s gitview.Session
 --- @param target gitview.ListTarget a commit or the working tree
-local function show_commit(s, target)
+--- @return fun() draw
+local function read_commit(s, target)
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
   if target.kind == 'commit' and not commit then
-    render.notice(s.diff_buf, list.EMPTY_NOTICE)
-    return
+    return function()
+      render.notice(s.diff_buf, list.EMPTY_NOTICE)
+    end
   end
   local range, label = range_of(s, target)
   if not range then
-    show_worktree(s)
-    return
+    return read_worktree(s)
   end
   local sources, skipped, err =
     perf.measure('source', source.for_range, range, s.root, untracked_paths(s))
   if not sources then
-    util.git_error(err)
-    render.notice(s.diff_buf, label .. '   (could not be read)')
-    return
+    return function()
+      util.git_error(err)
+      render.notice(s.diff_buf, label .. '   (could not be read)')
+    end
   end
-
-  local view, unchanged =
-    perf.measure('build', vlib.build, sources, label, config.values.context, diff_opts(s))
-  if not view then
-    render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
-    return
-  end
-  view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), range_note(s, range, target))
+  local note = range_note(s, range, target)
   -- A range between two ends has no one message to show.
-  if commit and vim.deep_equal(range, git.commit_range(commit)) then
-    local detail = perf.measure('detail', commit_detail, s, commit)
+  local detail = is_whole_commit(commit, range)
+    and perf.measure('detail', commit_detail, s, assert(commit))
+
+  return function()
+    local view, unchanged =
+      perf.measure('build', vlib.build, sources, label, config.values.context, diff_opts(s))
+    if not view then
+      render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
+      return
+    end
+    view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), note)
     if detail then
       vlib.prepend(view, vlib.commit_header(detail))
     end
+    render.draw(s.diff_buf, view)
   end
-  render.draw(s.diff_buf, view)
+end
+
+--- What the diff pane says while a view is being read.
+local LOADING = '(loading…)'
+
+--- Stand in for the view of a commit or the working tree until it is read.
+---
+--- A commit on its own gets its header straight away: in full when its message
+--- has been read before, and otherwise as much of it as the log already gave.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit or the working tree
+local function draw_loading(s, target)
+  local commit = target.kind == 'commit' and s.commits[target.index] or nil
+  local range, label = range_of(s, target)
+  local header
+  if commit and is_whole_commit(commit, range) then
+    local detail = s.details[commit.sha]
+    header = detail and vlib.commit_header(detail) or vlib.commit_summary(commit)
+  end
+  render.draw(s.diff_buf, vlib.placeholder(label, LOADING, header))
+end
+
+--- Read the view `s.pending` asks for without blocking, and draw it if it is
+--- still wanted once it has been read.
+---
+--- One view is read at a time. Sweeping the cursor down the list asks for one
+--- per row, and all but the last are stale before they could be shown; reading
+--- each would only queue git processes behind one another. Whatever is asked
+--- for meanwhile replaces what is waiting, and is read once the current read
+--- is done.
+--- @param s gitview.Session
+local function read_pending(s)
+  local job = s.pending
+  if s.loading or not job then
+    return
+  end
+  s.pending = nil
+  -- A draw since the request was made, such as a file row being selected, has
+  -- already replaced it.
+  if job.generation ~= s.generation then
+    job.span:finish({ dropped = true })
+    return
+  end
+  local target = assert(s.selected)
+  s.loading = true
+  git.async(function()
+    return read_commit(s, target)
+  end, function(draw)
+    s.loading = nil
+    if M.sessions[s.tab] ~= s or not vim.api.nvim_buf_is_valid(s.diff_buf) then
+      job.span:finish({ dropped = true })
+      return
+    end
+    if job.generation == s.generation then
+      draw()
+      job.span:finish()
+    else
+      job.span:finish({ dropped = true })
+    end
+    read_pending(s)
+  end)
+end
+
+--- Draw a commit or the working tree, many files each, either at once or by
+--- reading it in the background behind a placeholder.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit or the working tree
+--- @param span gitview.PerfSpan? given, the view is read in the background, and
+---        the span is finished once it is drawn or found to be stale
+local function show_commit(s, target, span)
+  if not span then
+    read_commit(s, target)()
+    return
+  end
+  draw_loading(s, target)
+  if s.pending then
+    s.pending.span:finish({ dropped = true })
+  end
+  s.pending = { generation = s.generation, span = span }
+  read_pending(s)
 end
 
 --- Draw one file of the range being looked into.
@@ -448,7 +552,10 @@ end
 --- @param keep_unchanged boolean? leave the pane as it is when it already shows
 ---        what the selection names. Only for a caller that knows the contents
 ---        cannot have changed; see `refresh`.
-function M.show_selected(s, keep_unchanged)
+--- @param span gitview.PerfSpan? given, a commit or the working tree is read in
+---        the background and the span finished once it is drawn; see
+---        `show_commit`. Anything else ignores it.
+function M.show_selected(s, keep_unchanged, span)
   -- The comparison is by what is shown rather than by the target, because a
   -- refresh can move a file to another index while it goes on being the same
   -- file.
@@ -478,7 +585,7 @@ function M.show_selected(s, keep_unchanged)
     return
   end
   if target.kind == 'commit' or target.kind == 'worktree' then
-    show_commit(s, target)
+    show_commit(s, target, span)
     return
   end
   if target.kind == 'commit_file' then
@@ -521,13 +628,10 @@ end
 --- was on, but the first draw and a refresh have to happen regardless: both can
 --- leave the selection exactly where it was and still need the pane rebuilt.
 ---
---- How long a commit row has to keep the cursor before its diff is built.
----
---- A commit's diff is every file it touched, so building one per `CursorMoved`
---- would run the whole pipeline once for each row passed over on the way
---- somewhere. A file row costs a single file's view and is still drawn at once.
-local COMMIT_DELAY_MS = 60
-
+--- A commit's diff is every file it touched, so reading one in the foreground
+--- would stall the cursor on every row passed over on the way somewhere. It is
+--- read in the background instead, behind a placeholder drawn at once. A file
+--- row costs a single file's view and is drawn at once.
 --- @param s gitview.Session
 --- @param win integer the pane whose cursor decides the selection
 --- @param force boolean? draw even when the selection has not moved
@@ -540,32 +644,22 @@ local function sync_selection(s, win, force, keep_unchanged)
     return
   end
   s.selected = target
-  -- Every draw takes a generation, so a deferred one can tell that it is no
-  -- longer wanted without a timer handle to cancel.
+  -- Every draw takes a generation, so one read in the background can tell that
+  -- it is no longer wanted.
   s.generation = s.generation + 1
   -- From the cursor landing to the view being on screen: the wait the reader
   -- actually has, whatever it is made of.
   local span = perf.start('select', { gen = s.generation, kind = target and target.kind })
 
-  -- A refresh is an explicit act rather than a cursor sweep, so it is not
-  -- worth delaying even when a commit is selected. The working-tree row is many
-  -- files as a commit is, and waits as one does.
+  -- A refresh is an explicit act rather than a cursor sweep, and it redraws
+  -- what is already on screen, which a placeholder would only blink over. The
+  -- working-tree row is many files as a commit is, and is read as one is.
   if force or not target or (target.kind ~= 'commit' and target.kind ~= 'worktree') then
     M.show_selected(s, keep_unchanged)
     span:finish()
     return
   end
-  local generation = s.generation
-  local waited = perf.start('select.wait', { gen = generation })
-  vim.defer_fn(function()
-    waited:finish()
-    if s.generation == generation and vim.api.nvim_buf_is_valid(s.diff_buf) then
-      M.show_selected(s, keep_unchanged)
-      span:finish()
-    else
-      span:finish({ dropped = true })
-    end
-  end, COMMIT_DELAY_MS)
+  M.show_selected(s, keep_unchanged, span)
 end
 
 --- Put the list's cursor on the nth file it lists and show it. An index past

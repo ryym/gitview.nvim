@@ -128,6 +128,8 @@ local LINE_HL = {
   file = 'GitViewFileHeader',
   subject = 'GitViewCommitSubject',
   author = 'GitViewCommitAuthor',
+  -- as `notice` paints the line it replaces a whole buffer with
+  notice = 'GitViewSeparator',
 }
 local TEXT_HL = { add = 'GitViewAddText', del = 'GitViewDeleteText' }
 local STAT_HL = { ['%++'] = 'GitViewStatAdd', ['%-+'] = 'GitViewStatDelete' }

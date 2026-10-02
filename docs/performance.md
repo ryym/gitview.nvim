@@ -220,7 +220,6 @@ Off, each timed step costs one check of those two. Watching the log with
 `tail -f` while moving through the lists shows where a delay comes from:
 
 ```
-21:51:50.129 select.wait 60.5ms gen=6
 21:51:50.151 git 21.0ms cmd=diff --name-status
 21:51:50.163 git 11.8ms cmd=diff --numstat
 21:51:50.173 git 10.4ms cmd=cat-file --batch
@@ -230,7 +229,7 @@ Off, each timed step costs one check of those two. Watching the log with
 21:51:50.194 git 8.3ms cmd=diff --stat
 21:51:50.194 detail 17.4ms
 21:51:50.225 draw 30.9ms rows=1129
-21:51:50.225 select 156.1ms gen=6 kind=commit
+21:51:50.225 select 95.6ms gen=6 kind=commit
 21:51:50.240 syntax.background 16.1ms jobs=2 steps=2
 ```
 
@@ -239,7 +238,6 @@ A line is written when its step ends, so a step comes after the ones inside it.
 | name                | from → to                                      |
 | ------------------- | ---------------------------------------------- |
 | `select`            | cursor lands on a row → its view is on screen  |
-| `select.wait`       | the delay a commit row is held for             |
 | `git`               | one subprocess, named by its first two words   |
 | `source`            | reading the versions to compare                |
 | `build`             | diffing them into a view                       |
@@ -247,8 +245,8 @@ A line is written when its step ends, so a step comes after the ones inside it.
 | `draw`              | the view into the buffer, up to showing it     |
 | `syntax.background` | the rest of a large view's syntax              |
 
-- `gen` ties a `select` to its `select.wait`. A `select` with `dropped=true`
-  was passed over before its delay ran out, and drew nothing.
+- A `select` with `dropped=true` was passed over before its view was read, and
+  drew nothing past its placeholder.
 - `syntax.background` appears only for a view large enough to be filled in
   steps; see [Fill large views progressively](#fill-large-views-progressively).
   `replaced=true` means another view took its place before it finished.
