@@ -179,6 +179,9 @@ passed over. Instead:
 - One view is read at a time. A row asked for meanwhile waits, replacing
   whatever was waiting, and a generation counter drops a result the selection
   has moved on from.
+- What a range between two commits was read as is kept, for the last few dozen
+  ranges, since neither end can change. A commit read before is drawn at once,
+  with no placeholder. A range ending at the working tree is read every time.
 
 The working-tree row is read the same way. A file row costs a single file's
 view and is drawn at once, as is anything drawn by a refresh.

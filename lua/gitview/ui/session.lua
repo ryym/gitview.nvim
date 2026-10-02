@@ -68,6 +68,10 @@ local M = {}
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 --- @field details table<string, gitview.CommitDetail> commits' messages and
 ---        stats by sha, read once: a commit never changes
+--- @field range_reads table<string, gitview.RangeRead> what the ranges between
+---        two commits were last read as, by `range_key`, for `read_range`
+--- @field range_order string[] the keys of `range_reads`, least recently used
+---        first
 
 --- @type table<integer, gitview.Session>
 M.sessions = {}
@@ -295,8 +299,9 @@ end
 --- @param s gitview.Session
 --- @param range gitview.Range
 --- @param target gitview.ListTarget the row under the cursor
+--- @param read gitview.RangeRead the range's contents, which keep the answer
 --- @return string?
-local function range_note(s, range, target)
+local function range_note(s, range, target, read)
   if not range.old then
     return nil
   end
@@ -308,10 +313,73 @@ local function range_note(s, range, target)
     return nil
   end
   -- a range of two chosen ends
-  if not git.is_ancestor(range.old, range.new or 'HEAD', s.root) then
+  if read.diverged == nil then
+    read.diverged = not git.is_ancestor(range.old, range.new or 'HEAD', s.root)
+  end
+  if read.diverged then
     return '(diverged; not one line of history)'
   end
   return nil
+end
+
+--- What a view of a range is built from, as read from git.
+--- @class gitview.RangeRead
+--- @field sources gitview.Source[]
+--- @field skipped gitview.Skipped
+--- @field diverged boolean? whether the ends are on separate lines of history;
+---        nil until `range_note` asks
+
+--- How many ranges a session keeps the contents of. Each holds both versions of
+--- every file it changed, so the cache is bounded by count; a few dozen
+--- ordinary commits come to a few megabytes.
+local RANGE_READS_KEPT = 30
+
+--- The name a range's contents are kept under, or nil for a range ending at
+--- the working tree, which can change under the same name.
+--- @param range gitview.Range
+--- @return string?
+local function range_key(range)
+  if range.new then
+    return (range.old or '') .. '..' .. range.new
+  end
+  return nil
+end
+
+--- The contents of a range, read from git the first time and kept after that:
+--- two commits never change, so neither does what lies between them.
+--- @param s gitview.Session
+--- @param range gitview.Range
+--- @return gitview.RangeRead?
+--- @return gitview.GitError? err
+local function read_range(s, range)
+  local key = range_key(range)
+  local kept = key and s.range_reads[key]
+  if kept then
+    -- most recently used last, so that the first is the one to drop
+    for i, k in ipairs(s.range_order) do
+      if k == key then
+        table.remove(s.range_order, i)
+        break
+      end
+    end
+    table.insert(s.range_order, key)
+    return kept
+  end
+
+  local sources, skipped, err =
+    perf.measure('source', source.for_range, range, s.root, untracked_paths(s))
+  if not sources then
+    return nil, err
+  end
+  local read = { sources = sources, skipped = skipped } --- @type gitview.RangeRead
+  if key then
+    s.range_reads[key] = read
+    table.insert(s.range_order, key)
+    if #s.range_order > RANGE_READS_KEPT then
+      s.range_reads[table.remove(s.range_order, 1)] = nil
+    end
+  end
+  return read
 end
 
 --- The message and stat of a commit, read on first use.
@@ -386,27 +454,26 @@ local function read_commit(s, target)
   if not range then
     return read_worktree(s)
   end
-  local sources, skipped, err =
-    perf.measure('source', source.for_range, range, s.root, untracked_paths(s))
-  if not sources then
+  local read, err = read_range(s, range)
+  if not read then
     return function()
       util.git_error(err)
       render.notice(s.diff_buf, label .. '   (could not be read)')
     end
   end
-  local note = range_note(s, range, target)
+  local note = range_note(s, range, target, read)
   -- A range between two ends has no one message to show.
   local detail = is_whole_commit(commit, range)
     and perf.measure('detail', commit_detail, s, assert(commit))
 
   return function()
     local view, unchanged =
-      perf.measure('build', vlib.build, sources, label, config.values.context, diff_opts(s))
+      perf.measure('build', vlib.build, read.sources, label, config.values.context, diff_opts(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
       return
     end
-    view.note = note_of(s, vlib.skipped_note(skipped, #unchanged), note)
+    view.note = note_of(s, vlib.skipped_note(read.skipped, #unchanged), note)
     if detail then
       vlib.prepend(view, vlib.commit_header(detail))
     end
@@ -416,6 +483,28 @@ end
 
 --- What the diff pane says while a view is being read.
 local LOADING = '(loading…)'
+
+--- Whether everything the view of `target` is built from has been read before,
+--- so that it can be drawn without running git.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit or the working tree
+--- @return boolean
+local function is_kept(s, target)
+  local commit = target.kind == 'commit' and s.commits[target.index] or nil
+  if not commit then
+    return false
+  end
+  local range = range_of(s, target)
+  local key = range and range_key(range)
+  local read = key and s.range_reads[key]
+  if not read then
+    return false
+  end
+  if is_whole_commit(commit, range) then
+    return s.details[commit.sha] ~= nil
+  end
+  return read.diverged ~= nil
+end
 
 --- Stand in for the view of a commit or the working tree until it is read.
 ---
@@ -476,14 +565,18 @@ local function read_pending(s)
 end
 
 --- Draw a commit or the working tree, many files each, either at once or by
---- reading it in the background behind a placeholder.
+--- reading it in the background behind a placeholder. One read before is
+--- drawn at once regardless, since there is nothing left to wait for.
 --- @param s gitview.Session
 --- @param target gitview.ListTarget a commit or the working tree
 --- @param span gitview.PerfSpan? given, the view is read in the background, and
 ---        the span is finished once it is drawn or found to be stale
 local function show_commit(s, target, span)
-  if not span then
+  if not span or is_kept(s, target) then
     read_commit(s, target)()
+    if span then
+      span:finish({ kept = true })
+    end
     return
   end
   draw_loading(s, target)
@@ -1537,6 +1630,8 @@ function M.open()
     commits = {},
     generation = 0,
     details = {},
+    range_reads = {},
+    range_order = {},
     ignore_whitespace = config.values.ignore_whitespace,
     has_head = git.has_head(root),
   }

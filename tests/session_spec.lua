@@ -1980,14 +1980,65 @@ test('session: a commit the cursor lands on shows its header while it is read', 
     wait_read(s)
     eq(10, diff_view(s).header_rows)
     assert(vim.tbl_contains(diff_rows(s), 'a.lua'), table.concat(diff_rows(s), '\n'))
+  end)
+end)
 
-    -- a message read once stands in for itself the next time
+test('session: a commit read once is drawn at once the next time', function()
+  with_session(described_history, function(s)
+    land_on(s, { kind = 'commit', index = 1 })
+    wait_read(s)
     land_on(s, { kind = 'commit', index = 2 })
     wait_read(s)
     land_on(s, { kind = 'commit', index = 1 })
+    eq(nil, s.loading)
+    eq(nil, s.pending)
     eq(10, diff_view(s).header_rows)
-    eq('(loading…)', diff_rows(s)[12])
-    wait_read(s)
+    assert(vim.tbl_contains(diff_rows(s), 'a.lua'), table.concat(diff_rows(s), '\n'))
+  end)
+end)
+
+--- Run `fn` counting the ranges read from git.
+--- @param fn fun(reads: fun(): integer)
+local function counting_range_reads(fn)
+  local source = require('gitview.diff.source')
+  local for_range = source.for_range
+  local n = 0
+  source.for_range = function(...)
+    n = n + 1
+    return for_range(...)
+  end
+  local ok, err = pcall(fn, function()
+    return n
+  end)
+  source.for_range = for_range
+  assert(ok, err)
+end
+
+test('session: a range between two commits is read from git once', function()
+  with_session(described_history, function(s)
+    counting_range_reads(function(reads)
+      show_commit(s, 1)
+      show_commit(s, 2)
+      show_commit(s, 1)
+      eq(2, reads())
+      -- whitespace changes what is built from the contents, not the contents
+      session.toggle_whitespace(s)
+      eq(2, reads())
+    end)
+  end)
+end)
+
+-- The working tree can change under a range that ends at it, so it has no
+-- contents to keep.
+test('session: a range ending at the working tree is read every time', function()
+  with_session(described_history, function(s)
+    goto_worktree(s)
+    session.toggle_mark(s)
+    counting_range_reads(function(reads)
+      show_commit(s, 1)
+      show_commit(s, 1)
+      eq(2, reads())
+    end)
   end)
 end)
 
