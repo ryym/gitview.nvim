@@ -43,8 +43,8 @@ A commit, a range of commits, or the working tree as a whole is shown with every
 changed file's diff laid out end to end in one buffer, each file highlighted with
 its own language.
 
-- The new side is a **loaded buffer's contents** when the file is open, and the
-  file on disk otherwise, so unsaved edits show up.
+- The working tree is read from disk, as git sees it. Unsaved edits in a buffer
+  are not part of the diff until they are written.
 - Added, deleted and renamed files are all handled.
 - Binary files, and changes with no textual difference such as a pure rename,
   have no lines to show. They are counted in the winbar rather than dropped

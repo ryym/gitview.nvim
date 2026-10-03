@@ -29,3 +29,21 @@ test('a range ending at the working tree reads the new side from the file', func
     eq({}, by_label['b.txt'].new_lines)
   end)
 end)
+
+-- A buffer loaded before the file was written from outside still holds the old
+-- lines until Neovim reloads it. Read from there, the new side would equal the
+-- old one and a change git lists would show as none.
+test('the working tree is read from disk even when the file is loaded', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    local sha = assert(git.log(1, repo.root))[1].sha
+    local buf = vim.fn.bufadd(repo.root .. '/a.txt')
+    vim.fn.bufload(buf)
+    repo.write('a.txt', { 'two' })
+
+    local sources = assert(source.for_range({ old = sha }, repo.root))
+    eq({ 'two' }, sources[1].new_lines)
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
+end)

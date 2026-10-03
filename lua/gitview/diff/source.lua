@@ -19,15 +19,15 @@ local M = {}
 --- @field new_lines string[]
 --- @field index_lines string[]? given only for a mixed view; see gitview.diff.mixed
 
---- The new side of the diff is whatever the user is looking at: a loaded buffer
---- with unsaved changes, otherwise the file on disk.
+--- The working tree's version of a file: the file on disk, never a buffer.
+---
+--- Which files changed is git's answer, and git reads the disk. A buffer can
+--- disagree with it either way: it holds unsaved edits, or it predates a write
+--- from outside that Neovim has not reloaded yet. Reading one would then show a
+--- change git does not list, or hide one it does.
 --- @param path string absolute path
 --- @return string[]
 function M.working_lines(path)
-  local buf = vim.fn.bufnr(path)
-  if buf ~= -1 and vim.api.nvim_buf_is_loaded(buf) then
-    return vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-  end
   if vim.fn.filereadable(path) == 0 then
     return {}
   end
