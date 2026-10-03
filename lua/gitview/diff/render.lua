@@ -792,9 +792,10 @@ local function first_line_chunks(buf, view, first, last, width)
   return chunks
 end
 
---- A folded header reads as its subject and how much the commit changed, and a
---- folded run of unchanged lines as its first line that is not blank and how
---- many lines it holds. Whatever room is left is filled with 'fillchars' fold.
+--- A folded header reads as its subject, who wrote it how long ago, and how
+--- much the commit changed, and a folded run of unchanged lines as its first
+--- line that is not blank and how many lines it holds. Whatever room is left is
+--- filled with 'fillchars' fold.
 ---
 --- Each chunk's group is drawn over `Folded`, so the code keeps its colors on
 --- the fold's background.
@@ -819,6 +820,10 @@ function M.foldtext()
   end
 
   local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'GitViewCommitSubject' } }
+  -- Before the size: the size is numbers, read most easily at the end.
+  if view.lines[1].byline then
+    chunks[#chunks + 1] = { '   ' .. view.lines[1].byline, 'GitViewCommitAuthor' }
+  end
   -- the summary git ends a stat with
   local last = view.lines[view.header_rows]
   if last.kind == 'stat' then

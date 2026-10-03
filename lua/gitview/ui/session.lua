@@ -510,7 +510,7 @@ local function read_commit(s, target)
     end
     view.note = note_of(s, vlib.skipped_note(read.skipped, #unchanged), note)
     if detail then
-      vlib.prepend(view, vlib.commit_header(detail))
+      vlib.prepend(view, vlib.commit_header(detail, assert(commit)))
     end
     render.draw(s.diff_buf, view)
   end
@@ -554,7 +554,7 @@ local function draw_loading(s, target)
   local header
   if commit and is_whole_commit(commit, range) then
     local detail = s.details[commit.sha]
-    header = detail and vlib.commit_header(detail) or vlib.commit_summary(commit)
+    header = detail and vlib.commit_header(detail, commit) or vlib.commit_summary(commit)
   end
   render.draw(s.diff_buf, vlib.placeholder(label, LOADING, header))
 end

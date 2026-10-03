@@ -2025,7 +2025,7 @@ end)
 -- The diff pane is not the current window when a commit is drawn, and
 -- 'foldexpr' still has to read the diff's view rather than the current
 -- window's.
-test('session: the header starts folded, and reads as its subject', function()
+test('session: the header starts folded, and reads as its subject and byline', function()
   with_session(described_history, function(s)
     show_commit(s, 1)
     assert(vim.api.nvim_get_current_win() ~= s.diff_win)
@@ -2033,8 +2033,10 @@ test('session: the header starts folded, and reads as its subject', function()
     local text = vim.api.nvim_win_call(s.diff_win, function()
       return require('gitview.diff.render').foldtext()
     end)
+    local commit = s.commits[1]
     eq({
       { '\u{25b8} second', 'GitViewCommitSubject' },
+      { ('   %s · %s'):format(commit.author, commit.when), 'GitViewCommitAuthor' },
       { '   2 files', 'GitViewCommitAuthor' },
       { ' +3', 'GitViewStatAdd' },
       { ' -1 ', 'GitViewStatDelete' },

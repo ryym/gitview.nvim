@@ -124,9 +124,10 @@ so.
 
 Above the diff is what `git show --stat` would print before it: the subject, the
 author and date, the body, and the stat. It starts folded into a single line
-with the subject and the size of the commit; `zo` opens it, and a header opened
-stays open as the cursor moves on to other commits. A range of two commits has
-no one message and shows no header.
+with the subject, who wrote it how long ago, and the size of the commit; the
+commits pane has no room for the author, so this is where it is read. `zo` opens
+it, and a header opened stays open as the cursor moves on to other commits. A
+range of two commits has no one message and shows no header.
 
 A commit row states its own sha and subject, so yanking one gives something that
 names the commit elsewhere. Only the first four characters of the sha are shown,
