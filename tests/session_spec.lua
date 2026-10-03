@@ -1470,6 +1470,18 @@ test('session: <Esc> clears the mark from anywhere in the pane', function()
   end)
 end)
 
+-- A global mapping that starts with a pane's key would otherwise make the key
+-- wait for the rest of it, and run that mapping when the next key comes soon.
+test('session: no key of a pane waits for a longer global mapping', function()
+  with_session(forked_history, function(s)
+    for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
+      for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, 'n')) do
+        eq(1, m.nowait, m.lhs)
+      end
+    end
+  end)
+end)
+
 -- The pane maps `<Esc>` for itself, which hides a global mapping of it, so with
 -- nothing to clear the global one is run instead.
 test('session: <Esc> with no mark does what it does elsewhere', function()

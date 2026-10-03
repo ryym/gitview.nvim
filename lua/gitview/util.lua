@@ -124,11 +124,17 @@ end
 
 --- Map normal-mode keys in one buffer, with every description carrying the
 --- plugin's prefix so that `:map` and which-key say where a key came from.
+---
+--- `nowait`, so a key fires at once even where a global mapping starts with
+--- it. Otherwise Vim waits 'timeoutlen' for the rest of the longer one, and a
+--- key typed soon enough after it runs that mapping instead: `m` then `d` in
+--- the commits pane would be someone's `md`, editing a buffer that cannot be
+--- modified.
 --- @param buf integer
 --- @return fun(lhs: string, fn: fun(), desc: string, modes?: string[])
 function M.buf_mapper(buf)
   return function(lhs, fn, desc, modes)
-    vim.keymap.set(modes or 'n', lhs, fn, { buffer = buf, desc = PREFIX .. desc })
+    vim.keymap.set(modes or 'n', lhs, fn, { buffer = buf, desc = PREFIX .. desc, nowait = true })
   end
 end
 
