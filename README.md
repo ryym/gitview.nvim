@@ -127,7 +127,9 @@ stays open as the cursor moves on to other commits. A range of two commits has
 no one message and shows no header.
 
 A commit row states its own sha and subject, so yanking one gives something that
-names the commit elsewhere. Two keys mean less there and say so rather than
+names the commit elsewhere. Only the first four characters of the sha are shown,
+to leave the narrow sidebar to the subject; the rest is concealed rather than
+dropped, so what is yanked is still the sha git abbreviates to. Two keys mean less there and say so rather than
 acting: `s` and `u` have nothing to stage.
 
 `<CR>` on a commit goes one level in: the pane is replaced by the files that

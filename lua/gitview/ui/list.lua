@@ -37,10 +37,16 @@ local M = {}
 --- @field index integer into the entries, the commits, or the scope's changes.
 ---        Always 1 for the working tree, which there is only one of
 
+--- @class gitview.ListSpan a stretch of a row drawn differently from its text
+--- @field from integer 0-based byte column
+--- @field to integer end-exclusive
+--- @field conceal boolean? hidden from view, though still in the text
+
 --- @class gitview.ListRow
 --- @field text string the buffer line, which is the thing itself
 --- @field gutter string? what `'statuscolumn'` draws, highlight groups included
 --- @field target gitview.ListTarget? absent on a row standing for nothing
+--- @field spans gitview.ListSpan[]? drawn over the text as extmarks
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
@@ -66,6 +72,11 @@ M.WORKTREE = 'worktree'
 --- The working-tree row's subject. The row stands for the working tree as one
 --- end of a range, the way a commit row stands for a commit.
 local WORKTREE_SUBJECT = 'uncommitted changes'
+
+--- How much of a sha a commit row shows. The rest is concealed rather than left
+--- out: the list only has to tell neighbouring commits apart, which a few
+--- characters do, while a yanked row still needs a sha git can resolve.
+local SHA_SHOWN = 4
 
 --- Shown in place of the file list of a commit that changed nothing, which
 --- `git commit --allow-empty` makes.
@@ -118,6 +129,17 @@ local function scope_rows(scope)
   return rows
 end
 
+--- What hides the tail of a sha at the start of a row. `%h` is never shorter
+--- than four, but a shorter one would simply be shown whole.
+--- @param sha string
+--- @return gitview.ListSpan[]
+local function sha_spans(sha)
+  if #sha <= SHA_SHOWN then
+    return {}
+  end
+  return { { from = SHA_SHOWN, to = #sha, conceal = true } }
+end
+
 --- @param model gitview.ListModel
 --- @return gitview.ListRow[]
 function M.content(model)
@@ -151,10 +173,12 @@ function M.content(model)
   if model.worktree then
     -- Zeros as wide as the shas below, the way git writes the sha of nothing,
     -- so that the subjects stay in one column.
+    local zeros = ('0'):rep(#commits[1].sha)
     rows[1] = {
-      text = ('%s %s'):format(('0'):rep(#commits[1].sha), WORKTREE_SUBJECT),
+      text = ('%s %s'):format(zeros, WORKTREE_SUBJECT),
       gutter = model.mark == M.WORKTREE and MARK_GUTTER or nil,
       target = { kind = 'worktree', index = 1 },
+      spans = sha_spans(zeros),
     }
   end
   for i, c in ipairs(commits) do
@@ -162,6 +186,7 @@ function M.content(model)
       text = ('%s %s'):format(c.sha, c.subject),
       gutter = c.sha == model.mark and MARK_GUTTER or nil,
       target = { kind = 'commit', index = i },
+      spans = sha_spans(c.sha),
     }
   end
   return rows
@@ -243,6 +268,8 @@ function M.winbar()
   return '%#GitViewStatusHeader#' .. util.escape_statusline(text)
 end
 
+local ns = vim.api.nvim_create_namespace('gitview.ui.list')
+
 --- @return integer bufnr
 function M.create_buffer()
   M.setup_highlights()
@@ -260,6 +287,15 @@ function M.draw(buf, model)
 
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
+  vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
+  for i, r in ipairs(rows) do
+    for _, span in ipairs(r.spans or {}) do
+      vim.api.nvim_buf_set_extmark(buf, ns, i - 1, span.from, {
+        end_col = span.to,
+        conceal = span.conceal and '' or nil,
+      })
+    end
+  end
   vim.bo[buf].modifiable = false
   vim.bo[buf].modified = false
   states[buf] = {
@@ -286,6 +322,10 @@ function M.configure_window(win, width)
     signcolumn = 'no',
     wrap = false,
     cursorline = true,
+    -- What a span conceals stays hidden on the cursor line too, or the row under
+    -- the cursor would be the one whose subject is out of line with the rest.
+    conceallevel = 2,
+    concealcursor = 'nv',
     -- The diff beside it takes whatever is left, and keeps taking it when the
     -- window is resized.
     winfixwidth = true,

@@ -80,6 +80,21 @@ test('list: the commits pane holds one row per commit', function()
   eq({ kind = 'commit', index = 2 }, rows[2].target)
 end)
 
+-- A few characters tell neighbouring commits apart, but a yanked row has to
+-- name a commit git can resolve, so the rest of the sha is hidden rather than
+-- left out.
+test('list: a commit row shows the start of its sha and keeps the rest', function()
+  local buf = list.create_buffer()
+  list.draw(buf, { pane = 'commits', root = '/tmp/repo', worktree = true, commits = { commit('abc1234', 'x') } })
+  eq({ '0000000 uncommitted changes', 'abc1234 x' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
+  eq(2, #marks)
+  for i, m in ipairs(marks) do
+    eq({ i - 1, 4, 7, '' }, { m[2], m[3], m[4].end_col, m[4].conceal })
+  end
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
 -- A repository with no commit has no log to show, and an empty pane would say
 -- nothing about why.
 test('list: a repository with no commits says so', function()

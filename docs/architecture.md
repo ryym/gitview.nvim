@@ -52,7 +52,9 @@ The list follows the same rule as a diff buffer: the text is the thing itself,
 and everything around it is drawn. A row is a path, or a sha and a subject, and
 nothing more, so yanking one gives something that names the thing elsewhere; the
 status letters are painted by `'statuscolumn'`, and what the pane is holding by
-`'winbar'`.
+`'winbar'`. Shortening works the same way in reverse: a sha is written whole and
+its tail concealed by an extmark, so the row is still the thing itself when only
+part of it is on screen.
 
 A row stands for a `gitview.ListTarget` — a kind and an index — rather than for
 an entry, because a row is no longer always a file: it can be a commit, the
