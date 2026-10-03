@@ -157,14 +157,16 @@ history.
 
 #### Comparing with the working tree
 
-While anything is uncommitted, the list is headed by a row of zeros standing for
-the working tree. On its own it shows every uncommitted file in one view, staged
-and unstaged at once, and `<CR>` there moves to the files pane.
+The list is headed by a row of zeros standing for the working tree. On its own
+it shows every uncommitted file in one view, staged and unstaged at once, and
+`<CR>` there moves to the files pane.
 
 It is also an end a range can have, and the newest one. `m` on `HEAD~3` with the
 cursor on the zeros reads everything since, committed or not, the way
 `git diff HEAD~3` does; `<CR>` then lists those files. Untracked files are
-compared too, as additions, which `git diff` itself would leave out.
+compared too, as additions, which `git diff` itself would leave out. The row is
+there even when nothing is uncommitted, so such a range can be set up first and
+then follows the edits as they are made.
 
 | key         | in the files pane | in the commits pane  | in the diff                   |
 | ----------- | ----------------- | -------------------- | ----------------------------- |

@@ -218,14 +218,15 @@ end
 
 --- Whether the commits pane has a row for the working tree above the commits.
 ---
---- Only while there is something uncommitted: a clean working tree is HEAD, and
---- a row for it would compare nothing HEAD's own row does not. Nor before the
---- status is in, since until then there is no telling, nor without a commit for
---- it to be compared with.
+--- Even with nothing uncommitted. A clean working tree compares nothing HEAD's
+--- own row does not, but the row is still an end a range can be marked at, and
+--- such a range follows whatever is edited afterwards. Not before the status is
+--- in, though, since until then the row could not say what it stands for, nor
+--- without a commit for it to be compared with.
 --- @param s gitview.Session
 --- @return boolean
 local function has_worktree_row(s)
-  return s.has_head and not s.files_notice and #s.entries > 0
+  return s.has_head and not s.files_notice
 end
 
 --- The files git is not tracking, as the last read of the status found them.
@@ -412,6 +413,11 @@ end
 --- @param s gitview.Session
 --- @return fun() draw
 local function read_worktree(s)
+  if #s.entries == 0 then
+    return function()
+      render.notice(s.diff_buf, list.EMPTY_NOTICE)
+    end
+  end
   local sources, skipped = perf.measure('source', source.for_entries, s.entries, s.root)
   return function()
     local view, unchanged =
@@ -903,8 +909,8 @@ end
 --- Clear a mark whose row has gone.
 ---
 --- A mark on a commit that has dropped off the end of the list, or on the
---- working-tree row once nothing is uncommitted, would go on widening every range
---- while no row showed where it was. It is only ever cleared along with the list
+--- working-tree row while the status cannot be read, would go on widening every
+--- range while no row showed where it was. It is only ever cleared along with the list
 --- it pointed into.
 --- @param s gitview.Session
 local function drop_lost_mark(s)
