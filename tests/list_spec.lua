@@ -97,11 +97,21 @@ test('list: a commit row shows the start of its sha and keeps the rest', functio
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 
+-- The sha is told apart from the subject, and the working tree's zeros, which
+-- are no sha, stay faded with the rest of their row.
+test('list: the sha of a commit row is colored', function()
+  local rows = list.content({ pane = 'commits', worktree = true, commits = { commit('abc1234', 'x') } })
+  eq({ from = 0, to = 7, group = 'GitViewCommitSha' }, rows[2].spans[#rows[2].spans])
+  for _, span in ipairs(rows[1].spans) do
+    assert(span.group ~= 'GitViewCommitSha', 'the zeros are no sha')
+  end
+end)
+
 test('list: the working-tree row is faded as a whole', function()
   local rows = list.content({ pane = 'commits', worktree = true, commits = { commit('abc1234', 'x') } })
   eq({ from = 0, to = #rows[1].text, group = 'GitViewCommitWorktree' }, rows[1].spans[#rows[1].spans])
   for _, span in ipairs(rows[2].spans) do
-    eq(nil, span.group)
+    assert(span.group ~= 'GitViewCommitWorktree', 'a commit row is not faded')
   end
 end)
 

@@ -189,7 +189,9 @@ function M.content(model)
     rows[#rows + 1] = {
       text = ('%s %s'):format(c.sha, c.subject),
       target = { kind = 'commit', index = i },
-      spans = sha_spans(c.sha),
+      spans = vim.list_extend(sha_spans(c.sha), {
+        { from = 0, to = #c.sha, group = 'GitViewCommitSha' },
+      }),
       subject = #c.sha + 1,
     }
   end
@@ -205,6 +207,9 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   set('GitViewStatusUntracked', { link = 'Comment' })
   set('GitViewStatusHeader', { link = 'Title' })
   set('GitViewCommitWorktree', { link = 'Comment' })
+  -- As Neovim's own git syntax colors a hash, so a sha reads the same here as
+  -- in `git show` or a rebase todo.
+  set('GitViewCommitSha', { link = 'Identifier' })
   set('GitViewListCursor', { link = 'Title' })
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.
