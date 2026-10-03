@@ -779,6 +779,40 @@ function M.show_selected(s, keep_unchanged, span)
   s.index_lines = src.index_lines
 end
 
+--- Color the rows from the mark to the commits pane's cursor, or none while
+--- there is no mark or the pane is looking into something.
+---
+--- The cursor line is turned off meanwhile: its background and the range's
+--- would run into each other, and the cursor is still told apart by the color
+--- `list.paint_cursor` gives it.
+--- @param s gitview.Session
+local function paint_range(s)
+  local at = not s.scope and place_of(s, s.mark)
+  local first, last
+  if at then
+    local mark_row = list.row_of(
+      s.commits_buf,
+      at == 0 and { kind = 'worktree', index = 1 } or { kind = 'commit', index = at }
+    )
+    local cursor_row = vim.api.nvim_win_get_cursor(s.commits_win)[1]
+    if mark_row then
+      first, last = math.min(mark_row, cursor_row), math.max(mark_row, cursor_row)
+    end
+  end
+  local shown = list.state_of(s.commits_buf)
+  local was = shown and shown.range
+  list.paint_range(s.commits_buf, first, last)
+  if vim.wo[s.commits_win].cursorline ~= (first == nil) then
+    util.configure_window_options(s.commits_win, { cursorline = first == nil })
+  end
+  -- The winbar counts the rows, and nothing else redraws it as the cursor moves.
+  -- `nvim__redraw` is not public API and may change; it is the one call that
+  -- redraws a single window's winbar.
+  if (shown and shown.range) ~= was then
+    vim.api.nvim__redraw({ win = s.commits_win, winbar = true })
+  end
+end
+
 --- Draw whatever the list's cursor is on.
 ---
 --- Following the cursor means skipping the work when it has not left the row it
@@ -801,6 +835,7 @@ local function sync_selection(s, win, force, keep_unchanged)
   -- the paint with the lines it replaces.
   list.paint_cursor(buf == s.files_buf and s.commits_buf or s.files_buf, nil)
   list.paint_cursor(buf, row)
+  paint_range(s)
   if not force and list.same_target(target, s.selected) then
     return
   end
@@ -920,7 +955,6 @@ local function redraw_list(s, target, keep_unchanged)
     root = s.root,
     commits = s.commits,
     worktree = has_worktree_row(s),
-    mark = s.mark,
     scope = s.scope,
     stale = s.commits_stale,
   })

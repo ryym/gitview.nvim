@@ -142,10 +142,10 @@ cannot change.
 
 #### Comparing two commits
 
-`m` marks the commit under the cursor, and `>` appears in its gutter. While a
-mark is set, moving the cursor shows every commit from the mark to the cursor in
-one diff, so a range is read by moving rather than by marking twice. `m` again
-on the marked commit clears it.
+`m` marks the commit under the cursor. While a mark is set, moving the cursor
+shows every commit from the mark to the cursor in one diff, so a range is read by
+moving rather than by marking twice. Those rows are colored as a selection is,
+and the winbar counts them; `m` again on the marked commit clears it.
 
 Both ends are in the range, as in a selection: the diff starts at the first
 parent of the older end, the parent that commit is compared with on its own, and
@@ -275,8 +275,8 @@ File headers and a commit's header use `GitViewFileRule`,
 `GitViewStatDelete`.
 
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
-`GitViewStatusUntracked`, `GitViewStatusHeader`, `GitViewStatusMark`,
-`GitViewCommitWorktree` and `GitViewListCursor`.
+`GitViewStatusUntracked`, `GitViewStatusHeader`, `GitViewCommitWorktree`,
+`GitViewListCursor` and `GitViewRange`.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`, and
 the rest link to standard groups. All are defined the first time they are

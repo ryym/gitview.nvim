@@ -285,3 +285,26 @@ test('list: an empty commit says so', function()
   eq({ list.EMPTY_COMMIT_NOTICE }, texts(rows))
   eq(nil, rows[1].target)
 end)
+
+--- What `'statuscolumn'` draws for the first row of a commits pane.
+--- @param model gitview.ListModel
+--- @return string
+local function commits_gutter(model)
+  local buf = list.create_buffer()
+  list.draw(buf, model)
+  local win = vim.api.nvim_open_win(buf, false, { relative = 'editor', row = 0, col = 0, width = 20, height = 5 })
+  vim.g.statusline_winid = win
+  vim.v.lnum = 1
+  local out = list.statuscolumn()
+  vim.api.nvim_win_close(win, true)
+  vim.api.nvim_buf_delete(buf, { force = true })
+  return out
+end
+
+-- The sidebar is narrow, and a commit row has nothing for the gutter to say.
+test("list: commit rows have no gutter, a commit's files do", function()
+  local model = { pane = 'commits', root = '/tmp/repo', commits = { commit('abc1234', 'x') } }
+  eq('', commits_gutter(model))
+  model.scope = { commit = commit('abc1234', 'x'), changes = { change('M', 'a.txt') } }
+  eq('%#GitViewStatusStaged#M  ', commits_gutter(model))
+end)

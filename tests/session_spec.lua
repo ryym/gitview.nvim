@@ -1405,14 +1405,41 @@ test('session: only the pane the diff follows has its row painted', function()
   end)
 end)
 
-test('session: the marked commit is shown in the gutter', function()
+--- The rows of the commits pane the range is painted on, 1-based and
+--- inclusive, or nil.
+--- @param s gitview.Session
+--- @return {[1]:integer, [2]:integer}?
+local function painted_range(s)
+  local ns = vim.api.nvim_create_namespace('gitview.ui.list.range')
+  local m = vim.api.nvim_buf_get_extmarks(s.commits_buf, ns, 0, -1, { details = true })[1]
+  return m and { m[2] + 1, m[4].end_row } or nil
+end
+
+--- @param s gitview.Session
+--- @return string
+local function commits_pane_winbar(s)
+  vim.g.statusline_winid = s.commits_win
+  return (list.winbar():gsub('%%#%w+#', ''))
+end
+
+-- The range is painted from the mark to the cursor, and the cursor line, whose
+-- background would run into the range's, is off meanwhile.
+test('session: the rows of a range are painted', function()
   with_session(forked_history, function(s)
+    local mark_row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = 3 }))
     goto_commit(s, 3)
     session.toggle_mark(s)
     eq(s.commits[3].sha, s.mark)
-    local rows = list.state_of(s.commits_buf).rows
-    eq('%#GitViewStatusMark#>  ', rows[list.row_of(s.commits_buf, { kind = 'commit', index = 3 })].gutter)
-    eq(nil, rows[list.row_of(s.commits_buf, { kind = 'commit', index = 2 })].gutter)
+    -- a range of one row still says there is a mark
+    eq({ mark_row, mark_row }, painted_range(s))
+    assert(commits_pane_winbar(s):find('range of 1', 1, true), commits_pane_winbar(s))
+    eq(false, vim.wo[s.commits_win].cursorline)
+
+    local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = 1 }))
+    vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+    session.follow_cursor(s, s.commits_win)
+    eq({ row, mark_row }, painted_range(s))
+    assert(commits_pane_winbar(s):find('range of 3', 1, true), commits_pane_winbar(s))
   end)
 end)
 
@@ -1422,8 +1449,26 @@ test('session: marking the marked commit again clears it', function()
     session.toggle_mark(s)
     session.toggle_mark(s)
     eq(nil, s.mark)
-    local row = list.row_of(s.commits_buf, { kind = 'commit', index = 2 })
-    eq(nil, list.state_of(s.commits_buf).rows[row].gutter)
+    eq(nil, painted_range(s))
+    assert(not commits_pane_winbar(s):find('range', 1, true), commits_pane_winbar(s))
+    eq(true, vim.wo[s.commits_win].cursorline)
+  end)
+end)
+
+-- A commit's files are not the rows the range was painted on.
+test('session: looking into a range takes its paint away', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 3)
+    session.toggle_mark(s)
+    goto_commit(s, 1)
+    session.enter(s)
+    eq(nil, painted_range(s))
+    eq(true, vim.wo[s.commits_win].cursorline)
+    session.leave(s)
+    eq({
+      list.row_of(s.commits_buf, { kind = 'commit', index = 1 }),
+      list.row_of(s.commits_buf, { kind = 'commit', index = 3 }),
+    }, painted_range(s))
   end)
 end)
 
@@ -1658,7 +1703,7 @@ test('session: marking the working-tree row gives the same range', function()
     goto_worktree(s)
     session.toggle_mark(s)
     eq(list.WORKTREE, s.mark)
-    eq('%#GitViewStatusMark#>  ', list.state_of(s.commits_buf).rows[1].gutter)
+    eq({ 1, 1 }, painted_range(s))
     goto_commit(s, 2)
     session.show_selected(s)
     local label = s.commits[2].sha .. '^..working tree'

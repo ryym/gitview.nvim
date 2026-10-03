@@ -67,6 +67,15 @@ session hands each pane a fresh one on every redraw. The gutter is computed whil
 those rows are built rather than when the screen line is drawn: an entry has two
 status letters, a commit's file has one and a commit has none, and putting that
 decision in `'statuscolumn'` would mean teaching it every kind of row there is.
+The one thing it decides is that a commits pane listing commits has no gutter
+at all: none of its rows has anything to put there, and the width goes to the
+subjects.
+
+What follows the cursor is painted apart from the rows, in namespaces of its own,
+since the cursor moves far more often than the list changes: the name of the
+row the diff shows, and the rows of a range. A range is painted as a selection,
+with the cursor line turned off meanwhile so their backgrounds do not run into
+each other.
 
 #### Two panes, not two sections
 

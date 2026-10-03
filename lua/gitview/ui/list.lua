@@ -26,8 +26,6 @@ local M = {}
 --- @field commits gitview.Commit[]? the commits pane
 --- @field worktree boolean? the commits pane, with a row for the working tree
 ---        above the commits
---- @field mark string? sha of the marked commit, the far end of a range, or
----        `WORKTREE` when that is the working-tree row
 --- @field scope gitview.ListScope? the commits pane, looking into a range
 --- @field stale boolean? the commits pane, holding a list `git log` no longer
 ---        agrees with; see `ui.session`
@@ -64,10 +62,6 @@ M.UNREADABLE_NOTICE = 'could not read the status'
 
 --- Shown in the commits pane of a repository that has no commit yet.
 M.NO_COMMITS_NOTICE = 'no commits yet'
-
---- Drawn in the gutter of the marked commit. A commit row has no status letters
---- of its own, so the mark has the width to itself.
-local MARK_GUTTER = '%#GitViewStatusMark#>  '
 
 --- What `mark` and `ListScope.at` hold for the working-tree row, which has no
 --- sha. It cannot be mistaken for one, since a sha is hexadecimal.
@@ -186,7 +180,6 @@ function M.content(model)
     spans[#spans + 1] = { from = 0, to = #text, group = 'GitViewCommitWorktree' }
     rows[1] = {
       text = text,
-      gutter = model.mark == M.WORKTREE and MARK_GUTTER or nil,
       target = { kind = 'worktree', index = 1 },
       spans = spans,
       subject = #zeros + 1,
@@ -195,7 +188,6 @@ function M.content(model)
   for i, c in ipairs(commits) do
     rows[#rows + 1] = {
       text = ('%s %s'):format(c.sha, c.subject),
-      gutter = c.sha == model.mark and MARK_GUTTER or nil,
       target = { kind = 'commit', index = i },
       spans = sha_spans(c.sha),
       subject = #c.sha + 1,
@@ -212,9 +204,11 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   set('GitViewStatusUnstaged', { link = 'Changed' })
   set('GitViewStatusUntracked', { link = 'Comment' })
   set('GitViewStatusHeader', { link = 'Title' })
-  set('GitViewStatusMark', { link = 'Special' })
   set('GitViewCommitWorktree', { link = 'Comment' })
   set('GitViewListCursor', { link = 'Title' })
+  -- A range is a selection, and is colored as one, though no Visual mode is
+  -- involved.
+  set('GitViewRange', { link = 'Visual' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -224,12 +218,12 @@ M.setup_highlights = highlights.apply
 ---
 --- Kept off `M` on purpose: the window options call into this module as
 --- `v:lua.require(...).fn()`, which converts `M` into a Vim value on every call.
---- @type table<integer, gitview.ListModel|{rows:gitview.ListRow[]}>
+--- @type table<integer, gitview.ListModel|{rows:gitview.ListRow[], range:integer?}>
 local states = {}
 
 --- What `buf` is showing, if it is a list.
 --- @param buf integer
---- @return (gitview.ListModel|{rows:gitview.ListRow[]})?
+--- @return (gitview.ListModel|{rows:gitview.ListRow[], range:integer?})?
 function M.state_of(buf)
   return states[buf]
 end
@@ -241,6 +235,12 @@ function M.statuscolumn()
   -- A window that inherited 'statuscolumn' from a list window is showing another
   -- buffer, which has no gutter: drawing blanks would leave it an empty column.
   if not state then
+    return ''
+  end
+  -- Commit rows have nothing to put there, and the sidebar is too narrow to
+  -- give the width away: the subjects take it instead. A commit's files keep
+  -- the gutter for their status letters.
+  if state.pane == 'commits' and not state.scope then
     return ''
   end
   if vim.v.virtnum ~= 0 then
@@ -273,6 +273,11 @@ function M.winbar()
     text = ' ' .. state.scope.label
   else
     text = ' ' .. util.counted(#state.commits, 'commit')
+    if state.range then
+      -- Also the only sign of a mark the cursor is on: a range of one row looks
+      -- like no range at all.
+      text = ('%s   range of %d'):format(text, state.range)
+    end
     if state.stale then
       -- The list is being held open for a commit the log no longer names, so
       -- what it shows is older than the repository.
@@ -284,6 +289,7 @@ end
 
 local ns = vim.api.nvim_create_namespace('gitview.ui.list')
 local cursor_ns = vim.api.nvim_create_namespace('gitview.ui.list.cursor')
+local range_ns = vim.api.nvim_create_namespace('gitview.ui.list.range')
 
 --- Above the spans a row is drawn with, so the row the diff shows stands out
 --- even where the whole row is already colored, as the working-tree row is.
@@ -353,6 +359,32 @@ function M.paint_cursor(buf, row)
     end_col = #r.text,
     hl_group = 'GitViewListCursor',
     priority = CURSOR_PRIORITY,
+  })
+end
+
+--- Color the rows of a range, or none.
+---
+--- A range mark with `hl_eol` rather than `line_hl_group`, which is drawn
+--- outside the priority order and would cover the colors of the text with those
+--- of the range. Below the spans, so a sha keeps its color inside a range.
+--- @param buf integer
+--- @param first integer? 1-based; nil clears
+--- @param last integer? 1-based, inclusive
+function M.paint_range(buf, first, last)
+  vim.api.nvim_buf_clear_namespace(buf, range_ns, 0, -1)
+  local state = states[buf]
+  if state then
+    state.range = first and last - first + 1 or nil
+  end
+  if not first then
+    return
+  end
+  vim.api.nvim_buf_set_extmark(buf, range_ns, first - 1, 0, {
+    end_row = last,
+    end_col = 0,
+    hl_group = 'GitViewRange',
+    hl_eol = true,
+    priority = vim.hl.priorities.user - 1,
   })
 end
 
