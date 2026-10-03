@@ -267,9 +267,9 @@ the comparison as a pair of revisions.
 
 #### The working-tree row
 
-While anything is uncommitted, the list is headed by a row of zeros standing for
-the working tree. The use is `git diff HEAD~3`: from some commit to the state of
-things now, committed or not, read as a range like any other.
+The list is headed by a row of zeros standing for the working tree. The use is
+`git diff HEAD~3`: from some commit to the state of things now, committed or
+not, read as a range like any other.
 
 - **It is the newest end a range can have**, so it sits above the commits and is
   the new side whenever it is one end. `gitview.Range.new` is nil for it, which
@@ -280,9 +280,12 @@ things now, committed or not, read as a range like any other.
   staged and unstaged at once. `<CR>` there moves to the files pane rather than
   listing the same files a second time. Nothing is staged from it, since a
   partial stage reads the index contents of one file.
-- **It is there only while there is something uncommitted.** A clean working tree
-  is HEAD, and a row for it would compare nothing HEAD's own row does not. A mark
-  on it goes when it does, as a mark on a commit goes with the list.
+- **It is there even when nothing is uncommitted.** A clean working tree compares
+  nothing HEAD's own row does not, but the row is still an end a range can be
+  marked at. Such a range can be set up before anything is edited and follows
+  the edits as they are made, and the commit rows do not shift as the row would
+  come and go. It waits only for the status to be read and for a HEAD to exist;
+  a mark on it goes while it is missing, as a mark on a commit goes with the list.
 - **Untracked files are part of a range.** See
   [Untracked files in a range](#untracked-files-in-a-range).
 - **Divergence is asked of HEAD.** The working tree stands on it, so a range
