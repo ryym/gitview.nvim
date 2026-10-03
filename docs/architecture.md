@@ -251,6 +251,12 @@ marked and the near end is wherever the cursor goes, so a range is read by movin
 rather than by a second key. The commits pane is short and a range is often long,
 which is what makes moving the better half to leave free.
 
+`m` only ever marks, moving the mark if it is elsewhere, and `<Esc>` clears it.
+A toggle would make starting a range somewhere else two keys whenever the cursor
+happens to be on the mark. `<Esc>` is commonly mapped globally already, and a
+buffer-local map hides that for good, so with no mark to clear the pane runs the
+global mapping itself (`util.run_global_map`).
+
 - **Both ends are in the range.** It starts at the older end's first parent,
   the parent that commit is compared with on its own, so what is read is every
   row between the two, as a selection reads; the winbar writes it `older^..newer`.

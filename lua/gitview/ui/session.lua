@@ -1176,21 +1176,37 @@ local function selected_end(s)
   return target, commit.sha
 end
 
---- Mark the commit under the cursor, or clear the mark if it is already there.
+--- Mark the commit under the cursor, moving the mark there if it is elsewhere.
 ---
 --- One mark rather than two: the far end is marked and the near end is wherever
 --- the cursor goes, so a range is read by moving rather than by a second key.
 --- The commits pane is short and a range is often long, which is what makes
 --- moving the better half to leave free.
 ---
+--- Marking never clears, even on the mark itself: starting a range somewhere
+--- else is then one key wherever the cursor is, and clearing has a key of its
+--- own, `clear_mark`.
+---
 --- @param s gitview.Session
-function M.toggle_mark(s)
+function M.set_mark(s)
   local target, mark = selected_end(s)
   if not target then
     return
   end
-  s.mark = s.mark ~= mark and mark or nil
+  s.mark = mark
   redraw_list(s, target)
+end
+
+--- Clear the mark, if there is one.
+--- @param s gitview.Session
+--- @return boolean cleared false when there was nothing to clear
+function M.clear_mark(s)
+  if not s.mark then
+    return false
+  end
+  s.mark = nil
+  redraw_list(s, s.selected)
+  return true
 end
 
 --- Look into the commit under the cursor: its files replace the list, and
@@ -1525,8 +1541,16 @@ local function set_commits_keymaps(s)
     M.leave(s)
   end, 'back out of the commit')
   map('m', function()
-    M.toggle_mark(s)
+    M.set_mark(s)
   end, 'mark this commit as the far end of a range')
+  map('<Esc>', function()
+    -- `<Esc>` is commonly mapped already, to `:nohlsearch` above all, and this
+    -- map hides it in the pane: with no range to clear it does what it would
+    -- have done.
+    if not M.clear_mark(s) then
+      util.run_global_map('n', '<Esc>')
+    end
+  end, 'clear the range')
   for _, lhs in ipairs({ 's', 'u' }) do
     map(lhs, function()
       util.info('only an uncommitted file can be staged')

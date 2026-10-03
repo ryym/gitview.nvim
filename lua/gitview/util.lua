@@ -132,6 +132,34 @@ function M.buf_mapper(buf)
   end
 end
 
+--- Do what a key would do outside a buffer that maps it for itself: run the
+--- global mapping of `lhs`, or nothing when there is none.
+---
+--- A buffer-local map hides the global one for good; this is how such a map
+--- passes the key on when it has nothing to do with it. A mapping whose
+--- right-hand side names a script-local `<SID>` function cannot be run from
+--- here, and is skipped.
+--- @param mode string
+--- @param lhs string
+function M.run_global_map(mode, lhs)
+  local key = vim.keycode(lhs)
+  for _, m in ipairs(vim.api.nvim_get_keymap(mode)) do
+    if vim.keycode(m.lhs) == key then
+      local keys
+      if m.callback then
+        local out = m.callback()
+        keys = m.expr == 1 and out or nil
+      elseif not m.rhs:find('<SID>', 1, true) then
+        keys = m.expr == 1 and vim.api.nvim_eval(m.rhs) or m.rhs
+      end
+      if type(keys) == 'string' and keys ~= '' then
+        vim.api.nvim_feedkeys(vim.keycode(keys), m.noremap == 1 and 'n' or 'm', false)
+      end
+      return
+    end
+  end
+end
+
 --- Make text safe to put in a 'winbar' or 'statusline': a literal `%` there
 --- starts an item, so it has to be doubled.
 --- @param text string

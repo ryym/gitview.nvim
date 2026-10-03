@@ -145,7 +145,9 @@ cannot change.
 `m` marks the commit under the cursor. While a mark is set, moving the cursor
 shows every commit from the mark to the cursor in one diff, so a range is read by
 moving rather than by marking twice. Those rows are colored as a selection is,
-and the winbar counts them; `m` again on the marked commit clears it.
+and the winbar counts them. `m` on another commit moves the mark there, and
+`<Esc>` clears it; with no mark set, `<Esc>` does whatever it is mapped to
+elsewhere.
 
 Both ends are in the range, as in a selection: the diff starts at the first
 parent of the older end, the parent that commit is compared with on its own, and
@@ -180,6 +182,7 @@ then follows the edits as they are made.
 | `<CR>`      | focus the diff    | look into the commit |                               |
 | `<BS>`      |                   | back out of it       |                               |
 | `m`         |                   | mark, for a range    |                               |
+| `<Esc>`     |                   | clear the mark       |                               |
 | `gw`        | ignore whitespace | ignore whitespace    | ignore whitespace             |
 | `s`         | stage the file    |                      | stage the line or selection   |
 | `u`         | unstage the file  |                      | unstage the line or selection |
