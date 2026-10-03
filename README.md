@@ -143,21 +143,24 @@ cannot change.
 #### Comparing two commits
 
 `m` marks the commit under the cursor, and `>` appears in its gutter. While a
-mark is set, moving the cursor compares the mark with whatever it lands on, so a
-range is read by moving rather than by marking twice. `m` again on the marked
-commit clears it.
+mark is set, moving the cursor shows every commit from the mark to the cursor in
+one diff, so a range is read by moving rather than by marking twice. `m` again
+on the marked commit clears it.
 
-Which end is the old one follows from the list rather than from the dates: the
-list is newest first, so the row further down is the older side. The cursor on
-the mark itself shows that one commit, as it would with no mark at all. `<CR>`
-works the same way, so a range can be opened a file at a time.
+Both ends are in the range, as in a selection: the diff starts at the first
+parent of the older end, the parent that commit is compared with on its own, and
+the winbar names it `older^..newer`. Which end is the older one follows from the
+list rather than from the dates: the list is newest first, so the row further
+down is the older side. The cursor on the mark itself is a range of one commit,
+the same as no mark at all. `<CR>` works the same way, so a range can be opened
+a file at a time.
 
-A merge at either end of a range is nothing special — a range compares two
-trees, and only a commit shown on its own is compared with its first parent. What
-does need saying is a range whose ends are on branches that diverged: the diff
-then also undoes whatever the other branch did, and the winbar says
-`(diverged; not one line of history)` rather than passing it off as a stretch of
-history.
+A merge inside a range is nothing special — a range compares two trees, and only
+where it starts is chosen by first parent. What does need saying is a range
+whose ends are on branches that diverged: the older end is then not in the
+newer one's history, the diff leaves it out and undoes whatever its branch did,
+and the winbar says `(diverged; not one line of history)` rather than passing it
+off as a stretch of history.
 
 #### Comparing with the working tree
 
@@ -166,8 +169,8 @@ own it shows every uncommitted file in one view, staged and unstaged at once, an
 `<CR>` there moves to the files pane.
 
 It is also an end a range can have, and the newest one. `m` on `HEAD~3` with the
-cursor on the zeros reads everything since, committed or not, the way
-`git diff HEAD~3` does; `<CR>` then lists those files. Untracked files are
+cursor on the zeros reads that commit and everything since, committed or not, the
+way `git diff HEAD~4` does; `<CR>` then lists those files. Untracked files are
 compared too, as additions, which `git diff` itself would leave out. The row is
 there even when nothing is uncommitted, so such a range can be set up first and
 then follows the edits as they are made.

@@ -236,31 +236,43 @@ same `--name-status` and `--numstat` records, so one pair of parsers reads both.
 
 #### Two commits
 
-`m` marks the commit under the cursor, and while a mark is set the pane compares
-it with whatever the cursor is on. One mark rather than two: the far end is
+`m` marks the commit under the cursor, and while a mark is set the pane shows
+every row from the mark to the cursor. One mark rather than two: the far end is
 marked and the near end is wherever the cursor goes, so a range is read by moving
 rather than by a second key. The commits pane is short and a range is often long,
 which is what makes moving the better half to leave free.
 
+- **Both ends are in the range.** It starts at the older end's first parent,
+  the parent that commit is compared with on its own, so what is read is every
+  row between the two, as a selection reads; the winbar writes it `older^..newer`.
+  Starting at the older end itself, as `git diff older newer` would, left that
+  commit out while its row looked as much a part of the range as the other end.
 - **Which end is old follows from the list, not from the dates.** The list is
   newest first, so the row further down is the older side. A rebase or a
   cherry-pick can leave dates out of order, and the list is what is being read.
 - **The cursor on the mark itself is the one commit**, against its own first
-  parent, rather than a range of nothing.
-- **A merge at either end of a range is no special case.** A range compares two
-  trees; only a commit shown on its own needs a parent chosen for it. This is
-  the reason the range is the type everything takes.
+  parent, which is what a range of one row comes to anyway.
+- **A root commit at the older end starts the range from the empty tree.** It
+  cannot be left unnamed as for a root commit on its own: `git diff-tree --root`
+  compares one commit with its parent, not two ends. The empty tree's sha is
+  asked of `git hash-object`, since it differs between SHA-1 and SHA-256.
+- **A merge inside a range is no special case.** A range compares two trees;
+  only where it starts needs a parent chosen. This is the reason the range is
+  the type everything takes.
 - **A mark is dropped along with the list it pointed into.** A mark on a commit
   no longer listed would go on widening every range while no row showed where it
   was, so it is cleared whenever a re-read replaces the list without it — and only
   then, since a list that was [held back](#refreshing) still has the row.
 
 A range whose ends sit on branches that diverged is compared all the same, and
-said to have done so: `git merge-base --is-ancestor` decides, and the winbar
-reads `(diverged; not one line of history)`. `git diff` compares the two trees
-either way, but across a fork the result also undoes whatever the other side did,
-which is not what "the changes between these two commits" sounds like. Naming it
-is better than refusing a comparison that was asked for.
+said to have done so: `git merge-base --is-ancestor` decides whether the older
+end is in the newer one's history, and if not the winbar reads
+`(diverged; not one line of history)`. `git diff` compares the two trees either
+way, but across a fork the result leaves the older end out and undoes whatever
+its side did, which is not what "the changes between these two commits" sounds
+like. Naming it is better than refusing a comparison that was asked for. The
+answer is kept by the older end rather than by the range: two ends with one
+parent start the same range, yet only one of them may lie on the line.
 
 `git diff A...B`, which compares from the merge base instead, would have made
 that case read as "what B added since they forked". It is not used, because it
@@ -270,7 +282,7 @@ the comparison as a pair of revisions.
 #### The working-tree row
 
 The list is headed by a row of zeros standing for the working tree. The use is
-`git diff HEAD~3`: from some commit to the state of things now, committed or
+`git diff HEAD~4`: from some commit to the state of things now, committed or
 not, read as a range like any other.
 
 - **It is the newest end a range can have**, so it sits above the commits and is

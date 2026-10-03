@@ -1428,17 +1428,18 @@ test('session: marking the marked commit again clears it', function()
 end)
 
 -- The list is newest first, so which of the two is the old side follows from
--- where they sit rather than from their dates.
+-- where they sit rather than from their dates. Both ends are in the range, as
+-- in a selection.
 test('session: a mark and the cursor compare the stretch between them', function()
   with_session(forked_history, function(s)
     goto_commit(s, 4)
     session.toggle_mark(s)
     goto_commit(s, 1)
     session.show_selected(s)
-    local label = ('%s..%s'):format(s.commits[4].sha, s.commits[1].sha)
+    local label = ('%s^..%s'):format(s.commits[4].sha, s.commits[1].sha)
     assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
-    -- first -> merge side adds both branches' files
-    eq({ 'main.txt', 'side.txt' }, vim.tbl_map(function(f)
+    -- everything from the root commit, which has no parent, to the merge
+    eq({ 'base.txt', 'main.txt', 'side.txt' }, vim.tbl_map(function(f)
       return f.label
     end, require('gitview.diff.render').view_of(s.diff_buf).files))
   end)
@@ -1450,7 +1451,7 @@ test('session: marking in the other direction gives the same range', function()
     session.toggle_mark(s)
     goto_commit(s, 4)
     session.show_selected(s)
-    local label = ('%s..%s'):format(s.commits[4].sha, s.commits[1].sha)
+    local label = ('%s^..%s'):format(s.commits[4].sha, s.commits[1].sha)
     assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
   end)
 end)
@@ -1510,10 +1511,10 @@ test('session: looking into a range lists the files it changed', function()
     goto_commit(s, 1)
     session.show_selected(s)
     session.enter(s)
-    eq(('%s..%s'):format(s.commits[4].sha, s.commits[1].sha), s.scope.label)
-    eq({ 'main.txt', 'side.txt' }, commit_rows(s))
+    eq(('%s^..%s'):format(s.commits[4].sha, s.commits[1].sha), s.scope.label)
+    eq({ 'base.txt', 'main.txt', 'side.txt' }, commit_rows(s))
     session.show_selected(s)
-    eq('main.txt', require('gitview.diff.render').view_of(s.diff_buf).files[1].label)
+    eq('base.txt', require('gitview.diff.render').view_of(s.diff_buf).files[1].label)
     -- backing out returns to the commit the cursor was on, not to the mark
     session.leave(s)
     eq({ kind = 'commit', index = 1 }, s.selected)
@@ -1636,11 +1637,12 @@ end)
 
 test('session: a mark and the working-tree row compare the commit with the working tree', function()
   with_session(dirty_history, function(s)
-    goto_commit(s, 2)
+    -- `second` and the working tree, so the range starts at `first`
+    goto_commit(s, 1)
     session.toggle_mark(s)
     goto_worktree(s)
     session.show_selected(s)
-    local label = s.commits[2].sha .. '..working tree'
+    local label = s.commits[1].sha .. '^..working tree'
     assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
     eq({ 'a.lua', 'added.lua', 'loose.lua' }, view_files(s))
     local text = table.concat(diff_rows(s), '\n')
@@ -1659,8 +1661,11 @@ test('session: marking the working-tree row gives the same range', function()
     eq('%#GitViewStatusMark#>  ', list.state_of(s.commits_buf).rows[1].gutter)
     goto_commit(s, 2)
     session.show_selected(s)
-    local label = s.commits[2].sha .. '..working tree'
+    local label = s.commits[2].sha .. '^..working tree'
     assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
+    -- `first` is the root commit, so the range starts from nothing
+    eq({ 'a.lua', 'added.lua', 'loose.lua' }, view_files(s))
+    assert(not table.concat(diff_rows(s), '\n'):find('return 1', 1, true))
   end)
 end)
 
@@ -1682,7 +1687,7 @@ test('session: looking into a range ending at the working tree', function()
     session.toggle_mark(s)
     goto_worktree(s)
     session.enter(s)
-    eq(s.commits[2].sha .. '..working tree', s.scope.label)
+    eq(s.commits[2].sha .. '^..working tree', s.scope.label)
     eq({ 'a.lua', 'added.lua', 'loose.lua' }, commit_rows(s))
     session.show_selected(s)
     local text = table.concat(diff_rows(s), '\n')
@@ -1699,11 +1704,11 @@ test('session: a refresh lists again the files of a range ending at the working 
     session.toggle_mark(s)
     goto_worktree(s)
     session.enter(s)
-    eq({ 'a.lua' }, commit_rows(s))
-    repo.write('added.lua', { 'return 8' })
+    eq({ 'a.lua', 'added.lua' }, commit_rows(s))
+    repo.write('new.lua', { 'return 8' })
     session.refresh(s)
     settle(s)
-    eq({ 'a.lua', 'added.lua' }, commit_rows(s))
+    eq({ 'a.lua', 'added.lua', 'new.lua' }, commit_rows(s))
   end)
 end)
 
@@ -2190,9 +2195,10 @@ test('session: only a single commit has a header', function()
     -- nothing is folded where there is no header
     eq(nil, header_closed(s))
 
+    -- two rows, even if one of them adds nothing to the other
     goto_commit(s, 2)
     session.show_selected(s)
-    eq(10, diff_view(s).header_rows)
+    eq(nil, diff_view(s).header_rows)
 
     -- the cursor on the mark is the one commit again
     goto_commit(s, 3)

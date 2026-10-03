@@ -72,6 +72,7 @@ local M = {}
 ---        two commits were last read as, by `range_key`, for `read_range`
 --- @field range_order string[] the keys of `range_reads`, least recently used
 ---        first
+--- @field empty_tree string? the empty tree's sha, once a range has needed it
 
 --- @type table<integer, gitview.Session>
 M.sessions = {}
@@ -258,13 +259,36 @@ local function place_of(s, mark)
   return at
 end
 
+--- The two ends of a range chosen with the mark, or nothing when the cursor
+--- shows one thing on its own: there is no mark, or the cursor is on it.
+---
+--- They are ordered by their place in the list rather than by date: the list is
+--- what the user is reading, and a rebase or a cherry-pick can leave dates out
+--- of order. The list is newest first, so the further down it is, the older it
+--- is. The older end is always a commit, since the working tree is the newest of
+--- all.
+---
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit or the working tree
+--- @return gitview.Commit? older
+--- @return gitview.Commit? newer nil for the working tree
+local function ends_of(s, target)
+  local here = target.kind == 'worktree' and 0 or target.index
+  local at = place_of(s, s.mark)
+  if not at or at == here then
+    return nil, nil
+  end
+  return s.commits[math.max(here, at)], s.commits[math.min(here, at)]
+end
+
 --- What the commits pane compares, given the row under the cursor.
 ---
 --- With no mark set that is the commit against its own first parent, or
---- everything uncommitted on the working-tree row. With one set it is the
---- stretch between the two, ordered by their place in the list rather than by
---- date: the list is what the user is reading, and a rebase or a cherry-pick can
---- leave dates out of order.
+--- everything uncommitted on the working-tree row. With one set it is every row
+--- from the mark to the cursor, both included, as a selection reads: the range
+--- starts at the older end's first parent, the parent a commit on its own is
+--- compared with. The cursor on the mark is then that commit on its own, as it
+--- would be with no mark at all.
 ---
 --- @param s gitview.Session
 --- @param target gitview.ListTarget a commit or the working tree
@@ -272,21 +296,25 @@ end
 ---         not a range but the uncommitted changes as the files pane has them
 --- @return string label
 local function range_of(s, target)
-  local here = target.kind == 'worktree' and 0 or target.index
-  local at = place_of(s, s.mark)
-  if not at or at == here then
-    if here == 0 then
+  local older, newer = ends_of(s, target)
+  if not older then
+    if target.kind == 'worktree' then
       return nil, REV
     end
-    local commit = s.commits[here]
+    local commit = s.commits[target.index]
     return git.commit_range(commit), ('%s %s'):format(commit.sha, commit.subject)
   end
-  -- The list is newest first, so the further down it is, the older it is. The
-  -- older end is always a commit, since the working tree is the newest of all.
-  local old = s.commits[math.max(here, at)].sha
-  local newer = math.min(here, at)
-  local new = newer > 0 and s.commits[newer].sha or nil
-  return { old = old, new = new }, ('%s..%s'):format(old, new or 'working tree')
+  local old = older.parents[1]
+  if not old then
+    -- A root commit has no parent to start from, so the range starts from
+    -- nothing. That cannot be left unnamed as it is for a root commit on its
+    -- own: `diff-tree --root` compares one commit with its parent, not two ends.
+    s.empty_tree = s.empty_tree or git.empty_tree(s.root)
+    old = s.empty_tree
+  end
+  local new = newer and newer.sha or nil
+  -- `^..` rather than `..`: git's `a..b` leaves `a` out, and this has it in.
+  return { old = old, new = new }, ('%s^..%s'):format(older.sha, new or 'working tree')
 end
 
 --- What to say in the winbar about a range beyond what it compares.
@@ -303,21 +331,22 @@ end
 --- @param read gitview.RangeRead the range's contents, which keep the answer
 --- @return string?
 local function range_note(s, range, target, read)
-  if not range.old then
-    return nil
-  end
-  local commit = target.kind == 'commit' and s.commits[target.index] or nil
-  if commit and vim.deep_equal(range, git.commit_range(commit)) then
-    if #commit.parents > 1 then
+  local older = ends_of(s, target)
+  if not older then
+    local commit = target.kind == 'commit' and s.commits[target.index] or nil
+    if commit and #commit.parents > 1 then
       return '(first parent)'
     end
     return nil
   end
-  -- a range of two chosen ends
-  if read.diverged == nil then
-    read.diverged = not git.is_ancestor(range.old, range.new or 'HEAD', s.root)
+  -- The range starts at the older end's parent, so it holds the older end
+  -- itself only when that is an ancestor of the newer one. Asked of the end
+  -- rather than of where the range starts, and kept by it: two ends sharing a
+  -- parent start the same range, yet only one of them may lie on the line.
+  if read.diverged[older.sha] == nil then
+    read.diverged[older.sha] = not git.is_ancestor(older.sha, range.new or 'HEAD', s.root)
   end
-  if read.diverged then
+  if read.diverged[older.sha] then
     return '(diverged; not one line of history)'
   end
   return nil
@@ -327,8 +356,8 @@ end
 --- @class gitview.RangeRead
 --- @field sources gitview.Source[]
 --- @field skipped gitview.Skipped
---- @field diverged boolean? whether the ends are on separate lines of history;
----        nil until `range_note` asks
+--- @field diverged table<string, boolean> whether the ends are on separate lines
+---        of history, by the sha of the older end; filled in as `range_note` asks
 
 --- How many ranges a session keeps the contents of. Each holds both versions of
 --- every file it changed, so the cache is bounded by count; a few dozen
@@ -372,7 +401,7 @@ local function read_range(s, range)
   if not sources then
     return nil, err
   end
-  local read = { sources = sources, skipped = skipped } --- @type gitview.RangeRead
+  local read = { sources = sources, skipped = skipped, diverged = {} } --- @type gitview.RangeRead
   if key then
     s.range_reads[key] = read
     table.insert(s.range_order, key)
@@ -509,7 +538,8 @@ local function is_kept(s, target)
   if is_whole_commit(commit, range) then
     return s.details[commit.sha] ~= nil
   end
-  return read.diverged ~= nil
+  local older = ends_of(s, target)
+  return older == nil or read.diverged[older.sha] ~= nil
 end
 
 --- Stand in for the view of a commit or the working tree until it is read.

@@ -636,6 +636,23 @@ function M.is_ancestor(a, b, cwd)
   return M.run({ 'git', 'merge-base', '--is-ancestor', a, b }, cwd).ok
 end
 
+--- The tree with nothing in it, for a range to start from when the commit it
+--- starts at has no parent.
+---
+--- Asked of the repository rather than written down: its name depends on the
+--- object format, and differs between a SHA-1 and a SHA-256 repository. Writing
+--- it is not needed either, since git knows the empty tree without storing it.
+---
+--- @param cwd string
+--- @return string? sha
+function M.empty_tree(cwd)
+  local res = M.run({ 'git', 'hash-object', '-t', 'tree', '--stdin' }, cwd, { stdin = '' })
+  if not res.ok then
+    return nil
+  end
+  return vim.trim(res.stdout)
+end
+
 --- Files git is not tracking and has not been told to ignore.
 ---
 --- `git diff` never reports these, so they are the one part of the working tree
