@@ -87,12 +87,22 @@ test('list: a commit row shows the start of its sha and keeps the rest', functio
   local buf = list.create_buffer()
   list.draw(buf, { pane = 'commits', root = '/tmp/repo', worktree = true, commits = { commit('abc1234', 'x') } })
   eq({ '0000000 uncommitted changes', 'abc1234 x' }, vim.api.nvim_buf_get_lines(buf, 0, -1, false))
-  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })
-  eq(2, #marks)
-  for i, m in ipairs(marks) do
-    eq({ i - 1, 4, 7, '' }, { m[2], m[3], m[4].end_col, m[4].conceal })
+  local concealed = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true })) do
+    if m[4].conceal then
+      concealed[#concealed + 1] = { m[2], m[3], m[4].end_col, m[4].conceal }
+    end
   end
+  eq({ { 0, 4, 7, '' }, { 1, 4, 7, '' } }, concealed)
   vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+test('list: the working-tree row is faded as a whole', function()
+  local rows = list.content({ pane = 'commits', worktree = true, commits = { commit('abc1234', 'x') } })
+  eq({ from = 0, to = #rows[1].text, group = 'GitViewCommitWorktree' }, rows[1].spans[#rows[1].spans])
+  for _, span in ipairs(rows[2].spans) do
+    eq(nil, span.group)
+  end
 end)
 
 -- A repository with no commit has no log to show, and an empty pane would say

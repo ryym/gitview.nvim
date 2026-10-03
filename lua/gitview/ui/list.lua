@@ -41,6 +41,7 @@ local M = {}
 --- @field from integer 0-based byte column
 --- @field to integer end-exclusive
 --- @field conceal boolean? hidden from view, though still in the text
+--- @field group string? highlight group the stretch is drawn in
 
 --- @class gitview.ListRow
 --- @field text string the buffer line, which is the thing itself
@@ -174,11 +175,15 @@ function M.content(model)
     -- Zeros as wide as the shas below, the way git writes the sha of nothing,
     -- so that the subjects stay in one column.
     local zeros = ('0'):rep(#commits[1].sha)
+    local text = ('%s %s'):format(zeros, WORKTREE_SUBJECT)
+    -- Faded, since it is not a commit: it stands for what is not recorded yet.
+    local spans = sha_spans(zeros)
+    spans[#spans + 1] = { from = 0, to = #text, group = 'GitViewCommitWorktree' }
     rows[1] = {
-      text = ('%s %s'):format(zeros, WORKTREE_SUBJECT),
+      text = text,
       gutter = model.mark == M.WORKTREE and MARK_GUTTER or nil,
       target = { kind = 'worktree', index = 1 },
-      spans = sha_spans(zeros),
+      spans = spans,
     }
   end
   for i, c in ipairs(commits) do
@@ -201,6 +206,7 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   set('GitViewStatusUntracked', { link = 'Comment' })
   set('GitViewStatusHeader', { link = 'Title' })
   set('GitViewStatusMark', { link = 'Special' })
+  set('GitViewCommitWorktree', { link = 'Comment' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -293,6 +299,7 @@ function M.draw(buf, model)
       vim.api.nvim_buf_set_extmark(buf, ns, i - 1, span.from, {
         end_col = span.to,
         conceal = span.conceal and '' or nil,
+        hl_group = span.group,
       })
     end
   end

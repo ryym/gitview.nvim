@@ -159,8 +159,8 @@ history.
 
 #### Comparing with the working tree
 
-The list is headed by a row of zeros standing for the working tree. On its own
-it shows every uncommitted file in one view, staged and unstaged at once, and
+The list is headed by a faded row of zeros standing for the working tree. On its
+own it shows every uncommitted file in one view, staged and unstaged at once, and
 `<CR>` there moves to the files pane.
 
 It is also an end a range can have, and the newest one. `m` on `HEAD~3` with the
@@ -270,7 +270,8 @@ File headers and a commit's header use `GitViewFileRule`,
 `GitViewStatDelete`.
 
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
-`GitViewStatusUntracked`, `GitViewStatusHeader` and `GitViewStatusMark`.
+`GitViewStatusUntracked`, `GitViewStatusHeader`, `GitViewStatusMark` and
+`GitViewCommitWorktree`.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`, and
 the rest link to standard groups. All are defined the first time they are
