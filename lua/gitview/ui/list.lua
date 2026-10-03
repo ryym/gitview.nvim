@@ -48,6 +48,9 @@ local M = {}
 --- @field gutter string? what `'statuscolumn'` draws, highlight groups included
 --- @field target gitview.ListTarget? absent on a row standing for nothing
 --- @field spans gitview.ListSpan[]? drawn over the text as extmarks
+--- @field subject integer? 0-based byte column where what the row names begins,
+---        past any sha in front of it; colored while the diff shows the row.
+---        Absent on a row standing for nothing
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
@@ -125,6 +128,7 @@ local function scope_rows(scope)
       -- padded to the width the two letters of an entry take.
       gutter = ('%%#GitViewStatusStaged#%s  '):format(c.status),
       target = { kind = 'commit_file', index = i },
+      subject = 0,
     }
   end
   return rows
@@ -158,6 +162,7 @@ function M.content(model)
         text = status.label(e),
         gutter = gutter_of(e),
         target = { kind = 'file', index = i },
+        subject = 0,
       }
     end
     return rows
@@ -184,6 +189,7 @@ function M.content(model)
       gutter = model.mark == M.WORKTREE and MARK_GUTTER or nil,
       target = { kind = 'worktree', index = 1 },
       spans = spans,
+      subject = #zeros + 1,
     }
   end
   for i, c in ipairs(commits) do
@@ -192,6 +198,7 @@ function M.content(model)
       gutter = c.sha == model.mark and MARK_GUTTER or nil,
       target = { kind = 'commit', index = i },
       spans = sha_spans(c.sha),
+      subject = #c.sha + 1,
     }
   end
   return rows
@@ -207,6 +214,7 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   set('GitViewStatusHeader', { link = 'Title' })
   set('GitViewStatusMark', { link = 'Special' })
   set('GitViewCommitWorktree', { link = 'Comment' })
+  set('GitViewListCursor', { link = 'Title' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -275,6 +283,11 @@ function M.winbar()
 end
 
 local ns = vim.api.nvim_create_namespace('gitview.ui.list')
+local cursor_ns = vim.api.nvim_create_namespace('gitview.ui.list.cursor')
+
+--- Above the spans a row is drawn with, so the row the diff shows stands out
+--- even where the whole row is already colored, as the working-tree row is.
+local CURSOR_PRIORITY = vim.hl.priorities.user + 1
 
 --- @return integer bufnr
 function M.create_buffer()
@@ -300,6 +313,7 @@ function M.draw(buf, model)
         end_col = span.to,
         conceal = span.conceal and '' or nil,
         hl_group = span.group,
+        priority = vim.hl.priorities.user,
       })
     end
   end
@@ -315,6 +329,31 @@ function M.draw(buf, model)
     stale = model.stale,
     rows = rows,
   }
+end
+
+--- Color what the row the diff is showing names, or nothing.
+---
+--- `'cursorline'` alone cannot say which of the two panes the diff follows: both
+--- panes have a cursor line, drawn alike. Only the pane the diff follows is
+--- given this, so it is also what tells the panes apart, and it stays while the
+--- focus is in the diff, which is when it is needed most.
+---
+--- Kept apart from `draw`, since the cursor moves far more often than the list
+--- changes.
+--- @param buf integer
+--- @param row integer? 1-based; nil clears
+function M.paint_cursor(buf, row)
+  vim.api.nvim_buf_clear_namespace(buf, cursor_ns, 0, -1)
+  local state = states[buf]
+  local r = row and state and state.rows[row]
+  if not r or not r.subject then
+    return
+  end
+  vim.api.nvim_buf_set_extmark(buf, cursor_ns, row - 1, r.subject, {
+    end_col = #r.text,
+    hl_group = 'GitViewListCursor',
+    priority = CURSOR_PRIORITY,
+  })
 end
 
 --- @param win integer

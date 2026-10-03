@@ -94,7 +94,9 @@ How the three versions are merged is described in
 `:GitView` opens a tab with a sidebar on the left and the diff on the
 right. The sidebar is split in two: the uncommitted changes above, the recent
 commits below. Moving the cursor in either draws whatever it lands on, and moving
-between the two panes switches which list the diff follows.
+between the two panes switches which list the diff follows. The row the diff is
+showing has its name colored, and only in the pane it follows, so which one that
+is can be read even while the focus is in the diff.
 
 The tab keeps up with the repository on its own. Anything that writes the index
 — `git add` in another terminal, a commit from a tmux pane, a branch switch from
@@ -270,8 +272,8 @@ File headers and a commit's header use `GitViewFileRule`,
 `GitViewStatDelete`.
 
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
-`GitViewStatusUntracked`, `GitViewStatusHeader`, `GitViewStatusMark` and
-`GitViewCommitWorktree`.
+`GitViewStatusUntracked`, `GitViewStatusHeader`, `GitViewStatusMark`,
+`GitViewCommitWorktree` and `GitViewListCursor`.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`, and
 the rest link to standard groups. All are defined the first time they are

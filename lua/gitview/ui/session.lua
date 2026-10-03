@@ -767,6 +767,10 @@ local function sync_selection(s, win, force, keep_unchanged)
   local buf = vim.api.nvim_win_get_buf(win)
   local row = vim.api.nvim_win_get_cursor(win)[1]
   local target = list.target_at(buf, row)
+  -- Painted even when the selection has not moved: a redraw of the list takes
+  -- the paint with the lines it replaces.
+  list.paint_cursor(buf == s.files_buf and s.commits_buf or s.files_buf, nil)
+  list.paint_cursor(buf, row)
   if not force and list.same_target(target, s.selected) then
     return
   end

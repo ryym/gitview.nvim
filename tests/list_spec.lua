@@ -105,6 +105,49 @@ test('list: the working-tree row is faded as a whole', function()
   end
 end)
 
+--- The stretch of `row` the cursor paint covers, with its priority.
+--- @param buf integer
+--- @param row integer 1-based
+--- @return {from:integer, to:integer, priority:integer}?
+local function cursor_paint(buf, row)
+  local ns = vim.api.nvim_create_namespace('gitview.ui.list.cursor')
+  local marks = vim.api.nvim_buf_get_extmarks(buf, ns, { row - 1, 0 }, { row - 1, -1 }, { details = true })
+  local m = marks[1]
+  return m and { from = m[3], to = m[4].end_col, priority = m[4].priority } or nil
+end
+
+-- What the row names is colored, not the sha in front of it, which is already
+-- colored for what it says about the commit.
+test('list: the cursor paint covers what the row names', function()
+  local buf = list.create_buffer()
+  list.draw(buf, { pane = 'commits', root = '/tmp/repo', worktree = true, commits = { commit('abc1234', 'x') } })
+  list.paint_cursor(buf, 2)
+  eq(8, cursor_paint(buf, 2).from)
+  eq(9, cursor_paint(buf, 2).to)
+  -- one row at a time
+  list.paint_cursor(buf, 1)
+  eq(nil, cursor_paint(buf, 2))
+  -- above the fade of the working-tree row, or it would not show there
+  local fade = vim.tbl_filter(function(m)
+    return m[4].hl_group == 'GitViewCommitWorktree'
+  end, vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true }))[1]
+  assert(cursor_paint(buf, 1).priority > fade[4].priority, 'the cursor paint must win over the fade')
+  list.paint_cursor(buf, nil)
+  eq(nil, cursor_paint(buf, 1))
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+test('list: a file row is painted whole, and a notice not at all', function()
+  local buf = list.create_buffer()
+  list.draw(buf, { pane = 'files', root = '/tmp/repo', entries = { entry('M', ' ', 'a.txt') } })
+  list.paint_cursor(buf, 1)
+  eq({ from = 0, to = 5 }, { from = cursor_paint(buf, 1).from, to = cursor_paint(buf, 1).to })
+  list.draw(buf, { pane = 'files', root = '/tmp/repo', entries = {} })
+  list.paint_cursor(buf, 1)
+  eq(nil, cursor_paint(buf, 1))
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
 -- A repository with no commit has no log to show, and an empty pane would say
 -- nothing about why.
 test('list: a repository with no commits says so', function()

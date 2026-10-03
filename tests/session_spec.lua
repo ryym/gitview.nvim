@@ -1381,6 +1381,30 @@ local function diff_winbar(s)
   return (require('gitview.diff.render').winbar():gsub('%%#%w+#', ''))
 end
 
+--- The rows of `buf` the cursor paint is on, 1-based.
+--- @param buf integer
+--- @return integer[]
+local function painted_rows(buf)
+  local ns = vim.api.nvim_create_namespace('gitview.ui.list.cursor')
+  return vim.tbl_map(function(m)
+    return m[2] + 1
+  end, vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, {}))
+end
+
+-- Both panes have a cursor line, so the paint is what says which one the diff
+-- is following.
+test('session: only the pane the diff follows has its row painted', function()
+  with_session(forked_history, function(s)
+    eq({ 1 }, painted_rows(s.files_buf))
+    eq({}, painted_rows(s.commits_buf))
+    local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = 2 }))
+    vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+    session.follow_cursor(s, s.commits_win)
+    eq({}, painted_rows(s.files_buf))
+    eq({ row }, painted_rows(s.commits_buf))
+  end)
+end)
+
 test('session: the marked commit is shown in the gutter', function()
   with_session(forked_history, function(s)
     goto_commit(s, 3)
