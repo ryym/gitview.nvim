@@ -100,8 +100,8 @@ local highlights = util.highlights('gitview.highlights', function(set)
   -- Staged changes in a mixed view are the same hues, faded: they are settled,
   -- and what is still unstaged is what needs attention. The gutter marks them
   -- too, since 256-color terminals get no fading.
-  set('GitViewStagedAdd', scale(add, 0.5))
-  set('GitViewStagedDelete', scale(del, 0.5))
+  set('GitViewStagedAdd', scale(add, 0.6))
+  set('GitViewStagedDelete', scale(del, 0.6))
   set('GitViewStagedAddText', scale(add, 0.9))
   set('GitViewStagedDeleteText', scale(del, 0.9))
   set('GitViewStagedSign', { link = 'Special' })
