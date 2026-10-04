@@ -20,7 +20,7 @@ M.values = {
   linematch = 0,
   ignore_whitespace = false,
   list_width = 30,
-  commit_count = 20,
+  commit_count = 100,
   commit_ratio = 0.4,
   no_highlight = {},
 }

@@ -231,7 +231,7 @@ unaffected — they run `git add`, which takes the file as it is.
 ```lua
 require('gitview').setup({
   list_width = 30,          -- columns for the sidebar
-  commit_count = 20,        -- how many recent commits it lists
+  commit_count = 100,       -- how many recent commits it lists
   commit_ratio = 0.4,       -- share of the sidebar height the commit list takes
   ignore_whitespace = false, -- where every diff starts out
 })
