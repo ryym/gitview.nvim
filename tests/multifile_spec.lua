@@ -152,6 +152,26 @@ test('the winbar names the file the cursor is in', function()
   vim.api.nvim_win_close(win, true)
 end)
 
+--- What the gutter shows on `row` of `buf`, as 'statuscolumn' draws it.
+--- @param buf integer
+--- @param row integer
+--- @return string
+local function gutter_at(buf, row)
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = 'editor',
+    width = 60,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  render.configure_window(win, buf)
+  vim.g.statusline_winid = win
+  vim.v.lnum = row
+  local gutter = render.statuscolumn()
+  vim.api.nvim_win_close(win, true)
+  return gutter
+end
+
 test("a rule runs through every file's header, gutter included", function()
   local buf, view = build({ LUA, PERL })
   local ns = vim.api.nvim_get_namespaces()['gitview.diff']
@@ -164,23 +184,12 @@ test("a rule runs through every file's header, gutter included", function()
   end
   eq({ view.files[1].row, view.files[2].row }, rules)
 
-  local win = vim.api.nvim_open_win(buf, false, {
-    relative = 'editor',
-    width = 60,
-    height = 10,
-    row = 1,
-    col = 1,
-  })
-  render.configure_window(win, buf)
-  vim.g.statusline_winid = win
-  vim.v.lnum = view.files[2].row
-  eq('%#GitViewFileRule#' .. ('─'):rep(11) .. ' ', render.statuscolumn())
-  vim.v.lnum = view.files[2].row - 1
-  eq((' '):rep(12), render.statuscolumn(), 'the blank line in front is left blank')
-  vim.api.nvim_win_close(win, true)
+  local gutter = gutter_at(buf, view.files[2].row)
+  assert(vim.startswith(gutter, '%#GitViewFileRule#─'), 'expected the rule: ' .. gutter)
+  eq((' '):rep(12), gutter_at(buf, view.files[2].row - 1), 'the blank line in front is left blank')
 end)
 
-test('each header ends with how many lines its file adds and deletes', function()
+test("each header's gutter ends with how many lines its file adds and deletes", function()
   local only_add = {
     label = 'c.lua',
     lang = 'lua',
@@ -188,23 +197,43 @@ test('each header ends with how many lines its file adds and deletes', function(
     new = { 'local x = 1', 'return x' },
   }
   local buf, view = build({ LUA, only_add })
-  local ns = vim.api.nvim_get_namespaces()['gitview.diff']
-  local stats = {}
-  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    if m[4].virt_text_pos == 'right_align' then
-      stats[m[2] + 1] = m[4].virt_text
-    end
+  eq(
+    '%#GitViewFileRule#' .. ('─'):rep(5) .. ' %#GitViewStatAdd#+1 %#GitViewStatDelete#-1 ',
+    gutter_at(buf, view.files[1].row)
+  )
+  -- a count of zero is left out
+  eq('%#GitViewFileRule#' .. ('─'):rep(8) .. ' %#GitViewStatAdd#+1 ', gutter_at(buf, view.files[2].row))
+end)
+
+--- @param n integer
+--- @param tag string
+--- @return string[]
+local function numbered(n, tag)
+  local lines = {}
+  for i = 1, n do
+    lines[i] = tag .. i
   end
-  eq({
-    [view.files[1].row] = {
-      { ' ' },
-      { '+1', 'GitViewStatAdd' },
-      { ' ' },
-      { '-1', 'GitViewStatDelete' },
-    },
-    -- a count of zero is left out
-    [view.files[2].row] = { { ' ' }, { '+1', 'GitViewStatAdd' } },
-  }, stats)
+  return lines
+end
+
+test('a count of up to four digits fills the gutter as it is', function()
+  local buf, view = build({
+    { label = 'big.txt', lang = 'text', old = numbered(9999, 'old'), new = numbered(9999, 'new') },
+  })
+  eq(
+    '%#GitViewFileRule#%#GitViewStatAdd#+9999 %#GitViewStatDelete#-9999 ',
+    gutter_at(buf, view.files[1].row)
+  )
+end)
+
+test('a count past four digits is rounded down to thousands', function()
+  local buf, view = build({
+    { label = 'big.txt', lang = 'text', old = numbered(10000, 'old'), new = numbered(12999, 'new') },
+  })
+  eq(
+    '%#GitViewFileRule#' .. ('─'):rep(1) .. ' %#GitViewStatAdd#+12k %#GitViewStatDelete#-10k ',
+    gutter_at(buf, view.files[1].row)
+  )
 end)
 
 test('a single-file view still gets its header', function()

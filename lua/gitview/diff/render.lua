@@ -531,36 +531,13 @@ function M.draw(buf, view)
     end
   end
 
-  -- 5. each file's header: the rest of the rule the gutter starts, and how
-  --    much the file changed at the right end
+  -- 5. the rest of each file's header rule, which the gutter starts
   for _, f in ipairs(view.files) do
     vim.api.nvim_buf_set_extmark(buf, ns_diff, f.row - 1, 0, {
       virt_text = { { RULE, 'GitViewFileRule' } },
       virt_text_pos = 'eol',
-      -- under the count, which is drawn over the rule's right end
       priority = 10,
     })
-  end
-  for i, s in ipairs(file_stats(view)) do
-    local chunks = {}
-    if s.add > 0 then
-      chunks[#chunks + 1] = { '+' .. s.add, 'GitViewStatAdd' }
-    end
-    if s.del > 0 then
-      if #chunks > 0 then
-        chunks[#chunks + 1] = { ' ' }
-      end
-      chunks[#chunks + 1] = { '-' .. s.del, 'GitViewStatDelete' }
-    end
-    if #chunks > 0 then
-      -- a space parts the count from the rule
-      table.insert(chunks, 1, { ' ' })
-      vim.api.nvim_buf_set_extmark(buf, ns_diff, view.files[i].row - 1, 0, {
-        virt_text = chunks,
-        virt_text_pos = 'right_align',
-        priority = 200,
-      })
-    end
   end
 
   vim.bo[buf].modifiable = false
@@ -619,6 +596,68 @@ local BLANK_MIXED_GUTTER = (' '):rep(13)
 --- `S` for a staged change, `I` for a line that only the index has.
 local STAGE_MARK = { staged = 'S', index = 'I' }
 
+--- A count as it fits in the gutter: as it is up to four digits, and cut down
+--- to thousands or millions beyond that, so that each side of a header's count
+--- stays within four characters after its sign. It is rounded down, which keeps
+--- `999999` from becoming `1000k` and never makes a file look bigger than it is.
+--- @param n integer
+--- @return string
+local function abbrev_count(n)
+  if n < 10000 then
+    return tostring(n)
+  elseif n < 1000000 then
+    return math.floor(n / 1000) .. 'k'
+  end
+  return math.floor(n / 1000000) .. 'M'
+end
+
+--- What the gutter of each file's header shows, by row: the start of the rule,
+--- and how many lines the file adds and deletes right before its name, where
+--- the eye already is and where a long name cannot run into it. The count is
+--- at most `+9999 -9999`, which is as wide as the gutter leaves room for.
+--- Worked out once per view, as 'statuscolumn' asks for it on every redraw.
+--- @type table<gitview.View, table<integer, string>>
+local header_gutter_cache = setmetatable({}, { __mode = 'k' })
+
+--- @param view gitview.View
+--- @return table<integer, string>
+local function header_gutters(view)
+  local cached = header_gutter_cache[view]
+  if cached then
+    return cached
+  end
+  -- the last cell is the space that parts the gutter from the name
+  local width = #(view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER) - 1
+  local gutters = {}
+  for i, s in ipairs(file_stats(view)) do
+    local parts, count = {}, {}
+    if s.add > 0 then
+      local text = '+' .. abbrev_count(s.add)
+      parts[#parts + 1] = '%#GitViewStatAdd#' .. text
+      count[#count + 1] = text
+    end
+    if s.del > 0 then
+      local text = '-' .. abbrev_count(s.del)
+      parts[#parts + 1] = '%#GitViewStatDelete#' .. text
+      count[#count + 1] = text
+    end
+    local len = #table.concat(count, ' ')
+    local rule, gap = width, ''
+    if len > 0 then
+      -- a space parts the rule from the count, if there is room left for one
+      rule = math.max(width - len - 1, 0)
+      gap = len < width and ' ' or ''
+    end
+    gutters[view.files[i].row] = '%#GitViewFileRule#'
+      .. RULE:sub(1, #'─' * rule)
+      .. gap
+      .. table.concat(parts, ' ')
+      .. ' '
+  end
+  header_gutter_cache[view] = gutters
+  return gutters
+end
+
 --- Gutter is drawn through 'statuscolumn' rather than written into the buffer so
 --- that the line numbers stay out of a yank.
 --- @return string
@@ -637,9 +676,8 @@ function M.statuscolumn()
     return blank
   end
   local l = view.lines[vim.v.lnum]
-  -- a space parts the rule from the name
   if l and l.kind == 'file' then
-    return '%#GitViewFileRule#' .. RULE:sub(1, #'─' * (#blank - 1)) .. ' '
+    return header_gutters(view)[vim.v.lnum]
   end
   -- file headers and the blanks between files stand for no source line and so
   -- have no numbers to show
