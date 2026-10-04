@@ -87,6 +87,28 @@ test('session: is registered against its own tab page', function()
   end)
 end)
 
+test('session: names its buffers for the tab page label', function()
+  with_session(base, function(s)
+    eq('GitView', vim.fn.bufname(s.files_buf))
+    eq('GitView:commits', vim.fn.bufname(s.commits_buf))
+    eq('GitView:diff', vim.fn.bufname(s.diff_buf))
+  end)
+end)
+
+test('session: a second session takes numbered buffer names', function()
+  with_session(base, function()
+    local s = session.open()
+    assert(s, 'no session opened')
+    local names = {
+      vim.fn.bufname(s.files_buf),
+      vim.fn.bufname(s.commits_buf),
+      vim.fn.bufname(s.diff_buf),
+    }
+    session.close(s)
+    eq({ 'GitView (2)', 'GitView:commits (2)', 'GitView:diff (2)' }, names)
+  end)
+end)
+
 test('session: refreshing picks up changes made since', function()
   with_session(base, function(s, repo)
     repo.git('add', 'loose.txt')

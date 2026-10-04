@@ -1732,6 +1732,28 @@ local function teardown(s)
   end
 end
 
+--- Name the session's buffers, which is what the tab page's label shows in place
+--- of `[Scratch]`. The label follows the current window, so the files pane,
+--- which a session opens in, carries the plain name. Buffer names must be unique,
+--- so a session opened while another is still around takes a numbered set, the
+--- same number for all three buffers.
+--- @param s gitview.Session
+local function name_buffers(s)
+  local names = { 'GitView', 'GitView:commits', 'GitView:diff' }
+  local suffix, n = '', 1
+  while
+    vim.iter(names):any(function(name)
+      return vim.fn.bufexists(name .. suffix) == 1
+    end)
+  do
+    n = n + 1
+    suffix = ' (' .. n .. ')'
+  end
+  for i, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
+    vim.api.nvim_buf_set_name(buf, names[i] .. suffix)
+  end
+end
+
 --- Open a tab page listing everything uncommitted.
 --- @return gitview.Session?
 function M.open()
@@ -1762,6 +1784,7 @@ function M.open()
     has_head = git.has_head(root),
   }
   s.commits = read_commits(s)
+  name_buffers(s)
   vim.api.nvim_win_set_buf(s.files_win, s.files_buf)
   -- Explicit sides, rather than `:vsplit` and `:split`, which follow
   -- 'splitright' and 'splitbelow'.
