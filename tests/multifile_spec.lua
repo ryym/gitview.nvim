@@ -241,3 +241,36 @@ test('a single-file view still gets its header', function()
   eq('file', view.lines[1].kind)
   eq('a.lua', view.lines[1].text)
 end)
+
+test('a changed line is told apart by the color of its number, not a sign', function()
+  local buf = build({ LUA })
+  eq('%#GitViewDeleteLnum#   1        ', gutter_at(buf, 2))
+  eq('     %#GitViewAddLnum#   1   ', gutter_at(buf, 3))
+  eq('%#GitViewOldLnum#   2 %#GitViewNewLnum#   2   ', gutter_at(buf, 4))
+end)
+
+test('a mixed view marks with a bar each row the index has changed', function()
+  local view = require('gitview.diff.view').build({
+    {
+      label = 'm.txt',
+      path = '/tmp/m.txt',
+      ft = 'text',
+      old_lines = { 'x' },
+      index_lines = { 'X' },
+      new_lines = { 'XX' },
+    },
+  }, 'HEAD, staged + unstaged', 3, { algorithm = 'histogram', linematch = 0 })
+  local buf = render.render(assert(view))
+  local gutters = {}
+  for row, l in ipairs(view.lines) do
+    if l.stage then
+      gutters[l.stage] = gutter_at(buf, row)
+    end
+  end
+  eq({
+    staged = '%#GitViewDeleteLnum#   1      %#GitViewStagedBar#┃ ',
+    -- in neither HEAD nor the working tree, so it has no numbers
+    index = '          %#GitViewStagedBar#┃ ',
+    unstaged = '     %#GitViewAddLnum#   1   ',
+  }, gutters)
+end)

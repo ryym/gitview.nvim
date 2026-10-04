@@ -31,9 +31,11 @@ require('gitview').setup({
 A diff buffer interleaves two versions of a file, so its text is not valid
 source in any language and no parser can highlight it directly. Highlights are
 instead collected from separate scratch buffers holding each whole version, then
-replayed onto the diff buffer as extmarks. Line numbers and `+`/`-` markers are
-decoration rather than text, so yanking a selection gives you code and not a
-gutter.
+replayed onto the diff buffer as extmarks. Line numbers are decoration rather
+than text, so yanking a selection gives you code and not a gutter.
+
+There is no `+`/`-` column. A deleted line has only its old number, painted
+red, and an added line only its new number, painted green.
 
 [docs/architecture.md](docs/architecture.md) describes the pipeline in full.
 
@@ -60,31 +62,35 @@ Untracked files are included, every line of them an unstaged addition. Binary
 ones are left out, as they are elsewhere; since git never diffs an untracked
 file, they are recognised the way git itself does, by a NUL byte near the start.
 
-The gutter reads `HEAD lnum | working-tree lnum | mark | sign`. Line numbers
-are those of HEAD and the working tree, so a line in neither has none.
+The gutter reads `HEAD lnum | working-tree lnum | bar`. Line numbers are those
+of HEAD and the working tree, so a line in neither has none. Two things mark a
+changed line:
 
-| gutter | line exists in   | meaning                                    |
-| ------ | ---------------- | ------------------------------------------ |
-| `S-`   | HEAD             | deletion, staged                           |
-| `S+`   | index, work tree | addition, staged                           |
-| ` -`   | HEAD, index      | deletion, not staged                       |
-| ` +`   | work tree        | addition, not staged                       |
-| `I-`   | index            | staged addition, removed from work tree    |
+- **A `┃` bar** marks a line the index has changed, which unstaging would take
+  back.
+- **The diff colors** mark a line the working tree has changed since the index,
+  which staging would record. A line with the bar and no further change has the
+  same colors blended halfway into the background instead.
 
-- **`S`** lines have faded colors: they are what a commit would record now.
-- **Unmarked** lines look as they do in a commit's diff: they are what a commit
-  would still leave out.
-- **`I-`** is the one to watch for. The line would be committed, yet the
-  working tree no longer has it. It appears when a staged line is edited again
-  or reverted without re-staging.
+| line                                    | bar | background |
+| --------------------------------------- | --- | ---------- |
+| deletion or addition, staged            | `┃` | blended    |
+| deletion or addition, not staged        |     | diff color |
+| staged addition, removed from work tree | `┃` | red        |
+
+The last one is the one to watch for. The line would be committed, yet the
+working tree no longer has it. It appears when a staged line is edited again or
+reverted without re-staging, and is the only row with a bar and no number.
 
 Two situations show changes even though HEAD and the working tree are equal,
 because the index differs from both:
 
-- A staged change reverted in the working tree: `S-` (HEAD), `I-` (index),
-  then `+` (working tree).
-- A staged deletion restored in the working tree: `S-` then `+` with the same
-  text. The index has no row for the line, so it cannot show as unchanged.
+- A staged change reverted in the working tree: a staged deletion of the HEAD
+  line, the index line with its bar on red, then an unstaged addition of the
+  working-tree line.
+- A staged deletion restored in the working tree: a staged deletion then an
+  unstaged addition of the same text. The index has no row for the line, so it
+  cannot show as unchanged.
 
 How the three versions are merged is described in
 [docs/architecture.md](docs/architecture.md#mixed-view).
@@ -270,10 +276,11 @@ Both sides of the trade-off are measured in
 ### Highlight groups
 
 `GitViewAdd`, `GitViewDelete`, `GitViewAddText`, `GitViewDeleteText`,
-`GitViewOldLnum`, `GitViewNewLnum`, `GitViewSeparator`, `GitViewFileHeader`.
+`GitViewOldLnum`, `GitViewNewLnum`, `GitViewAddLnum`, `GitViewDeleteLnum`,
+`GitViewSeparator`, `GitViewFileHeader`.
 
 The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
-`GitViewStagedAddText`, `GitViewStagedDeleteText` and `GitViewStagedSign`.
+`GitViewStagedAddText`, `GitViewStagedDeleteText` and `GitViewStagedBar`.
 
 File headers and a commit's header use `GitViewFileRule`,
 `GitViewCommitSubject`, `GitViewCommitAuthor`, `GitViewStatAdd` and

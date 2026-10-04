@@ -99,14 +99,16 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewDeleteText', scale(del, 1.4))
   -- Staged changes in a mixed view are the same hues, faded: they are settled,
   -- and what is still unstaged is what needs attention. The gutter marks them
-  -- too, since 256-color terminals get no fading.
+  -- with a bar too, since 256-color terminals get no fading.
   set('GitViewStagedAdd', scale(add, 0.6))
   set('GitViewStagedDelete', scale(del, 0.6))
   set('GitViewStagedAddText', scale(add, 0.9))
   set('GitViewStagedDeleteText', scale(del, 0.9))
-  set('GitViewStagedSign', { link = 'Special' })
+  set('GitViewStagedBar', { link = 'Special' })
   set('GitViewOldLnum', { link = 'LineNr' })
   set('GitViewNewLnum', { link = 'LineNr' })
+  set('GitViewAddLnum', { link = 'Added' })
+  set('GitViewDeleteLnum', { link = 'Removed' })
   set('GitViewSeparator', { link = 'Folded' })
   set('GitViewFileHeader', { link = 'Title' })
   -- Also defined by `ui.list`, alike, so a sha has one color in both panes
@@ -124,7 +126,6 @@ M.ensure_highlights = highlights.ensure
 --- Testing hook: forget that the groups were ever defined.
 M.ensure_highlights_reset = highlights.forget
 
-local SIGN = { add = '+', del = '-', context = ' ' }
 local LINE_HL = {
   add = 'GitViewAdd',
   del = 'GitViewDelete',
@@ -593,13 +594,20 @@ function M.render(view)
   return buf
 end
 
---- Width of the gutter: two four-digit line numbers and a sign, each followed
---- by a space. A mixed view puts a stage marker in front of the sign.
+--- Width of the gutter: two four-digit line numbers and the cell a mixed view
+--- marks staged lines in, each followed by a space. Other views leave that cell
+--- blank, so the text starts in the same column whichever view is shown, and a
+--- header's count up to `+9999 -9999` fits either way.
 local BLANK_GUTTER = (' '):rep(12)
-local BLANK_MIXED_GUTTER = (' '):rep(13)
 
---- `S` for a staged change, `I` for a line that only the index has.
-local STAGE_MARK = { staged = 'S', index = 'I' }
+--- Changed lines say which they are by the color of their number, the only one
+--- they have, so the gutter needs no `+`/`-` of its own.
+local LNUM_HL = { add = 'GitViewAddLnum', del = 'GitViewDeleteLnum' }
+
+--- What marks a row the index has changed, which is a row `unstage` would act
+--- on: a staged change, and a line only the index has. The latter is unstaged as
+--- well, which its background shows.
+local STAGED_BAR = { staged = true, index = true }
 
 --- A count as it fits in the gutter: as it is up to four digits, and cut down
 --- to thousands or millions beyond that, so that each side of a header's count
@@ -639,14 +647,13 @@ end
 --- text, where the eye already is and where a long line cannot run into it. The
 --- count is at most `+9999 -9999`, which is as wide as the gutter leaves room
 --- for, and `fill` pads it out to the gutter's width on its left.
---- @param view gitview.View
 --- @param add integer
 --- @param del integer
 --- @param fill fun(cells: integer): string
 --- @return string
-local function count_gutter(view, add, del, fill)
+local function count_gutter(add, del, fill)
   -- the last cell is the space that parts the gutter from the text
-  local width = #(view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER) - 1
+  local width = #BLANK_GUTTER - 1
   local parts, count = {}, {}
   if add > 0 then
     local text = '+' .. abbrev_count(add)
@@ -689,7 +696,7 @@ local function header_gutters(view)
   end
   local gutters = {}
   for i, s in ipairs(file_stats(view)) do
-    gutters[view.files[i].row] = count_gutter(view, s.add, s.del, rule_fill)
+    gutters[view.files[i].row] = count_gutter(s.add, s.del, rule_fill)
   end
   header_gutter_cache[view] = gutters
   return gutters
@@ -706,11 +713,10 @@ function M.statuscolumn()
   if not view then
     return ''
   end
-  local blank = view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER
   -- 'statuscolumn' is evaluated for every screen line, so a wrapped line must
   -- not repeat the numbers of the buffer line it continues.
   if vim.v.virtnum ~= 0 then
-    return blank
+    return BLANK_GUTTER
   end
   local l = view.lines[vim.v.lnum]
   if l and l.kind == 'file' then
@@ -724,36 +730,30 @@ function M.statuscolumn()
     if size and vim.api.nvim_win_call(win, function()
       return vim.fn.foldclosed(lnum) ~= -1
     end) then
-      return count_gutter(view, size.add, size.del, function(cells)
+      return count_gutter(size.add, size.del, function(cells)
         return (' '):rep(cells)
       end)
     end
-    return blank
+    return BLANK_GUTTER
   end
   -- file headers and the blanks between files stand for no source line and so
   -- have no numbers to show
   if not l or not dlib.source_kinds[l.kind] then
-    return blank
+    return BLANK_GUTTER
   end
   -- A closed fold is drawn as its first row, and stands for all of them.
   if l.folded and vim.api.nvim_win_call(win, function()
     return vim.fn.foldclosed(lnum) ~= -1
   end) then
-    return blank
+    return BLANK_GUTTER
   end
-  local function num(n)
-    return n and string.format('%4d', n) or '    '
+  local function num(n, group)
+    return n and ('%%#%s#%4d'):format(LNUM_HL[l.kind] or group, n) or '    '
   end
-  local mark = ''
-  if view.mixed then
-    mark = '%#GitViewStagedSign#' .. (STAGE_MARK[l.stage] or ' ') .. '%#GitViewNewLnum#'
-  end
-  return string.format(
-    '%%#GitViewOldLnum#%s %%#GitViewNewLnum#%s %s%s ',
-    num(l.old_lnum),
-    num(l.new_lnum),
-    mark,
-    SIGN[l.kind]
+  return ('%s %s %s '):format(
+    num(l.old_lnum, 'GitViewOldLnum'),
+    num(l.new_lnum, 'GitViewNewLnum'),
+    STAGED_BAR[l.stage] and '%#GitViewStagedBar#┃' or ' '
   )
 end
 
