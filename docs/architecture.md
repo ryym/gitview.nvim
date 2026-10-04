@@ -718,6 +718,22 @@ The winbar is recomputed on redraw rather than set once, so it follows the curso
 through a multi-file view and keeps naming the file after its header line has
 scrolled off.
 
+## Word-level pairing
+
+`change_pairs()` decides which deleted line is word-diffed against which added
+one. Within a del/add block, each deletion is paired with the first addition
+after the last pair whose word diff passes `worddiff.useful`, the same greedy
+scheme git-delta uses. Deletions and additions that resemble nothing stay
+unpaired, and pairs never cross, because a unified view cannot show crossing
+pairs as changes.
+
+Every comparison is a word diff, so the search is bounded: a deletion is only
+compared against the next 10 additions. A 1000-line block rewritten wholesale
+then costs about 10,000 word diffs, around 130ms, instead of a million.
+
+Which lines are compared is independent of how the diff is laid out, so pairing
+moves no hunk boundary and keeps the agreement with `git diff`.
+
 ## Mixed view
 
 An uncommitted file's diff replaces step 2 of the pipeline with `mixed.build`,
@@ -825,8 +841,11 @@ re-attempted by accident:
   would inherit the user's git configuration, but git compares the file on disk
   while this compares the buffer. `vim.diff` already agrees with git on hunk
   boundaries once `linematch` is off.
-- **`linematch` on by default.** It improves word-level pairing but disagrees
-  with `git diff`. It is configurable; the default favours agreement.
+- **`linematch` on by default.** It disagrees with `git diff`, and word-level
+  pairing does not need it (see [Word-level pairing](#word-level-pairing)). It
+  is configurable; the default favours agreement.
+- **Pairing changed lines by position.** It only works for equally sized
+  blocks: one line inserted in the middle shifts every pair below it.
 - **Character-level word diff.** Unrelated lines share letters, so the result
   reads as noise. Tokens are runs of word characters instead.
 - **`line_hl_group` for the line background.** See [neovim-notes.md](neovim-notes.md).
@@ -874,10 +893,3 @@ Reading `git ls-files -u` is what a merge view needs, and it also yields the
 exact status pair, so the present rounding of every conflict to `UU` is resolved
 by the same work.
 
-### Word-level pairing needs equal-sized blocks
-
-`change_pairs()` matches deleted lines to added ones by position, so a block
-replaced by one of a different size gets no word-level highlights at all.
-Matching them by similarity instead would lift that, and unlike enabling
-`linematch` it would not move any hunk boundary: which lines are compared for
-word highlights is independent of how the diff is laid out.

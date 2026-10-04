@@ -140,18 +140,57 @@ test('a range of one line is left open rather than folded', function()
   eq(7, #lines, 'all six lines, with line 5 shown twice')
 end)
 
-test('change_pairs only pairs equally sized blocks', function()
-  local lines = {
-    { kind = 'del' },
-    { kind = 'del' },
-    { kind = 'add' },
-    { kind = 'add' },
-    { kind = 'context' },
-    { kind = 'del' },
-    { kind = 'add' },
-    { kind = 'add' },
-  }
+--- @param kinds_texts [string, string, integer?][] kind, text and file of each line
+--- @return gitview.Line[]
+local function change_lines(kinds_texts)
+  return vim.tbl_map(function(t)
+    return { kind = t[1], text = t[2], file = t[3] }
+  end, kinds_texts)
+end
+
+test('change_pairs pairs similar lines of an equally sized block', function()
+  local lines = change_lines({
+    { 'del', 'local a = 1' },
+    { 'del', 'local b = 2' },
+    { 'add', 'local a = 10' },
+    { 'add', 'local b = 20' },
+  })
   eq({ { 1, 3 }, { 2, 4 } }, dlib.change_pairs(lines))
+end)
+
+test('change_pairs pairs around an addition inserted into the block', function()
+  -- Pairing by position would set `local b = 2` against the inserted line.
+  local lines = change_lines({
+    { 'del', 'local a = 1' },
+    { 'del', 'local b = 2' },
+    { 'add', 'local a = 10' },
+    { 'add', 'print("inserted")' },
+    { 'add', 'local b = 20' },
+  })
+  eq({ { 1, 3 }, { 2, 5 } }, dlib.change_pairs(lines))
+end)
+
+test('change_pairs leaves a deletion unpaired when no addition resembles it', function()
+  local lines = change_lines({
+    { 'del', 'local a = 1' },
+    { 'del', 'print("removed")' },
+    { 'del', 'local b = 2' },
+    { 'add', 'local a = 10' },
+    { 'add', 'local b = 20' },
+  })
+  eq({ { 1, 4 }, { 3, 5 } }, dlib.change_pairs(lines))
+end)
+
+test('change_pairs keeps pairs in order', function()
+  -- The second deletion resembles the first addition, but pairing them would
+  -- cross the first pair; a unified view cannot show crossing pairs as changes.
+  local lines = change_lines({
+    { 'del', 'return total' },
+    { 'del', 'local count = 0' },
+    { 'add', 'local count = 1' },
+    { 'add', 'return total + 1' },
+  })
+  eq({ { 1, 4 } }, dlib.change_pairs(lines))
 end)
 
 test('trailing newline differences do not produce phantom hunks', function()
@@ -173,21 +212,21 @@ end)
 
 test('change_pairs does not pair across a file boundary', function()
   -- One file's trailing deletions sit directly above the next file's additions.
-  local lines = {
-    { kind = 'del', file = 1 },
-    { kind = 'add', file = 2 },
-    { kind = 'add', file = 2 },
-  }
+  local lines = change_lines({
+    { 'del', 'local a = 1', 1 },
+    { 'add', 'local a = 10', 2 },
+    { 'add', 'local a = 10', 2 },
+  })
   eq({}, dlib.change_pairs(lines))
 end)
 
 test('change_pairs still pairs within one file', function()
-  local lines = {
-    { kind = 'del', file = 1 },
-    { kind = 'add', file = 1 },
-    { kind = 'del', file = 2 },
-    { kind = 'add', file = 2 },
-  }
+  local lines = change_lines({
+    { 'del', 'local a = 1', 1 },
+    { 'add', 'local a = 10', 1 },
+    { 'del', 'local b = 2', 2 },
+    { 'add', 'local b = 20', 2 },
+  })
   eq({ { 1, 2 }, { 3, 4 } }, dlib.change_pairs(lines))
 end)
 

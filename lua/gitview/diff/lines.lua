@@ -1,3 +1,5 @@
+local worddiff = require('gitview.diff.worddiff')
+
 
 local M = {}
 
@@ -145,7 +147,17 @@ function M.build(hunks, old_lines, new_lines, context)
   return out, hunk_rows
 end
 
---- Pair up del/add blocks that can be shown as line-to-line changes.
+--- How many additions past the last paired one each deletion is compared
+--- against. Every comparison is a word diff, so an unbounded search would cost
+--- one per deletion and addition on a block rewritten wholesale.
+local PAIR_LOOKAHEAD = 10
+
+--- Pair up deleted and added lines that can be shown as line-to-line changes.
+---
+--- Within a del/add block, each deletion is paired with the first addition after
+--- the last pair whose word diff is worth showing, as git-delta does. Pairing by
+--- position instead would only work for equally sized blocks: a single line
+--- inserted in the middle shifts every pair below it.
 ---
 --- In a multi-file view one file's trailing deletions sit directly above the
 --- next file's leading additions, so blocks are only paired when they belong to
@@ -173,9 +185,21 @@ function M.change_pairs(lines)
         i = i + 1
       end
       local add_end = i - 1
-      if add_end >= add_start and (del_end - del_start) == (add_end - add_start) then
-        for k = 0, del_end - del_start do
-          pairs_[#pairs_ + 1] = { del_start + k, add_start + k }
+
+      local next_add = add_start
+      for d = del_start, del_end do
+        if next_add > add_end then
+          break
+        end
+        local old = lines[d].text
+        for a = next_add, math.min(add_end, next_add + PAIR_LOOKAHEAD - 1) do
+          local new = lines[a].text
+          local old_ranges, new_ranges = worddiff.ranges(old, new)
+          if worddiff.useful(old, new, old_ranges, new_ranges) then
+            pairs_[#pairs_ + 1] = { d, a }
+            next_add = a + 1
+            break
+          end
         end
       end
     else

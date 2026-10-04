@@ -88,9 +88,10 @@ end)
 test('mixed: word-level pairing does not cross a stage boundary', function()
   local dlib = require('gitview.diff.lines')
   -- a staged deletion followed by an unstaged addition is two changes
-  eq({}, dlib.change_pairs(mixed.merge({ 'x' }, {}, { 'y' })))
+  eq({}, dlib.change_pairs(mixed.merge({ 'x = 1' }, {}, { 'x = 2' })))
   -- each layer of a partially staged hunk pairs on its own
-  eq({ { 1, 2 }, { 3, 4 } }, dlib.change_pairs(mixed.merge({ 'a', 'b' }, { 'a', 'B' }, { 'A', 'B' })))
+  local head, index, work = { 'x = 1', 'y = 2' }, { 'x = 1', 'y = 3' }, { 'x = 4', 'y = 3' }
+  eq({ { 1, 2 }, { 3, 4 } }, dlib.change_pairs(mixed.merge(head, index, work)))
 end)
 
 --- `index_pos` is what an index-based patch would be stated in terms of, so it

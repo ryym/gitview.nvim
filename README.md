@@ -257,9 +257,8 @@ the colors.
 ### Agreement with `git diff`
 
 Hunk boundaries match `git diff`, because Neovim's `linematch` pass — which
-disagrees with it — is left off. Turning it on buys word-level highlights on
-hunks whose deleted and added blocks differ in size, at the cost of that
-agreement:
+re-pairs lines inside a hunk and splits it, disagreeing with git — is left off.
+It can be turned on at the cost of that agreement:
 
 ```lua
 require('gitview').setup({ linematch = 60 })
@@ -298,8 +297,6 @@ carries configuration, and the colors do not depend on it.
 - **Languages without a Tree-sitter parser need `:syntax` enabled.** They fall
   back to it, and a Tree-sitter-only setup gets no colors there. Highlighting
   them is also slower.
-- **Word-level highlights need equal-sized blocks.** A replacement of 2 lines by
-  3 falls back to line-level backgrounds only.
 - **The winbar can be taken over by your config.** The file the cursor is in is
   reported through `'winbar'`, so a configuration or plugin that sets it for
   every window hides it. Every file still has its own header line in the buffer.
