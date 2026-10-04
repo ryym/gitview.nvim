@@ -42,8 +42,8 @@ end
 --- @field note string? extra text for the winbar, e.g. skipped files
 --- @field mixed boolean? staged and unstaged changes in one view; see gitview.diff.mixed
 --- @field header_rows integer? how many rows at the top introduce the view rather
----        than belong to a file: a commit's message and stat. They fold as one,
----        as does each run of `folded` lines.
+---        than belong to a file: a commit's message and stat. All but the
+---        subject fold as one, as does each run of `folded` lines.
 
 --- Highlight groups are defined on first use rather than from `setup()`, so a
 --- diff opened without any configuration still gets its colors. Doing it lazily
@@ -184,6 +184,11 @@ function M.create_buffer()
   return util.scratch_buffer('gitview-diff', views)
 end
 
+--- The row a commit's header folds from. The subject above it stays out of the
+--- fold, so that however long it is, it never pushes what the folded header
+--- says off the screen.
+local HEADER_FOLD_ROW = 2
+
 --- What names a fold across views: `header` for a commit's header, and the
 --- file and the new line number of its first row for a run of unchanged lines.
 --- Staging leaves the working tree alone, and a commit never changes, so a run
@@ -192,7 +197,7 @@ end
 --- @param row integer 1-based first row of the fold
 --- @return string
 local function fold_key(view, row)
-  if view.header_rows and row == 1 then
+  if view.header_rows and row == HEADER_FOLD_ROW then
     return 'header'
   end
   local l = view.lines[row]
@@ -203,7 +208,7 @@ end
 --- @param view gitview.View
 --- @return integer[]
 local function fold_starts(view)
-  local starts = view.header_rows and { 1 } or {}
+  local starts = view.header_rows and { HEADER_FOLD_ROW } or {}
   for row, l in ipairs(view.lines) do
     local prev = view.lines[row - 1]
     if l.folded and not (prev and prev.folded) then
@@ -764,8 +769,8 @@ function M.winbar()
     .. util.escape_statusline(tail)
 end
 
---- Folds a commit's header into one line, and each run of unchanged lines away
---- from a change into another.
+--- Folds a commit's header below its subject into one line, and each run of
+--- unchanged lines away from a change into another.
 --- @return string
 function M.foldexpr()
   -- Evaluated with the window being folded made current, whichever it is.
@@ -776,7 +781,10 @@ function M.foldexpr()
   local lnum = vim.v.lnum
   local n = view.header_rows
   if n and lnum <= n then
-    return lnum == 1 and '>1' or '1'
+    if lnum < HEADER_FOLD_ROW then
+      return '0'
+    end
+    return lnum == HEADER_FOLD_ROW and '>1' or '1'
   end
   local l, prev = view.lines[lnum], view.lines[lnum - 1]
   if not (l and l.folded) then
@@ -859,10 +867,10 @@ local function first_line_chunks(buf, view, first, last, width)
   return chunks
 end
 
---- A folded header reads as its subject, who wrote it how long ago, and how
---- much the commit changed, and a folded run of unchanged lines as its first
---- line that is not blank and how many lines it holds. Whatever room is left is
---- filled with 'fillchars' fold.
+--- A folded header reads as who wrote the commit how long ago and how much it
+--- changed, and a folded run of unchanged lines as its first line that is not
+--- blank and how many lines it holds. Whatever room is left is filled with
+--- 'fillchars' fold.
 ---
 --- Each chunk's group is drawn over `Folded`, so the code keeps its colors on
 --- the fold's background.
@@ -886,11 +894,10 @@ function M.foldtext()
     return out
   end
 
-  local chunks = { { '\u{25b8} ' .. view.lines[1].text, 'GitViewCommitSubject' } }
-  -- Before the size: the size is numbers, read most easily at the end.
-  if view.lines[1].byline then
-    chunks[#chunks + 1] = { '   ' .. view.lines[1].byline, 'GitViewCommitAuthor' }
-  end
+  -- The byline goes before the size: the size is numbers, read most easily at
+  -- the end.
+  local author = view.lines[HEADER_FOLD_ROW]
+  local chunks = { { '\u{25b8} ' .. (author.byline or author.text), 'GitViewCommitAuthor' } }
   -- the summary git ends a stat with
   local last = view.lines[view.header_rows]
   if last.kind == 'stat' then
@@ -930,7 +937,7 @@ function M.configure_window(win, buf)
     -- a commit's header and the unchanged lines start folded: the changes are
     -- what is being read
     foldlevel = 0,
-    -- A header can be as short as its subject and author. A fold no longer than
+    -- A header's fold can be as short as its author. A fold no longer than
     -- 'foldminlines' stays open, and would be carried over to the next commit
     -- as the reader's choice.
     foldminlines = 0,

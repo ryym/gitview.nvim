@@ -11,7 +11,7 @@ local M = {}
 --- @class gitview.Line
 --- @field text string source text without any gutter
 --- @field kind 'context'|'add'|'del'|'file'|'blank'|'subject'|'author'|'body'|'stat'|'notice'
---- @field byline string? a commit's subject line only: who wrote it and how long
+--- @field byline string? a commit's author line only: who wrote it and how long
 ---       ago, said in brief for the header folded into that line
 --- @field old_lnum integer? 1-based line number in the old version
 --- @field new_lnum integer? 1-based line number in the new version

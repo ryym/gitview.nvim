@@ -219,9 +219,12 @@ comparison as the commit alone, and gets the header too.
   its first parent.
 - **The message and stat are read once per sha** and kept in the session, since
   a commit cannot change.
-- **It folds as one**, through `'foldexpr'` reading `header_rows`, and starts
-  closed. Whether it was open is carried from one view to the next as a folded
-  run's is; see [Folded unchanged lines](#folded-unchanged-lines).
+- **It folds as one below the subject**, through `'foldexpr'` reading
+  `header_rows`, and starts closed. The subject stays out of the fold on a line
+  of its own: sharing the fold's single line, a long one would push the author
+  and the size off the screen. Whether it was open is carried from one view to
+  the next as a folded run's is; see
+  [Folded unchanged lines](#folded-unchanged-lines).
 
 #### What is compared with what
 

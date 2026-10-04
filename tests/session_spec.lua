@@ -2001,11 +2001,22 @@ local function diff_view(s)
 end
 
 --- @param s gitview.Session
---- @return integer? first row of the closed fold over row 1, nil when open
+--- @return integer? last row of the header's closed fold, nil when open
 local function header_closed(s)
   return vim.api.nvim_win_call(s.diff_win, function()
-    local row = vim.fn.foldclosed(1)
-    return row ~= -1 and vim.fn.foldclosedend(1) or nil
+    local row = vim.fn.foldclosed(2)
+    return row ~= -1 and vim.fn.foldclosedend(2) or nil
+  end)
+end
+
+--- Open or close the header's fold with `key`, from the row it folds from: the
+--- subject above it is in no fold.
+--- @param s gitview.Session
+--- @param key string
+local function fold_header(s, key)
+  vim.api.nvim_win_call(s.diff_win, function()
+    vim.api.nvim_win_set_cursor(0, { 2, 0 })
+    vim.cmd('normal! ' .. key)
   end)
 end
 
@@ -2062,18 +2073,23 @@ end)
 -- The diff pane is not the current window when a commit is drawn, and
 -- 'foldexpr' still has to read the diff's view rather than the current
 -- window's.
-test('session: the header starts folded, and reads as its subject and byline', function()
+test('session: the header starts folded below its subject, and reads as its byline', function()
   with_session(described_history, function(s)
     show_commit(s, 1)
     assert(vim.api.nvim_get_current_win() ~= s.diff_win)
     eq(10, header_closed(s))
+    local subject_folded = vim.api.nvim_win_call(s.diff_win, function()
+      return vim.fn.foldclosed(1) ~= -1
+    end)
+    eq(false, subject_folded, 'the subject stays in view')
     local text = vim.api.nvim_win_call(s.diff_win, function()
+      vim.v.foldstart = 2
+      vim.v.foldend = 10
       return require('gitview.diff.render').foldtext()
     end)
     local commit = s.commits[1]
     eq({
-      { '\u{25b8} second', 'GitViewCommitSubject' },
-      { ('   %s · %s'):format(commit.author, commit.when), 'GitViewCommitAuthor' },
+      { ('\u{25b8} %s · %s'):format(commit.author, commit.when), 'GitViewCommitAuthor' },
       { '   2 files', 'GitViewCommitAuthor' },
       { ' +3', 'GitViewStatAdd' },
       { ' -1 ', 'GitViewStatDelete' },
@@ -2086,18 +2102,14 @@ end)
 test('session: an opened header stays open from one commit to the next', function()
   with_session(described_history, function(s)
     show_commit(s, 1)
-    vim.api.nvim_win_call(s.diff_win, function()
-      vim.cmd('normal! zo')
-    end)
+    fold_header(s, 'zo')
     -- the root commit's header is shorter
     show_commit(s, 2)
     eq(nil, header_closed(s))
     show_commit(s, 1)
     eq(nil, header_closed(s))
 
-    vim.api.nvim_win_call(s.diff_win, function()
-      vim.cmd('normal! zc')
-    end)
+    fold_header(s, 'zc')
     show_commit(s, 2)
     eq(5, header_closed(s))
   end)
@@ -2282,9 +2294,7 @@ end)
 test('session: an opened header stays open across a commit read in the background', function()
   with_session(described_history, function(s)
     show_commit(s, 1)
-    vim.api.nvim_win_call(s.diff_win, function()
-      vim.cmd('normal! zo')
-    end)
+    fold_header(s, 'zo')
     land_on(s, { kind = 'commit', index = 2 })
     eq(nil, header_closed(s))
     wait_read(s)

@@ -123,11 +123,12 @@ is compared with its first parent, the way `git show` does, and the winbar says
 so.
 
 Above the diff is what `git show --stat` would print before it: the subject, the
-author and date, the body, and the stat. It starts folded into a single line
-with the subject, who wrote it how long ago, and the size of the commit; the
-commits pane has no room for the author, so this is where it is read. `zo` opens
-it, and a header opened stays open as the cursor moves on to other commits. A
-range of two commits has no one message and shows no header.
+author and date, the body, and the stat. Below the subject, it starts folded
+into a single line with who wrote it how long ago and the size of the commit;
+the commits pane has no room for the author, so this is where it is read. The
+subject is left out of the fold, so a long one never hides the rest. `zo` on the
+folded line opens it, and a header opened stays open as the cursor moves on to
+other commits. A range of two commits has no one message and shows no header.
 
 A commit row states its own sha and subject, so yanking one gives something that
 names the commit elsewhere. Only the first four characters of the sha are shown,

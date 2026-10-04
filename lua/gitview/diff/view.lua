@@ -85,8 +85,8 @@ function M.build(sources, rev, context, diff_opts)
   }, unchanged
 end
 
---- Who wrote a commit and how long ago, short enough to share a line with its
---- subject.
+--- Who wrote a commit and how long ago, short enough to share a line with the
+--- commit's size.
 --- @param commit gitview.Commit
 --- @return string
 local function byline(commit)
@@ -105,8 +105,8 @@ function M.commit_header(detail, commit)
     out[#out + 1] = { text = text, kind = kind }
   end
   add(detail.message[1] or '', 'subject')
-  out[1].byline = byline(commit)
   add(('%s   %s'):format(detail.author, detail.date), 'author')
+  out[2].byline = byline(commit)
 
   -- A message has a blank line after its subject by convention only, and some
   -- are written with more than one; the header puts exactly one there.
@@ -137,8 +137,12 @@ end
 --- @return gitview.Line[]
 function M.commit_summary(commit)
   return {
-    { text = commit.subject, kind = 'subject', byline = byline(commit) },
-    { text = ('%s   %s'):format(commit.author, commit.when), kind = 'author' },
+    { text = commit.subject, kind = 'subject' },
+    {
+      text = ('%s   %s'):format(commit.author, commit.when),
+      kind = 'author',
+      byline = byline(commit),
+    },
   }
 end
 
