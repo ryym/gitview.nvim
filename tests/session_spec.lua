@@ -2089,11 +2089,28 @@ test('session: the header starts folded below its subject, and reads as its byli
     end)
     local commit = s.commits[1]
     eq({
-      { ('\u{25b8} %s · %s'):format(commit.author, commit.when), 'GitViewCommitAuthor' },
-      { '   2 files', 'GitViewCommitAuthor' },
-      { ' +3', 'GitViewStatAdd' },
-      { ' -1 ', 'GitViewStatDelete' },
+      { ('\u{25b8} %s · %s   2 files '):format(commit.author, commit.when), 'GitViewCommitAuthor' },
     }, text)
+  end)
+end)
+
+--- @param s gitview.Session
+--- @param row integer
+--- @return string
+local function diff_gutter(s, row)
+  vim.g.statusline_winid = s.diff_win
+  vim.v.lnum = row
+  return require('gitview.diff.render').statuscolumn()
+end
+
+test("session: a folded header's gutter ends with how many lines the commit changed", function()
+  with_session(described_history, function(s)
+    show_commit(s, 1)
+    eq((' '):rep(6) .. '%#GitViewStatAdd#+3 %#GitViewStatDelete#-1 ', diff_gutter(s, 2))
+    eq((' '):rep(12), diff_gutter(s, 1), 'the subject has no count')
+    -- opened, the stat says as much
+    fold_header(s, 'zo')
+    eq((' '):rep(12), diff_gutter(s, 2))
   end)
 end)
 

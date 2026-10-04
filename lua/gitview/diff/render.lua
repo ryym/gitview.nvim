@@ -616,11 +616,67 @@ local function abbrev_count(n)
   return math.floor(n / 1000000) .. 'M'
 end
 
+--- How much a commit changed, from the summary git ends its stat with, or nil
+--- while its header has no stat yet.
+--- @param view gitview.View
+--- @return {files:integer, add:integer, del:integer}?
+local function commit_size(view)
+  local last = view.header_rows and view.lines[view.header_rows]
+  if not (last and last.kind == 'stat') then
+    return nil
+  end
+  local function count(pattern)
+    return tonumber(last.text:match(pattern)) or 0
+  end
+  return {
+    files = count('(%d+) files? changed'),
+    add = count('(%d+) insertions?'),
+    del = count('(%d+) deletions?'),
+  }
+end
+
+--- A gutter ending with how many lines are added and deleted, right before the
+--- text, where the eye already is and where a long line cannot run into it. The
+--- count is at most `+9999 -9999`, which is as wide as the gutter leaves room
+--- for, and `fill` pads it out to the gutter's width on its left.
+--- @param view gitview.View
+--- @param add integer
+--- @param del integer
+--- @param fill fun(cells: integer): string
+--- @return string
+local function count_gutter(view, add, del, fill)
+  -- the last cell is the space that parts the gutter from the text
+  local width = #(view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER) - 1
+  local parts, count = {}, {}
+  if add > 0 then
+    local text = '+' .. abbrev_count(add)
+    parts[#parts + 1] = '%#GitViewStatAdd#' .. text
+    count[#count + 1] = text
+  end
+  if del > 0 then
+    local text = '-' .. abbrev_count(del)
+    parts[#parts + 1] = '%#GitViewStatDelete#' .. text
+    count[#count + 1] = text
+  end
+  local len = #table.concat(count, ' ')
+  local pad, gap = width, ''
+  if len > 0 then
+    -- a space parts the padding from the count, if there is room left for one
+    pad = math.max(width - len - 1, 0)
+    gap = len < width and ' ' or ''
+  end
+  return fill(pad) .. gap .. table.concat(parts, ' ') .. ' '
+end
+
+--- @param cells integer
+--- @return string
+local function rule_fill(cells)
+  return '%#GitViewFileRule#' .. RULE:sub(1, #'─' * cells)
+end
+
 --- What the gutter of each file's header shows, by row: the start of the rule,
---- and how many lines the file adds and deletes right before its name, where
---- the eye already is and where a long name cannot run into it. The count is
---- at most `+9999 -9999`, which is as wide as the gutter leaves room for.
---- Worked out once per view, as 'statuscolumn' asks for it on every redraw.
+--- and how many lines the file adds and deletes. Worked out once per view, as
+--- 'statuscolumn' asks for it on every redraw.
 --- @type table<gitview.View, table<integer, string>>
 local header_gutter_cache = setmetatable({}, { __mode = 'k' })
 
@@ -631,33 +687,9 @@ local function header_gutters(view)
   if cached then
     return cached
   end
-  -- the last cell is the space that parts the gutter from the name
-  local width = #(view.mixed and BLANK_MIXED_GUTTER or BLANK_GUTTER) - 1
   local gutters = {}
   for i, s in ipairs(file_stats(view)) do
-    local parts, count = {}, {}
-    if s.add > 0 then
-      local text = '+' .. abbrev_count(s.add)
-      parts[#parts + 1] = '%#GitViewStatAdd#' .. text
-      count[#count + 1] = text
-    end
-    if s.del > 0 then
-      local text = '-' .. abbrev_count(s.del)
-      parts[#parts + 1] = '%#GitViewStatDelete#' .. text
-      count[#count + 1] = text
-    end
-    local len = #table.concat(count, ' ')
-    local rule, gap = width, ''
-    if len > 0 then
-      -- a space parts the rule from the count, if there is room left for one
-      rule = math.max(width - len - 1, 0)
-      gap = len < width and ' ' or ''
-    end
-    gutters[view.files[i].row] = '%#GitViewFileRule#'
-      .. RULE:sub(1, #'─' * rule)
-      .. gap
-      .. table.concat(parts, ' ')
-      .. ' '
+    gutters[view.files[i].row] = count_gutter(view, s.add, s.del, rule_fill)
   end
   header_gutter_cache[view] = gutters
   return gutters
@@ -684,13 +716,26 @@ function M.statuscolumn()
   if l and l.kind == 'file' then
     return header_gutters(view)[vim.v.lnum]
   end
+  local lnum = vim.v.lnum
+  -- A folded commit header ends with the commit's count, as a file's header
+  -- does. Opened, its stat says the same more exactly.
+  if view.header_rows and lnum == HEADER_FOLD_ROW then
+    local size = commit_size(view)
+    if size and vim.api.nvim_win_call(win, function()
+      return vim.fn.foldclosed(lnum) ~= -1
+    end) then
+      return count_gutter(view, size.add, size.del, function(cells)
+        return (' '):rep(cells)
+      end)
+    end
+    return blank
+  end
   -- file headers and the blanks between files stand for no source line and so
   -- have no numbers to show
   if not l or not dlib.source_kinds[l.kind] then
     return blank
   end
   -- A closed fold is drawn as its first row, and stands for all of them.
-  local lnum = vim.v.lnum
   if l.folded and vim.api.nvim_win_call(win, function()
     return vim.fn.foldclosed(lnum) ~= -1
   end) then
@@ -867,10 +912,10 @@ local function first_line_chunks(buf, view, first, last, width)
   return chunks
 end
 
---- A folded header reads as who wrote the commit how long ago and how much it
---- changed, and a folded run of unchanged lines as its first line that is not
---- blank and how many lines it holds. Whatever room is left is filled with
---- 'fillchars' fold.
+--- A folded header reads as who wrote the commit how long ago and how many
+--- files it changed, and a folded run of unchanged lines as its first line that
+--- is not blank and how many lines it holds. Whatever room is left is filled
+--- with 'fillchars' fold.
 ---
 --- Each chunk's group is drawn over `Folded`, so the code keeps its colors on
 --- the fold's background.
@@ -894,29 +939,15 @@ function M.foldtext()
     return out
   end
 
-  -- The byline goes before the size: the size is numbers, read most easily at
-  -- the end.
+  -- how many lines it changed is in the gutter
   local author = view.lines[HEADER_FOLD_ROW]
-  local chunks = { { '\u{25b8} ' .. (author.byline or author.text), 'GitViewCommitAuthor' } }
-  -- the summary git ends a stat with
-  local last = view.lines[view.header_rows]
-  if last.kind == 'stat' then
-    local files = tonumber(last.text:match('(%d+) files? changed'))
-    if files then
-      chunks[#chunks + 1] = { '   ' .. util.counted(files, 'file'), 'GitViewCommitAuthor' }
-    end
-    local ins = last.text:match('(%d+) insertions?')
-    if ins then
-      chunks[#chunks + 1] = { ' +' .. ins, 'GitViewStatAdd' }
-    end
-    local del = last.text:match('(%d+) deletions?')
-    if del then
-      chunks[#chunks + 1] = { ' -' .. del, 'GitViewStatDelete' }
-    end
+  local text = '\u{25b8} ' .. (author.byline or author.text)
+  local size = commit_size(view)
+  if size and size.files > 0 then
+    text = text .. '   ' .. util.counted(size.files, 'file')
   end
   -- a space between the text and the fill, as the label of a run has
-  chunks[#chunks][1] = chunks[#chunks][1] .. ' '
-  return chunks
+  return { { text .. ' ', 'GitViewCommitAuthor' } }
 end
 
 --- @param win integer
