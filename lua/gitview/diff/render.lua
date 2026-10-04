@@ -109,6 +109,9 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewNewLnum', { link = 'LineNr' })
   set('GitViewSeparator', { link = 'Folded' })
   set('GitViewFileHeader', { link = 'Title' })
+  -- Also defined by `ui.list`, alike, so a sha has one color in both panes
+  -- whichever module is drawn first.
+  set('GitViewCommitSha', { link = 'Identifier' })
   set('GitViewFileRule', { link = 'WinSeparator' })
   set('GitViewCommitSubject', { link = 'Title' })
   set('GitViewCommitAuthor', { link = 'Comment' })
@@ -666,6 +669,28 @@ function M.statuscolumn()
   )
 end
 
+--- What a view compares, for the winbar, with its shas colored as the commits
+--- pane colors them.
+---
+--- The shas are found in the first word, which is where every label puts them:
+--- `<sha> <subject>`, `<sha>^..<sha>`, `<sha>^..working tree`. A subject is
+--- left alone, however much of it happens to be hexadecimal.
+--- @param rev string
+--- @return string
+local function rev_statusline(rev)
+  local word, rest = rev:match('^(%S*)(.*)$')
+  local out, at = {}, 1
+  for from, hex, to in word:gmatch('()%f[%w](%x+)%f[%W]()') do
+    if #hex >= 4 then
+      out[#out + 1] = util.escape_statusline(word:sub(at, from - 1))
+      out[#out + 1] = '%#GitViewCommitSha#' .. hex .. '%#GitViewFileHeader#'
+      at = to
+    end
+  end
+  out[#out + 1] = util.escape_statusline(word:sub(at) .. rest)
+  return table.concat(out)
+end
+
 --- Names the file the cursor is in. Recomputed on every redraw, so it keeps the
 --- file identifiable once its header line has scrolled off.
 --- @return string
@@ -687,14 +712,18 @@ function M.winbar()
     file = f
   end
 
-  local text = file and (' %s @ %s'):format(file.label, view.rev) or (' ' .. view.rev)
+  local head = file and (' %s @ '):format(file.label) or ' '
+  local tail = ''
   if #view.files > 1 then
-    text = text .. ('   [%d files]'):format(#view.files)
+    tail = tail .. ('   [%d files]'):format(#view.files)
   end
   if view.note then
-    text = text .. '   ' .. view.note
+    tail = tail .. '   ' .. view.note
   end
-  return '%#GitViewFileHeader#' .. util.escape_statusline(text)
+  return '%#GitViewFileHeader#'
+    .. util.escape_statusline(head)
+    .. rev_statusline(view.rev)
+    .. util.escape_statusline(tail)
 end
 
 --- Folds a commit's header into one line, and each run of unchanged lines away

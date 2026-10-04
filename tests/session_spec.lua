@@ -1560,6 +1560,31 @@ test('session: the cursor on the mark shows that commit alone', function()
   end)
 end)
 
+-- The shas of what the diff compares read in the commits pane's color, and the
+-- subject is left alone.
+test('session: the diff winbar colors the shas it names', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 2)
+    session.show_selected(s)
+    vim.g.statusline_winid = s.diff_win
+    local bar = require('gitview.diff.render').winbar()
+    local function sha(c)
+      return '%#GitViewCommitSha#' .. c.sha .. '%#GitViewFileHeader#'
+    end
+    assert(bar:find(sha(s.commits[2]), 1, true), bar)
+    eq(1, select(2, bar:gsub('GitViewCommitSha', '')))
+
+    goto_commit(s, 3)
+    session.set_mark(s)
+    goto_commit(s, 1)
+    session.show_selected(s)
+    vim.g.statusline_winid = s.diff_win
+    bar = require('gitview.diff.render').winbar()
+    local range = sha(s.commits[3]) .. '^..' .. sha(s.commits[1])
+    assert(bar:find(range, 1, true), bar)
+  end)
+end)
+
 -- `git diff` compares the two trees whatever their history, but across a fork
 -- the result also undoes what the other side did, so it is named rather than
 -- refused.

@@ -281,6 +281,7 @@ File headers and a commit's header use `GitViewFileRule`,
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewStatusHeader`, `GitViewCommitSha`,
 `GitViewCommitWorktree`, `GitViewListCursor` and `GitViewRange`.
+`GitViewCommitSha` colors the shas in the diff's winbar as well.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`, and
 the rest link to standard groups. All are defined the first time they are
