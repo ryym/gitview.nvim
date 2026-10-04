@@ -152,6 +152,11 @@ end
 --- one per deletion and addition on a block rewritten wholesale.
 local PAIR_LOOKAHEAD = 10
 
+--- Blocks with more deleted or added lines than this are left unpaired. Word
+--- highlights tell little in a replacement that large, and skipping it keeps the
+--- cost of a wholesale rewrite from growing with its size.
+local PAIR_MAX_BLOCK = 500
+
 --- Pair up deleted and added lines that can be shown as line-to-line changes.
 ---
 --- Within a del/add block, each deletion is paired with the first addition after
@@ -186,19 +191,23 @@ function M.change_pairs(lines)
       end
       local add_end = i - 1
 
-      local next_add = add_start
-      for d = del_start, del_end do
-        if next_add > add_end then
-          break
-        end
-        local old = lines[d].text
-        for a = next_add, math.min(add_end, next_add + PAIR_LOOKAHEAD - 1) do
-          local new = lines[a].text
-          local old_ranges, new_ranges = worddiff.ranges(old, new)
-          if worddiff.useful(old, new, old_ranges, new_ranges) then
-            pairs_[#pairs_ + 1] = { d, a }
-            next_add = a + 1
+      local too_large = del_end - del_start + 1 > PAIR_MAX_BLOCK
+        or add_end - add_start + 1 > PAIR_MAX_BLOCK
+      if not too_large then
+        local next_add = add_start
+        for d = del_start, del_end do
+          if next_add > add_end then
             break
+          end
+          local old = lines[d].text
+          for a = next_add, math.min(add_end, next_add + PAIR_LOOKAHEAD - 1) do
+            local new = lines[a].text
+            local old_ranges, new_ranges = worddiff.ranges(old, new)
+            if worddiff.useful(old, new, old_ranges, new_ranges) then
+              pairs_[#pairs_ + 1] = { d, a }
+              next_add = a + 1
+              break
+            end
           end
         end
       end

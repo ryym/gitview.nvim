@@ -727,9 +727,13 @@ scheme git-delta uses. Deletions and additions that resemble nothing stay
 unpaired, and pairs never cross, because a unified view cannot show crossing
 pairs as changes.
 
-Every comparison is a word diff, so the search is bounded: a deletion is only
-compared against the next 10 additions. A 1000-line block rewritten wholesale
-then costs about 10,000 word diffs, around 130ms, instead of a million.
+Every comparison is a word diff, so the search is bounded twice:
+
+- A deletion is only compared against the next 10 additions, so the cost grows
+  linearly with the block rather than quadratically.
+- A block with more than 500 deleted or added lines is not paired at all. Word
+  highlights tell little in a replacement that large, and a 500-line block
+  rewritten wholesale already costs up to 5,000 word diffs, around 65ms.
 
 Which lines are compared is independent of how the diff is laid out, so pairing
 moves no hunk boundary and keeps the agreement with `git diff`.

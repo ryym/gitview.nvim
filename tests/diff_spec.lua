@@ -244,3 +244,18 @@ test('ignoring whitespace keeps a hunk that is not', function()
   local new = { 'one', '  TWO  ' }
   eq(1, #dlib.hunks(old, new, { ignore_whitespace = true }))
 end)
+
+test('change_pairs leaves a block over 500 lines unpaired', function()
+  local function block(n)
+    local kinds_texts = {}
+    for i = 1, n do
+      kinds_texts[#kinds_texts + 1] = { 'del', ('local v%d = 1'):format(i) }
+    end
+    for i = 1, n do
+      kinds_texts[#kinds_texts + 1] = { 'add', ('local v%d = 2'):format(i) }
+    end
+    return change_lines(kinds_texts)
+  end
+  eq(500, #dlib.change_pairs(block(500)))
+  eq({}, dlib.change_pairs(block(501)))
+end)
