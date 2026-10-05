@@ -104,7 +104,8 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewStagedDelete', scale(del, 0.6))
   set('GitViewStagedAddText', scale(add, 0.9))
   set('GitViewStagedDeleteText', scale(del, 0.9))
-  set('GitViewStagedBar', { link = 'Special' })
+  set('GitViewStagedAddBar', { link = 'Added' })
+  set('GitViewStagedDeleteBar', { link = 'Removed' })
   set('GitViewOldLnum', { link = 'LineNr' })
   set('GitViewNewLnum', { link = 'LineNr' })
   set('GitViewAddLnum', { link = 'Added' })
@@ -605,9 +606,19 @@ local BLANK_GUTTER = (' '):rep(12)
 local LNUM_HL = { add = 'GitViewAddLnum', del = 'GitViewDeleteLnum' }
 
 --- What marks a row the index has changed, which is a row `unstage` would act
---- on: a staged change, and a line only the index has. The latter is unstaged as
---- well, which its background shows.
-local STAGED_BAR = { staged = true, index = true }
+--- on, in the color of what the index did to it: a staged change, and a line
+--- only the index has. The latter is a staged addition, and unstaged as a
+--- deletion as well, which its background shows.
+--- @param l gitview.Line
+--- @return string
+local function staged_bar(l)
+  if l.stage == 'index' or (l.stage == 'staged' and l.kind == 'add') then
+    return '%#GitViewStagedAddBar#┃'
+  elseif l.stage == 'staged' then
+    return '%#GitViewStagedDeleteBar#┃'
+  end
+  return ' '
+end
 
 --- A count as it fits in the gutter: as it is up to four digits, and cut down
 --- to thousands or millions beyond that, so that each side of a header's count
@@ -753,7 +764,7 @@ function M.statuscolumn()
   return ('%s %s %s '):format(
     num(l.old_lnum, 'GitViewOldLnum'),
     num(l.new_lnum, 'GitViewNewLnum'),
-    STAGED_BAR[l.stage] and '%#GitViewStagedBar#┃' or ' '
+    staged_bar(l)
   )
 end
 

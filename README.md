@@ -67,16 +67,16 @@ of HEAD and the working tree, so a line in neither has none. Two things mark a
 changed line:
 
 - **A `┃` bar** marks a line the index has changed, which unstaging would take
-  back.
+  back. It is green for a line the index added and red for one it deleted.
 - **The diff colors** mark a line the working tree has changed since the index,
   which staging would record. A line with the bar and no further change has the
-  same colors blended halfway into the background instead.
+  same colors blended into the background instead.
 
-| line                                    | bar | background |
-| --------------------------------------- | --- | ---------- |
-| deletion or addition, staged            | `┃` | blended    |
-| deletion or addition, not staged        |     | diff color |
-| staged addition, removed from work tree | `┃` | red        |
+| line                                    | bar   | background |
+| --------------------------------------- | ----- | ---------- |
+| deletion or addition, staged            | `┃`   | blended    |
+| deletion or addition, not staged        |       | diff color |
+| staged addition, removed from work tree | green | red        |
 
 The last one is the one to watch for. The line would be committed, yet the
 working tree no longer has it. It appears when a staged line is edited again or
@@ -86,8 +86,8 @@ Two situations show changes even though HEAD and the working tree are equal,
 because the index differs from both:
 
 - A staged change reverted in the working tree: a staged deletion of the HEAD
-  line, the index line with its bar on red, then an unstaged addition of the
-  working-tree line.
+  line, the index line with its green bar on red, then an unstaged addition of
+  the working-tree line.
 - A staged deletion restored in the working tree: a staged deletion then an
   unstaged addition of the same text. The index has no row for the line, so it
   cannot show as unchanged.
@@ -280,7 +280,8 @@ Both sides of the trade-off are measured in
 `GitViewSeparator`, `GitViewFileHeader`.
 
 The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
-`GitViewStagedAddText`, `GitViewStagedDeleteText` and `GitViewStagedBar`.
+`GitViewStagedAddText`, `GitViewStagedDeleteText`, `GitViewStagedAddBar` and
+`GitViewStagedDeleteBar`.
 
 File headers and a commit's header use `GitViewFileRule`,
 `GitViewCommitSubject`, `GitViewCommitAuthor`, `GitViewStatAdd` and

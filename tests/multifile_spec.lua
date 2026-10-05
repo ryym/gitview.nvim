@@ -268,9 +268,9 @@ test('a mixed view marks with a bar each row the index has changed', function()
     end
   end
   eq({
-    staged = '%#GitViewDeleteLnum#   1      %#GitViewStagedBar#┃ ',
+    staged = '%#GitViewDeleteLnum#   1      %#GitViewStagedDeleteBar#┃ ',
     -- in neither HEAD nor the working tree, so it has no numbers
-    index = '          %#GitViewStagedBar#┃ ',
+    index = '          %#GitViewStagedAddBar#┃ ',
     unstaged = '     %#GitViewAddLnum#   1   ',
   }, gutters)
 end)
