@@ -428,14 +428,59 @@ end)
 
 test('session: the diff pane takes what the list leaves', function()
   with_session(two, function(s)
-    local width = require('gitview.config').values.list_width
-    eq(width, vim.api.nvim_win_get_width(s.files_win))
-    eq(width, vim.api.nvim_win_get_width(s.commits_win))
     assert(vim.api.nvim_win_get_width(s.diff_win) > 0, 'the diff pane has no width')
     eq(true, vim.wo[s.files_win].winfixwidth)
-    -- the files pane absorbs a resize; the commit list keeps its height
+    -- the files pane takes what the commit list leaves
     eq(true, vim.wo[s.commits_win].winfixheight)
     eq(false, vim.wo[s.files_win].winfixheight)
+  end)
+end)
+
+--- Resize the screen as a terminal would, which fires VimResized. Without a UI
+--- the windows keep their sizes, but 'columns' takes the new value, which is
+--- what the sidebar's width is reckoned from.
+--- @param columns integer
+local function resize(columns)
+  vim.o.columns = columns
+  vim.api.nvim_exec_autocmds('VimResized', {})
+end
+
+--- Run `fn` with the sidebar's shares changed, putting back the screen and the
+--- config afterwards.
+--- @param opts gitview.Config
+--- @param fn fun(s: gitview.Session)
+local function with_shares(opts, fn)
+  local config = require('gitview.config')
+  local values, columns = config.values, vim.o.columns
+  config.set(opts)
+  local ok, err = pcall(with_session, two, fn)
+  config.values = values
+  resize(columns)
+  assert(ok, err)
+end
+
+--- @param s gitview.Session
+--- @return integer
+local function sidebar_height(s)
+  return vim.api.nvim_win_get_height(s.files_win) + vim.api.nvim_win_get_height(s.commits_win)
+end
+
+test('session: the sidebar keeps its shares of a resized screen', function()
+  with_shares({ list_ratio = 0.25, commit_ratio = 0.4 }, function(s)
+    resize(200)
+    eq(50, vim.api.nvim_win_get_width(s.files_win))
+    eq(50, vim.api.nvim_win_get_width(s.commits_win))
+    eq(math.floor(sidebar_height(s) * 0.4), vim.api.nvim_win_get_height(s.commits_win))
+    resize(160)
+    eq(40, vim.api.nvim_win_get_width(s.files_win))
+  end)
+end)
+
+test('session: the sidebar keeps its least size on a small screen', function()
+  with_shares({ list_ratio = 0.25, commit_ratio = 0.01 }, function(s)
+    resize(80)
+    eq(30, vim.api.nvim_win_get_width(s.files_win))
+    eq(3, vim.api.nvim_win_get_height(s.commits_win))
   end)
 end)
 

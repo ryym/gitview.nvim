@@ -393,9 +393,7 @@ function M.paint_range(buf, first, last)
 end
 
 --- @param win integer
---- @param width integer
-function M.configure_window(win, width)
-  vim.api.nvim_win_set_width(win, width)
+function M.configure_window(win)
   util.configure_window_options(win, {
     winbar = '%!v:lua.require("gitview.ui.list").winbar()',
     statuscolumn = '%!v:lua.require("gitview.ui.list").statuscolumn()',
@@ -408,8 +406,8 @@ function M.configure_window(win, width)
     -- the cursor would be the one whose subject is out of line with the rest.
     conceallevel = 2,
     concealcursor = 'nv',
-    -- The diff beside it takes whatever is left, and keeps taking it when the
-    -- window is resized.
+    -- The session sets the width itself, so a window opened or closed beside
+    -- it leaves the width to the diff.
     winfixwidth = true,
   })
 end

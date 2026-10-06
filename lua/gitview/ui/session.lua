@@ -1777,6 +1777,24 @@ local function name_buffers(s)
   end
 end
 
+--- The fewest columns the sidebar takes, however narrow the screen.
+local MIN_LIST_WIDTH = 30
+--- The fewest rows the commits pane takes, however short the screen.
+local MIN_COMMITS_HEIGHT = 3
+
+--- Size the sidebar to its shares of the screen: its width out of the columns,
+--- and the commits pane's height out of the sidebar's. The diff takes whatever
+--- width is left, and the files pane whatever height.
+--- @param s gitview.Session
+local function lay_out(s)
+  local width = math.floor(vim.o.columns * config.values.list_ratio)
+  vim.api.nvim_win_set_width(s.files_win, math.max(MIN_LIST_WIDTH, width))
+  local total = vim.api.nvim_win_get_height(s.files_win)
+    + vim.api.nvim_win_get_height(s.commits_win)
+  local height = math.floor(total * config.values.commit_ratio)
+  vim.api.nvim_win_set_height(s.commits_win, math.max(MIN_COMMITS_HEIGHT, height))
+end
+
 --- Open a tab page listing everything uncommitted.
 --- @return gitview.Session?
 function M.open()
@@ -1820,8 +1838,8 @@ function M.open()
     win = s.files_win,
   })
 
-  list.configure_window(s.files_win, config.values.list_width)
-  list.configure_window(s.commits_win, config.values.list_width)
+  list.configure_window(s.files_win)
+  list.configure_window(s.commits_win)
   render.configure_window(s.diff_win, s.diff_buf)
   -- Each pane is only ever drawn with its own buffer, so `:edit` or `:bnext`
   -- there is refused rather than leaving a pane the session goes on drawing
@@ -1830,16 +1848,10 @@ function M.open()
   for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
     util.configure_window_options(win, { winfixbuf = true })
   end
-  -- The split is even until told otherwise, and the commits pane is the one
-  -- pinned: what the sidebar gains or loses on a resize belongs to the files,
-  -- which is the list that grows without bound.
-  local total = vim.api.nvim_win_get_height(s.files_win)
-    + vim.api.nvim_win_get_height(s.commits_win)
-  vim.api.nvim_win_set_height(
-    s.commits_win,
-    math.max(1, math.floor(total * config.values.commit_ratio))
-  )
+  -- Pinned so that a window opened or closed in the sidebar leaves the commits
+  -- pane as it is; a resize of the screen sets it again by its share.
   vim.wo[s.commits_win].winfixheight = true
+  lay_out(s)
 
   set_files_keymaps(s)
   set_commits_keymaps(s)
@@ -1868,6 +1880,16 @@ function M.open()
       -- TabClosed does not say which tab went, so this checks its own.
       if not vim.api.nvim_tabpage_is_valid(s.tab) then
         teardown(s)
+      end
+    end,
+  })
+  -- Shares rather than sizes, so the sidebar keeps its proportions as the
+  -- screen grows or shrinks. A session in another tab page is left as it is.
+  vim.api.nvim_create_autocmd('VimResized', {
+    group = group,
+    callback = function()
+      if vim.api.nvim_get_current_tabpage() == s.tab then
+        lay_out(s)
       end
     end,
   })
