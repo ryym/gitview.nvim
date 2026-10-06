@@ -284,11 +284,10 @@ global mapping itself (`util.run_global_map`).
 
 A range whose ends sit on branches that diverged is compared all the same, and
 said to have done so: `git merge-base --is-ancestor` decides whether the older
-end is in the newer one's history, and if not the winbar reads
-`(diverged; not one line of history)`. `git diff` compares the two trees either
-way, but across a fork the result leaves the older end out and undoes whatever
-its side did, which is not what "the changes between these two commits" sounds
-like. Naming it is better than refusing a comparison that was asked for. The
+end is in the newer one's history, and if not the winbar reads `diverged`.
+`git diff` compares the two trees either way, but across a fork the result
+leaves the older end out and undoes whatever its side did, which is not what
+"the changes between these two commits" sounds like. Naming it is better than refusing a comparison that was asked for. The
 answer is kept by the older end rather than by the range: two ends with one
 parent start the same range, yet only one of them may lie on the line.
 
@@ -394,7 +393,7 @@ key.
 
 Two things have to be said out loud, because the fold is otherwise invisible:
 
-- **The winbar reads `(whitespace ignored)`** for as long as it is on. A mode that
+- **The winbar reads `space ignored`** for as long as it is on. A mode that
   silently changes which lines count as different is a trap.
 - **A file whose only change is whitespace says `(no change outside whitespace)`**
   rather than `(no textual change)`, which would be a lie in exactly the case

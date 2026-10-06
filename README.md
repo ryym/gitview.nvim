@@ -129,7 +129,7 @@ what that commit changed. It is the ordinary diff of
 [several files in one buffer](#several-files-in-one-buffer), not a mixed view:
 both sides are committed, so nothing there is staged or unstaged. A merge
 is compared with its first parent, the way `git show` does, and the winbar says
-so.
+`first parent`.
 
 Above the diff is what `git show --stat` would print before it: the subject, the
 author and date, the body, and the stat. Below the subject, it starts folded
@@ -173,8 +173,8 @@ A merge inside a range is nothing special — a range compares two trees, and on
 where it starts is chosen by first parent. What does need saying is a range
 whose ends are on branches that diverged: the older end is then not in the
 newer one's history, the diff leaves it out and undoes whatever its branch did,
-and the winbar says `(diverged; not one line of history)` rather than passing it
-off as a stretch of history.
+and the winbar says `diverged` rather than passing it off as a stretch of
+history.
 
 #### Comparing with the working tree
 
@@ -230,9 +230,9 @@ not implemented.
 #### Ignoring whitespace
 
 `gw`, from any of the three windows, stops lines that differ only in whitespace
-from counting as changed. The winbar says `(whitespace ignored)` while it is on,
-and a file whose only change is whitespace says so rather than claiming to have
-no change at all. `gw` again puts it back.
+from counting as changed. The winbar says `space ignored` while it is on, and a
+file whose only change is whitespace says so rather than claiming to have no
+change at all. `gw` again puts it back.
 
 While it is on, `s` and `u` **in the diff** refuse: a folded line is drawn as
 context, taken from the index, so staging the rows on screen would write that

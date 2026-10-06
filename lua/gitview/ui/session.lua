@@ -141,7 +141,7 @@ local function note_of(s, ...)
   end
   -- A mode that silently changes which lines count as different would be a trap.
   if s.ignore_whitespace then
-    notes[#notes + 1] = '(whitespace ignored)'
+    notes[#notes + 1] = 'space ignored'
   end
   return #notes > 0 and table.concat(notes, '   ') or nil
 end
@@ -338,7 +338,7 @@ local function range_note(s, range, target, read)
   if not older then
     local commit = target.kind == 'commit' and s.commits[target.index] or nil
     if commit and #commit.parents > 1 then
-      return '(first parent)'
+      return 'first parent'
     end
     return nil
   end
@@ -350,7 +350,7 @@ local function range_note(s, range, target, read)
     read.diverged[older.sha] = not git.is_ancestor(older.sha, range.new or 'HEAD', s.root)
   end
   if read.diverged[older.sha] then
-    return '(diverged; not one line of history)'
+    return 'diverged'
   end
   return nil
 end
