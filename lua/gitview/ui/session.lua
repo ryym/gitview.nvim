@@ -476,11 +476,12 @@ local function read_worktree(s)
   return function()
     local view, unchanged =
       perf.measure('build', vlib.build, sources, REV, config.values.context, diff_opts(s))
+    view = vlib.list_skipped(view, REV, skipped, unchanged, no_view_reason(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(REV, no_view_reason(s)))
       return
     end
-    view.note = note_of(s, vlib.skipped_note(skipped, #unchanged))
+    view.note = note_of(s)
     render.draw(s.diff_buf, view)
   end
 end
@@ -529,11 +530,12 @@ local function read_commit(s, target)
   return function()
     local view, unchanged =
       perf.measure('build', vlib.build, read.sources, label, config.values.context, diff_opts(s))
+    view = vlib.list_skipped(view, label, read.skipped, unchanged, no_view_reason(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
       return
     end
-    view.note = note_of(s, vlib.skipped_note(read.skipped, #unchanged), note)
+    view.note = note_of(s, note)
     if detail then
       vlib.prepend(view, vlib.commit_header(detail, assert(commit)))
     end

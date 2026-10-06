@@ -130,6 +130,15 @@ lines, and nothing selected at all — are drawn by `render.notice`, which drops
 the view along with the text so that the gutter and winbar describe nothing
 rather than what was there before.
 
+A view of many files, a commit's or the working tree's, has the same files to
+leave out, and lists them at its top instead: a line each, naming the file and
+saying why, as a view of one of them would. `view.list_skipped` puts them above
+the first file, and a commit's header goes above them. They are buffer text
+for the reasons the header is, and stay out of its fold: which files the diff
+does not show is worth seeing without opening anything. A view with nothing but
+such files is that list, under the header when there is one, rather than a
+notice that would hide which files they were.
+
 Three keys in the diff act on the session rather than on the buffer: `q` gives
 up the whole session, `gf` opens the file as described below, and `]f` moves
 the list's cursor — except in a commit's or the working tree's diff, which holds
@@ -636,7 +645,8 @@ Everything one diff buffer needs, stored in `render.views[bufnr]` and dropped on
 
 Rows in `hunk_rows` and `files` are absolute in the combined buffer. Assembling
 several files means concatenating each file's lines and shifting its rows by the
-running offset, and `view.prepend` shifts them all once more for a header.
+running offset, and `view.list_skipped` and `view.prepend` shift them all once
+more for what they put above the files.
 
 ### Line kinds
 
@@ -650,6 +660,7 @@ one of the two versions:
 | `blank`                  | empty, separates two files | no               |
 | `subject`, `author`      | a commit's header          | no               |
 | `body`, `stat`           | a commit's header          | no               |
+| `skipped`                | a file the view leaves out | no               |
 
 `dlib.source_kinds` is the test for the first group. Anything that looks a line
 up in a ghost buffer, prints a gutter, or opens the source has to check it

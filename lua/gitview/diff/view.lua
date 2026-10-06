@@ -146,38 +146,24 @@ function M.commit_summary(commit)
   }
 end
 
---- A view of nothing yet: one line saying why, under a header when there is
---- one. Being a view rather than a notice, it keeps the header's fold for the
---- view that replaces it.
+--- A view of `lines` alone, which belong to no file.
 --- @param rev string
---- @param text string
---- @param header gitview.Line[]?
+--- @param lines gitview.Line[]
 --- @return gitview.View
-function M.placeholder(rev, text, header)
-  local view = {
-    lines = { { text = text, kind = 'notice' } },
-    files = {},
-    hunk_rows = {},
-    file_rows = {},
-    rev = rev,
-  }
-  if header then
-    M.prepend(view, header)
-  end
-  return view
+local function empty_view(rev, lines)
+  return { lines = lines, files = {}, hunk_rows = {}, file_rows = {}, rev = rev }
 end
 
---- Put a header above everything a view shows.
+--- Put `lines` above everything a view shows, and shift every row it keeps.
 ---
---- A blank line parts it from the first file, as one parts two files, and is
---- not part of the header: it stays in view while the header is folded.
+--- A blank line parts them from the first file, as one parts two files.
 --- @param view gitview.View
---- @param header gitview.Line[]
-function M.prepend(view, header)
-  local shift = #header + 1
-  local lines = vim.list_extend({}, header)
-  lines[#lines + 1] = { text = '', kind = 'blank' }
-  view.lines = vim.list_extend(lines, view.lines)
+--- @param lines gitview.Line[]
+local function put_above(view, lines)
+  local shift = #lines + 1
+  local top = vim.list_extend({}, lines)
+  top[#top + 1] = { text = '', kind = 'blank' }
+  view.lines = vim.list_extend(top, view.lines)
   for i, r in ipairs(view.hunk_rows) do
     view.hunk_rows[i] = r + shift
   end
@@ -187,6 +173,31 @@ function M.prepend(view, header)
   for _, f in ipairs(view.files) do
     f.row = f.row + shift
   end
+end
+
+--- A view of nothing yet: one line saying why, under a header when there is
+--- one. Being a view rather than a notice, it keeps the header's fold for the
+--- view that replaces it.
+--- @param rev string
+--- @param text string
+--- @param header gitview.Line[]?
+--- @return gitview.View
+function M.placeholder(rev, text, header)
+  local view = empty_view(rev, { { text = text, kind = 'notice' } })
+  if header then
+    M.prepend(view, header)
+  end
+  return view
+end
+
+--- Put a header above everything a view shows.
+---
+--- The blank line that parts it from what follows is not part of the header:
+--- it stays in view while the header is folded.
+--- @param view gitview.View
+--- @param header gitview.Line[]
+function M.prepend(view, header)
+  put_above(view, header)
   view.header_rows = #header
 end
 
@@ -208,25 +219,62 @@ function M.dispose(view)
   end
 end
 
---- What a view could not show, for its winbar. Dropping either silently would
---- hide a real change: a pure rename or a mode change produces no hunks, and a
---- binary file has no versions that can be diffed.
+--- The files a view leaves out, a line each, and why: the binary files, the
+--- conflicted ones, and those with no textual difference. Dropping any silently
+--- would hide a real change: a pure rename or a mode change produces no hunks,
+--- and a binary file has no versions that can be diffed.
+---
+--- The reasons line up in one column after the names, as the stat's bars do.
 --- @param skipped gitview.Skipped
---- @param unchanged integer
---- @return string?
-function M.skipped_note(skipped, unchanged)
-  local notes = {}
-  local function add(n, what)
-    if n > 0 then
-      notes[#notes + 1] = ('%d %s'):format(n, what)
+--- @param unchanged string[] labels, from `build`
+--- @param unchanged_reason string what to call a change with nothing to show:
+---        with whitespace ignored, "no textual change" would be a lie
+--- @return gitview.Line[]
+local function skipped_lines(skipped, unchanged, unchanged_reason)
+  local rows = {}
+  local function add(labels, reason)
+    for _, label in ipairs(labels) do
+      rows[#rows + 1] = { label = label, reason = reason }
     end
   end
-  add(#skipped.binary, 'binary')
-  add(#skipped.conflicted, 'conflicted')
-  add(unchanged, 'without textual change')
-  if #notes > 0 then
-    return '(' .. table.concat(notes, ', ') .. ' not shown)'
+  add(skipped.binary, '(binary file)')
+  add(skipped.conflicted, '(unresolved conflict)')
+  add(unchanged, unchanged_reason)
+
+  local width = 0
+  for _, r in ipairs(rows) do
+    width = math.max(width, vim.api.nvim_strwidth(r.label))
   end
+  local out = {}
+  for _, r in ipairs(rows) do
+    local pad = (' '):rep(width - vim.api.nvim_strwidth(r.label))
+    out[#out + 1] = { text = ('%s%s   %s'):format(r.label, pad, r.reason), kind = 'skipped' }
+  end
+  return out
+end
+
+--- List the files a view leaves out above everything it shows, parted from the
+--- first file by a blank line. When there was nothing to show at all, the list
+--- is the view.
+---
+--- A commit's header goes above the list, so `prepend` it afterwards: the list
+--- is not part of the header, and stays in view while the header is folded.
+--- @param view gitview.View? from `build`
+--- @param rev string
+--- @param skipped gitview.Skipped
+--- @param unchanged string[] labels, from `build`
+--- @param unchanged_reason string see `skipped_lines`
+--- @return gitview.View? view nil when there is neither a file nor a skipped one
+function M.list_skipped(view, rev, skipped, unchanged, unchanged_reason)
+  local lines = skipped_lines(skipped, unchanged, unchanged_reason)
+  if #lines == 0 then
+    return view
+  end
+  if not view then
+    return empty_view(rev, lines)
+  end
+  put_above(view, lines)
+  return view
 end
 
 return M

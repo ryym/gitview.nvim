@@ -49,8 +49,8 @@ its own language.
   are not part of the diff until they are written.
 - Added, deleted and renamed files are all handled.
 - Binary files, and changes with no textual difference such as a pure rename,
-  have no lines to show. They are counted in the winbar rather than dropped
-  silently.
+  have no lines to show. They are listed by name at the top of the diff, below
+  a commit's header, rather than dropped silently.
 
 ### Staged and unstaged in one view
 
@@ -288,7 +288,7 @@ The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
 
 File headers and a commit's header use `GitViewFileRule`,
 `GitViewCommitSubject`, `GitViewCommitAuthor`, `GitViewStatAdd` and
-`GitViewStatDelete`.
+`GitViewStatDelete`. The files a diff leaves out are listed in `GitViewSkipped`.
 
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,

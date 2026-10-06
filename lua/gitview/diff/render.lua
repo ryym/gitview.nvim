@@ -39,7 +39,7 @@ end
 --- @field hunk_rows integer[] rows worth jumping between, ascending
 --- @field file_rows integer[] the rows of `files`' header lines, ascending
 --- @field rev string
---- @field note string? extra text for the winbar, e.g. skipped files
+--- @field note string? extra text for the winbar, e.g. that whitespace is ignored
 --- @field mixed boolean? staged and unstaged changes in one view; see gitview.diff.mixed
 --- @field header_rows integer? how many rows at the top introduce the view rather
 ---        than belong to a file: a commit's message and stat. All but the
@@ -118,6 +118,7 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewFileRule', { link = 'WinSeparator' })
   set('GitViewCommitSubject', { link = 'Title' })
   set('GitViewCommitAuthor', { link = 'Comment' })
+  set('GitViewSkipped', { link = 'Comment' })
   set('GitViewStatAdd', { link = 'Added' })
   set('GitViewStatDelete', { link = 'Removed' })
 end)
@@ -133,6 +134,7 @@ local LINE_HL = {
   file = 'GitViewFileHeader',
   subject = 'GitViewCommitSubject',
   author = 'GitViewCommitAuthor',
+  skipped = 'GitViewSkipped',
   -- as `notice` paints the line it replaces a whole buffer with
   notice = 'GitViewSeparator',
 }

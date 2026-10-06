@@ -2487,3 +2487,113 @@ test('session: the winbar names the commit over its header', function()
     assert(diff_winbar(s):find('^ a.lua @ '), diff_winbar(s))
   end)
 end)
+
+--- A commit that leaves files out of its view: a binary one and a pure rename,
+--- next to one that has lines to show.
+local function skipping_history(repo)
+  repo.write('doc.md', { 'text' })
+  repo.write('a.lua', { 'return 1' })
+  repo.commit('first')
+  repo.git('mv', 'doc.md', 'guide.md')
+  repo.write('a.lua', { 'return 2' })
+  local f = assert(io.open(repo.root .. '/logo.png', 'wb'))
+  f:write('PNG\0\1\2')
+  f:close()
+  repo.commit('second')
+end
+
+--- The rows of `kind` in the diff pane, as texts by row.
+--- @param s gitview.Session
+--- @param kind string
+--- @return table<integer, string>
+local function rows_of_kind(s, kind)
+  local out = {}
+  for row, l in ipairs(diff_view(s).lines) do
+    if l.kind == kind then
+      out[row] = l.text
+    end
+  end
+  return out
+end
+
+-- Counting the files a view leaves out says less than naming them, and a
+-- commit's stat names them already, so they are listed right below it.
+test('session: a commit lists the files it leaves out below its header', function()
+  with_session(skipping_history, function(s)
+    show_commit(s, 1)
+    local view = diff_view(s)
+    local n = assert(view.header_rows)
+    eq({
+      [n + 2] = 'logo.png             (binary file)',
+      [n + 3] = 'doc.md -> guide.md   (no textual change)',
+    }, rows_of_kind(s, 'skipped'))
+    eq('', diff_rows(s)[n + 4])
+    eq('a.lua', diff_rows(s)[n + 5])
+    eq({ n + 5 }, view.file_rows)
+    eq(n + 5, view.files[1].row)
+    for _, r in ipairs(view.hunk_rows) do
+      assert(require('gitview.diff.lines').source_kinds[view.lines[r].kind], 'hunk row ' .. r)
+    end
+    -- out of the header's fold, which starts closed
+    eq(n, header_closed(s))
+    -- and no longer in the winbar
+    assert(not diff_winbar(s):find('binary', 1, true), diff_winbar(s))
+  end)
+end)
+
+test('session: a view without a header lists the files it leaves out at its top', function()
+  with_session(function(repo)
+    repo.write('doc.md', { 'text' })
+    repo.write('a.lua', { 'return 1' })
+    repo.commit('init')
+    repo.git('mv', 'doc.md', 'guide.md')
+    repo.write('a.lua', { 'return 2' })
+  end, function(s)
+    goto_commit(s, 1)
+    s.selected = { kind = 'worktree', index = 1 }
+    session.show_selected(s)
+    eq(
+      { 'doc.md -> guide.md   (no textual change)', '', 'a.lua' },
+      vim.list_slice(diff_rows(s), 1, 3)
+    )
+    eq(3, diff_view(s).files[1].row)
+  end)
+end)
+
+-- Saying only that there is no textual change would hide which files changed
+-- and how, along with the commit's message.
+test('session: a commit with nothing to show lists its files under its header', function()
+  with_session(function(repo)
+    repo.write('doc.md', { 'text' })
+    repo.commit('first')
+    repo.git('mv', 'doc.md', 'guide.md')
+    repo.commit('second')
+  end, function(s)
+    show_commit(s, 1)
+    local view = diff_view(s)
+    eq({}, view.files)
+    eq('second', diff_rows(s)[1])
+    eq(
+      { [view.header_rows + 2] = 'doc.md -> guide.md   (no textual change)' },
+      rows_of_kind(s, 'skipped')
+    )
+  end)
+end)
+
+-- With whitespace ignored, a file whose only change is whitespace has nothing to
+-- show either, and calling that "no textual change" would be a lie.
+test('session: a file left out for its whitespace says so', function()
+  with_session(function(repo)
+    repo.write('a.lua', { 'return 1' })
+    repo.write('b.lua', { 'return 1' })
+    repo.commit('first')
+    repo.write('a.lua', { 'return  1' })
+    repo.write('b.lua', { 'return 2' })
+    repo.commit('second')
+  end, function(s)
+    session.toggle_whitespace(s)
+    show_commit(s, 1)
+    local listed = vim.tbl_values(rows_of_kind(s, 'skipped'))
+    eq({ 'a.lua   (no change outside whitespace)' }, listed)
+  end)
+end)
