@@ -67,7 +67,8 @@ local M = {}
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 --- @field details table<string, gitview.CommitDetail> commits' messages and
----        stats by sha, read once: a commit never changes
+---        stats by sha: a commit never changes, but its stat is read again
+---        when the diff pane is no longer the width it was laid out for
 --- @field range_reads table<string, gitview.RangeRead> what the ranges between
 ---        two commits were last read as, by `range_key`, for `read_range`
 --- @field range_order string[] the keys of `range_reads`, least recently used
@@ -412,13 +413,35 @@ local function read_range(s, range)
   return read
 end
 
+--- The columns a commit's stat may take: the diff pane's text area, so that
+--- git shortens a long path only when the pane cannot show it whole.
+--- @param s gitview.Session
+--- @return integer
+local function stat_width(s)
+  local info = vim.api.nvim_win_is_valid(s.diff_win) and vim.fn.getwininfo(s.diff_win)[1]
+  return info and info.width - info.textoff or 80
+end
+
+--- The message and stat of a commit as read before, unless the pane has been
+--- resized since and the stat laid out for another width.
+---
+--- Only the next draw notices a resize: a header already shown keeps the
+--- width it was read for until its commit is drawn again.
+--- @param s gitview.Session
+--- @param commit gitview.Commit
+--- @return gitview.CommitDetail?
+local function kept_detail(s, commit)
+  local detail = s.details[commit.sha]
+  return detail and detail.stat_width == stat_width(s) and detail or nil
+end
+
 --- The message and stat of a commit, read on first use.
 --- @param s gitview.Session
 --- @param commit gitview.Commit
 --- @return gitview.CommitDetail?
 local function commit_detail(s, commit)
-  if not s.details[commit.sha] then
-    local detail, err = git.commit_detail(commit, s.root)
+  if not kept_detail(s, commit) then
+    local detail, err = git.commit_detail(commit, s.root, stat_width(s))
     if not detail then
       -- the diff under it is still worth showing
       util.git_error(assert(err))
@@ -536,7 +559,7 @@ local function is_kept(s, target)
     return false
   end
   if is_whole_commit(commit, range) then
-    return s.details[commit.sha] ~= nil
+    return kept_detail(s, commit) ~= nil
   end
   local older = ends_of(s, target)
   return older == nil or read.diverged[older.sha] ~= nil

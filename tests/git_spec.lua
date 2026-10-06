@@ -266,7 +266,7 @@ test('reads the whole message of a commit and its stat', function()
     repo.git('commit', '-qm', 'second\n\nwhy it changed\n\nand more\n')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
     eq('test <test@example.com>', detail.author)
     assert(detail.date ~= '', 'the date should be read')
     -- the trailing newline git keeps after the body is not a line of it
@@ -288,7 +288,7 @@ test('reads the stat of a root commit without colors', function()
     repo.commit('first')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
     eq({ 'first' }, detail.message)
     eq({ ' a.txt | 1 +', ' 1 file changed, 1 insertion(+)' }, detail.stat)
   end)
@@ -304,8 +304,23 @@ test('keeps the stat graph short', function()
     repo.commit('first')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
     eq(' a.txt | 100 ' .. ('+'):rep(30), detail.stat[1])
+  end)
+end)
+
+-- Git shortens a path from its start when the stat is too narrow for it.
+test('lays the stat out to the width it is given', function()
+  helpers.with_repo(function(repo)
+    local path = ('long_'):rep(16) .. 'controller.rb'
+    repo.write(path, { 'a' })
+    repo.commit('first')
+
+    local commits = assert(git.log(1, repo.root))
+    local narrow = assert(git.commit_detail(commits[1], repo.root, 60))
+    assert(narrow.stat[1]:find('^ %.%.%.'), 'a narrow stat should shorten the path')
+    local wide = assert(git.commit_detail(commits[1], repo.root, 200))
+    eq((' %s | 1 +'):format(path), wide.stat[1])
   end)
 end)
 
@@ -323,7 +338,7 @@ test('reads the stat of a merge against its first parent', function()
     repo.git('merge', '--no-ff', 'side', '-m', 'merge side')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root))
+    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
     eq({ ' side.txt | 1 +', ' 1 file changed, 1 insertion(+)' }, detail.stat)
   end)
 end)

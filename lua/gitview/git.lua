@@ -575,6 +575,7 @@ end
 --- @field message string[] the subject, then the body as it was written
 --- @field stat string[] `--stat` of the commit's range: a row per file, then a
 ---        summary
+--- @field stat_width integer the columns the stat was laid out to fill
 
 --- Read the whole message of a commit and the stat of its range.
 ---
@@ -583,11 +584,15 @@ end
 --- commit rather than how the view happens to be drawn, so ignoring whitespace
 --- does not change it.
 ---
+--- Git shortens a path that does not fit the stat's width from its start, and
+--- without a terminal to measure it takes the width to be 80 columns.
+---
 --- @param commit gitview.Commit
 --- @param cwd string
+--- @param width integer columns the stat may take
 --- @return gitview.CommitDetail? detail
 --- @return gitview.GitError? err
-function M.commit_detail(commit, cwd)
+function M.commit_detail(commit, cwd, width)
   -- `log.showSignature` would put the signature check in front of the format.
   local log = M.run({
     'git',
@@ -607,7 +612,7 @@ function M.commit_detail(commit, cwd)
   -- `color.ui = always` colors output that is not going to a terminal as well.
   -- The graph would otherwise take up to 40 columns, which is a lot of `+` to
   -- read past above the diff that shows the same lines.
-  vim.list_extend(cmd, { '--stat', '--stat-graph-width=30', '--no-color', '--find-renames' })
+  vim.list_extend(cmd, { '--stat=' .. width, '--stat-graph-width=30', '--no-color', '--find-renames' })
   local stat = M.run(vim.list_extend(cmd, range_args(range)), cwd)
   if not stat.ok then
     return nil, { what = 'git diff --stat ' .. commit.sha, stderr = stat.stderr }
@@ -618,6 +623,7 @@ function M.commit_detail(commit, cwd)
     date = f[2] or '',
     message = vim.split((f[3] or ''):gsub('%s+$', ''), '\n', { plain = true }),
     stat = vim.split(stat.stdout:gsub('\n$', ''), '\n', { plain = true, trimempty = true }),
+    stat_width = width,
   }
 end
 
