@@ -1760,8 +1760,8 @@ end
 --- Name the session's buffers, which is what the tab page's label shows in place
 --- of `[Scratch]`. The label follows the current window, so the files pane,
 --- which a session opens in, carries the plain name. Buffer names must be unique,
---- so a session opened while another is still around takes a numbered set, the
---- same number for all three buffers.
+--- so a session on another repository opened while one is still around takes a
+--- numbered set, the same number for all three buffers.
 --- @param s gitview.Session
 local function name_buffers(s)
   local names = { 'GitView', 'GitView:commits', 'GitView:diff' }
@@ -1797,12 +1797,21 @@ local function lay_out(s)
   vim.api.nvim_win_set_height(s.commits_win, math.max(MIN_COMMITS_HEIGHT, height))
 end
 
---- Open a tab page listing everything uncommitted.
+--- Open a tab page listing everything uncommitted, or go to the one already
+--- open for the repository. A second tab page on the same repository would show
+--- nothing the first does not. Going back to it leaves its origin alone: `gf`
+--- keeps opening files where the session was first opened from.
 --- @return gitview.Session?
 function M.open()
   local root = source.repo_root()
   if not root then
     return
+  end
+  for _, s in pairs(M.sessions) do
+    if s.root == root then
+      vim.api.nvim_set_current_tabpage(s.tab)
+      return s
+    end
   end
   set_hooks()
   local origin = vim.api.nvim_get_current_tabpage()

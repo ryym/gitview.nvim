@@ -95,17 +95,41 @@ test('session: names its buffers for the tab page label', function()
   end)
 end)
 
-test('session: a second session takes numbered buffer names', function()
+test('session: opening again from elsewhere goes to the open session', function()
+  with_session(base, function(s, repo)
+    local origin = s.origin
+    vim.cmd.tabnew()
+    local elsewhere = vim.api.nvim_get_current_tabpage()
+    vim.cmd.lcd(repo.root)
+    local again = session.open()
+    eq(s, again)
+    eq(s.tab, vim.api.nvim_get_current_tabpage())
+    eq(1, vim.tbl_count(session.sessions))
+    -- `gf` still goes where the session was first opened from
+    eq(origin, s.origin)
+    vim.api.nvim_set_current_tabpage(elsewhere)
+    vim.cmd.tabclose()
+  end)
+end)
+
+test('session: a session on another repository takes numbered buffer names', function()
   with_session(base, function()
-    local s = session.open()
-    assert(s, 'no session opened')
-    local names = {
-      vim.fn.bufname(s.files_buf),
-      vim.fn.bufname(s.commits_buf),
-      vim.fn.bufname(s.diff_buf),
-    }
-    session.close(s)
-    eq({ 'GitView (2)', 'GitView:commits (2)', 'GitView:diff (2)' }, names)
+    helpers.with_repo(function(other)
+      vim.cmd.tabnew()
+      local scratch = vim.api.nvim_get_current_tabpage()
+      vim.cmd.lcd(other.root)
+      local s = session.open()
+      assert(s, 'no session opened')
+      local names = {
+        vim.fn.bufname(s.files_buf),
+        vim.fn.bufname(s.commits_buf),
+        vim.fn.bufname(s.diff_buf),
+      }
+      session.close(s)
+      vim.api.nvim_set_current_tabpage(scratch)
+      vim.cmd.tabclose()
+      eq({ 'GitView (2)', 'GitView:commits (2)', 'GitView:diff (2)' }, names)
+    end)
   end)
 end)
 

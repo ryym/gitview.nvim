@@ -113,6 +113,9 @@ re-reads it as well.
 a file written by something that never touched git, and the few commands that move
 HEAD without writing the index, such as `git reset --soft`.
 
+There is one tab page per repository. Running `:GitView` again in the same
+repository goes back to the one already open rather than opening another.
+
 The upper pane has one row per file, with the two status letters
 `git status --short` prints. A file changed both in the index and in the working tree is still one
 row, and its diff is the mixed view above: what is staged and what is not, at
@@ -202,7 +205,7 @@ then follows the edits as they are made.
 | `R`         | re-read           | re-read              |                               |
 | `q`         | close             | close                | close                         |
 
-`gf` opens the file in the tab page `:GitView` was run from, and leaves the
+`gf` opens the file in the tab page `:GitView` was first run from, and leaves the
 session open to come back to. From the diff it lands on the line under the
 cursor; a deleted line lands on the line now in its place. A commit's line
 numbers are the commit's, so there it lands near the line rather than on it.
