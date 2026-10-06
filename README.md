@@ -305,9 +305,10 @@ carries configuration, and the colors do not depend on it.
 - **Languages without a Tree-sitter parser need `:syntax` enabled.** They fall
   back to it, and a Tree-sitter-only setup gets no colors there. Highlighting
   them is also slower.
-- **The winbar can be taken over by your config.** The file the cursor is in is
-  reported through `'winbar'`, so a configuration or plugin that sets it for
-  every window hides it. Every file still has its own header line in the buffer.
+- **The winbar can be taken over by your config.** The file at the top of the
+  window is reported through `'winbar'`, so a configuration or plugin that sets
+  it for every window hides it. Every file still has its own header line in the
+  buffer.
 - **A merge conflict is listed but not shown.** The view it needs is not built
   yet, so an unmerged file says `(unresolved conflict)` in place of a diff and is
   listed as `UU` whichever pair git would print. `s` on the whole file resolves it

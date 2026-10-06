@@ -2390,7 +2390,12 @@ test('session: the winbar names the commit over its header', function()
     local commit = s.commits[1]
     vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
     eq((' %s %s   [2 files]'):format(commit.sha, commit.subject), diff_winbar(s))
-    vim.api.nvim_win_set_cursor(s.diff_win, { 12, 0 })
+    -- only once the header of a file has scrolled off is it named
+    local first = diff_view(s).files[1].row
+    vim.api.nvim_win_call(s.diff_win, function()
+      vim.fn.winrestview({ topline = first + 1, lnum = first + 1 })
+    end)
+    eq(first + 1, vim.fn.line('w0', s.diff_win))
     assert(diff_winbar(s):find('^ a.lua @ '), diff_winbar(s))
   end)
 end)

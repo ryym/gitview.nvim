@@ -804,8 +804,8 @@ local function rev_statusline(rev)
   return table.concat(out)
 end
 
---- Names the file the cursor is in. Recomputed on every redraw, so it keeps the
---- file identifiable once its header line has scrolled off.
+--- Names the file the top of the window is in once its header line has
+--- scrolled off, as a sticky header would. Where the cursor is does not matter.
 --- @return string
 function M.winbar()
   local win = vim.g.statusline_winid
@@ -813,13 +813,14 @@ function M.winbar()
   if not view then
     return ''
   end
-  local row = vim.api.nvim_win_get_cursor(win)[1]
-  -- Headers are in ascending order, so the last one at or above the cursor is
-  -- the file it is in and there is nothing after it worth looking at. Above the
-  -- first one is a commit's header, which is in no file.
+  local top = vim.fn.line('w0', win)
+  -- Headers are in ascending order, so the last one above the top row is the
+  -- file it is in and there is nothing after it worth looking at. A header on
+  -- the top row is still on screen and names its file itself. Above the first
+  -- one is a commit's header, which is in no file.
   local file
   for _, f in ipairs(view.files) do
-    if f.row > row then
+    if f.row >= top then
       break
     end
     file = f

@@ -132,7 +132,7 @@ test('headers and gaps are highlighted as whole lines', function()
   end
 end)
 
-test('the winbar names the file the cursor is in', function()
+test('the winbar names the file the top of the window is in', function()
   local buf, view = build({ LUA, PERL })
   local win = vim.api.nvim_open_win(buf, false, {
     relative = 'editor',
@@ -143,11 +143,28 @@ test('the winbar names the file the cursor is in', function()
   })
   render.configure_window(win, buf)
   vim.g.statusline_winid = win
+  local function scroll_to(top)
+    vim.api.nvim_win_call(win, function()
+      vim.wo.foldenable = false
+      vim.fn.winrestview({ topline = top, lnum = top })
+    end)
+  end
 
-  vim.api.nvim_win_set_cursor(win, { 1, 0 })
+  scroll_to(view.files[1].row)
+  local bar = render.winbar()
+  assert(not bar:find('a.lua', 1, true), 'a header on screen is not repeated: ' .. bar)
+  scroll_to(view.files[1].row + 1)
   assert(render.winbar():find('a.lua', 1, true), 'expected the first file')
-  vim.api.nvim_win_set_cursor(win, { view.files[2].row, 0 })
+  scroll_to(view.files[2].row)
+  assert(render.winbar():find('a.lua', 1, true), 'expected the first file still')
+  scroll_to(view.files[2].row + 1)
   assert(render.winbar():find('b.pl', 1, true), 'expected the second file')
+
+  -- the cursor further down does not change it
+  scroll_to(view.files[1].row + 1)
+  vim.api.nvim_win_set_cursor(win, { view.files[2].row + 1, 0 })
+  eq(view.files[1].row + 1, vim.fn.line('w0', win), 'the window did not scroll')
+  assert(render.winbar():find('a.lua', 1, true), 'expected the first file')
 
   vim.api.nvim_win_close(win, true)
 end)
