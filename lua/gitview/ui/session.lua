@@ -74,6 +74,8 @@ local M = {}
 --- @field range_order string[] the keys of `range_reads`, least recently used
 ---        first
 --- @field empty_tree string? the empty tree's sha, once a range has needed it
+--- @field resized boolean? whether the screen was resized while another tab
+---        page was current, leaving the sidebar to be laid out on return
 
 --- @type table<integer, gitview.Session>
 M.sessions = {}
@@ -1884,11 +1886,24 @@ function M.open()
     end,
   })
   -- Shares rather than sizes, so the sidebar keeps its proportions as the
-  -- screen grows or shrinks. A session in another tab page is left as it is.
+  -- screen grows or shrinks. A session in another tab page waits until it is
+  -- entered again, and only then if the screen did change: laying it out on
+  -- every return would undo a width set by hand.
   vim.api.nvim_create_autocmd('VimResized', {
     group = group,
     callback = function()
       if vim.api.nvim_get_current_tabpage() == s.tab then
+        lay_out(s)
+      else
+        s.resized = true
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd('TabEnter', {
+    group = group,
+    callback = function()
+      if s.resized and vim.api.nvim_get_current_tabpage() == s.tab then
+        s.resized = nil
         lay_out(s)
       end
     end,
