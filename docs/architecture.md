@@ -728,6 +728,15 @@ The winbar is recomputed on redraw rather than set once, so it follows the curso
 through a multi-file view and keeps naming the file after its header line has
 scrolled off.
 
+A winbar too long for its window is cut by Neovim from the left, which would
+take the file and the shas first. So `render.winbar` measures the window and
+cuts what follows the first word of the rev, a commit's subject, ending it in
+`…`; the file, the shas, `[N files]` and the notes are kept whole. It measures
+the text before any `%` is escaped or a color added, since neither takes a
+cell, and cuts by display cells, never inside a character. A window too narrow
+even without the subject is cut from the right, by the `%<` the winbar ends
+with.
+
 ## Word-level pairing
 
 `change_pairs()` decides which deleted line is word-diffed against which added

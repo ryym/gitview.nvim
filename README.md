@@ -129,7 +129,8 @@ what that commit changed. It is the ordinary diff of
 [several files in one buffer](#several-files-in-one-buffer), not a mixed view:
 both sides are committed, so nothing there is staged or unstaged. A merge
 is compared with its first parent, the way `git show` does, and the winbar says
-`first parent`.
+`first parent`. A subject too long for the winbar is cut short with `…`, so the
+file and the sha beside it stay in view.
 
 Above the diff is what `git show --stat` would print before it: the subject, the
 author and date, the body, and the stat. Below the subject, it starts folded

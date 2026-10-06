@@ -1488,7 +1488,8 @@ end
 --- @return string
 local function diff_winbar(s)
   vim.g.statusline_winid = s.diff_win
-  return (require('gitview.diff.render').winbar():gsub('%%#%w+#', ''):gsub('%%%*', ''))
+  local bar = require('gitview.diff.render').winbar()
+  return (bar:gsub('%%#%w+#', ''):gsub('%%%*', ''):gsub('%%<$', ''))
 end
 
 --- The rows of `buf` the cursor paint is on, 1-based.
@@ -2595,5 +2596,82 @@ test('session: a file left out for its whitespace says so', function()
     show_commit(s, 1)
     local listed = vim.tbl_values(rows_of_kind(s, 'skipped'))
     eq({ 'a.lua   (no change outside whitespace)' }, listed)
+  end)
+end)
+
+--- A commit with a long subject, partly in wide characters, that changed two
+--- files. Every line changes, so nothing is folded and no syntax is left to be
+--- filled in after the draw.
+local function long_subject(repo)
+  repo.write('a.lua', { 'return 1', 'return 2', 'return 3' })
+  repo.write('b.lua', { 'return 0' })
+  repo.commit('first')
+  repo.write('a.lua', { 'return -1', 'return -2', 'return -3' })
+  repo.write('b.lua', { 'return 00' })
+  repo.commit('Make the subject of this commit long 長い件名を窓に収まるように切る')
+end
+
+--- The diff pane's winbar as drawn, in a pane `width` cells wide, with the top
+--- of the window inside the first file.
+--- @param s gitview.Session
+--- @param width integer
+--- @return string
+local function drawn_winbar(s, width)
+  vim.api.nvim_win_set_width(s.diff_win, width)
+  eq(width, vim.api.nvim_win_get_width(s.diff_win))
+  local row = diff_view(s).files[1].row + 1
+  vim.api.nvim_win_call(s.diff_win, function()
+    vim.fn.winrestview({ topline = row, lnum = row })
+  end)
+  local bar = vim.api.nvim_eval_statusline(
+    vim.wo[s.diff_win].winbar,
+    { winid = s.diff_win, use_winbar = true }
+  )
+  assert(bar.width <= width, ('%d cells in %d: %s'):format(bar.width, width, bar.str))
+  return bar.str
+end
+
+-- Neovim cuts a winbar too long for its window from the left, which takes the
+-- file and the sha first, so the subject gives way instead.
+test('session: a long subject is cut to leave the file, the sha and the notes', function()
+  local columns = vim.o.columns
+  vim.o.columns = 250
+  local ok, err = pcall(with_session, long_subject, function(s)
+    session.toggle_whitespace(s)
+    show_commit(s, 1)
+    local commit = s.commits[1]
+    local fixed = (' a.lua @ %s'):format(commit.sha)
+    local tail = '   [2 files]   space ignored'
+    local wide = drawn_winbar(s, 200)
+    eq(fixed .. ' ' .. commit.subject .. tail, wide)
+
+    -- every width down to where only a cell of the subject is left, which
+    -- crosses the wide characters at both of their cells
+    local least = vim.fn.strdisplaywidth(fixed .. tail) + 2
+    for width = vim.fn.strdisplaywidth(wide) - 1, least, -1 do
+      local bar = drawn_winbar(s, width)
+      local subject = bar:sub(#fixed + 1, #bar - #tail)
+      eq(fixed, bar:sub(1, #fixed))
+      eq(tail, bar:sub(#bar - #tail + 1))
+      assert(subject:find('^ .*…$'), bar)
+      local whole = ' ' .. commit.subject
+      eq(whole:sub(1, #subject - #'…'), subject:sub(1, #subject - #'…'))
+      -- nothing left over but a cell a wide character did not fit in, and a
+      -- space dropped before the `…`
+      assert(vim.fn.strdisplaywidth(bar) >= width - 2, bar)
+    end
+  end)
+  vim.o.columns = columns
+  assert(ok, err)
+end)
+
+-- With no room even for the subject, what is cut is the end of the winbar rather
+-- than its start, where the file is.
+test('session: a winbar too narrow for all but the subject is cut from the right', function()
+  with_session(long_subject, function(s)
+    session.toggle_whitespace(s)
+    show_commit(s, 1)
+    local bar = drawn_winbar(s, 20)
+    assert(bar:find('^ a.lua @ '), bar)
   end)
 end)

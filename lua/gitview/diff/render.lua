@@ -806,8 +806,39 @@ local function rev_statusline(rev)
   return table.concat(out)
 end
 
+--- `text` cut to fit in `width` display cells, ending in `…` when it had to be
+--- cut. A character is never split, however many cells it takes.
+--- @param text string
+--- @param width integer
+--- @return string
+local function fit(text, width)
+  if vim.fn.strdisplaywidth(text) <= width then
+    return text
+  end
+  local out, used = {}, 0
+  for _, at in ipairs(vim.str_utf_pos(text)) do
+    local char = text:sub(at, at + vim.str_utf_end(text, at))
+    local cells = vim.fn.strdisplaywidth(char)
+    -- one cell is kept for the `…`
+    if used + cells > width - 1 then
+      break
+    end
+    out[#out + 1] = char
+    used = used + cells
+  end
+  -- A space left before the `…` would read as the end of a word; one left on
+  -- its own is what parts it from the sha.
+  local kept = table.concat(out):gsub('(%S)%s+$', '%1')
+  return kept .. '…'
+end
+
 --- Names the file the top of the window is in once its header line has
 --- scrolled off, as a sticky header would. Where the cursor is does not matter.
+---
+--- A window too narrow for all of it cuts what follows the first word of the
+--- rev, a commit's subject, rather than letting Neovim cut from the left, which
+--- would take the file and the shas first. If even that is not enough, it is
+--- cut from the right.
 --- @return string
 function M.winbar()
   local win = vim.g.statusline_winid
@@ -830,8 +861,9 @@ function M.winbar()
 
   -- Only the file and the shas are colored; the rest is in the winbar's own
   -- color, as any other window's winbar is.
-  local head = ' '
+  local head, head_text = ' ', ' '
   if file then
+    head_text = (' %s @ '):format(file.label)
     head = (' %%#GitViewFileHeader#%s%%* @ '):format(util.escape_statusline(file.label))
   end
   local tail = ''
@@ -841,8 +873,19 @@ function M.winbar()
   if view.note then
     tail = tail .. '   ' .. view.note
   end
-  return head .. rev_statusline(view.rev)
-    .. util.escape_statusline(tail)
+
+  -- Measured before escaping, since neither a color nor the escape of a `%`
+  -- takes a cell.
+  local word, rest = view.rev:match('^(%S*)(.*)$')
+  local room = vim.api.nvim_win_get_width(win) - vim.fn.strdisplaywidth(head_text .. word .. tail)
+  if room < 2 then
+    -- not even a space and a `…`
+    rest = vim.fn.strdisplaywidth(rest) <= room and rest or ''
+  else
+    rest = fit(rest, room)
+  end
+  -- `%<` at the very end makes Neovim cut from the right.
+  return head .. rev_statusline(word .. rest) .. util.escape_statusline(tail) .. '%<'
 end
 
 --- Folds a commit's header below its subject into one line, and each run of
