@@ -605,6 +605,19 @@ local BLANK_GUTTER = (' '):rep(12)
 --- they have, so the gutter needs no `+`/`-` of its own.
 local LNUM_HL = { add = 'GitViewAddLnum', del = 'GitViewDeleteLnum' }
 
+--- The gutter of a closed fold: 'fillchars' fold across all of it, as the fold
+--- fills the rest of its row. The last cell stays a space, which parts the
+--- gutter from the text as it does on every other row.
+--- @param win integer
+--- @return string
+local function fold_fill(win)
+  local fillchars = vim.api.nvim_get_option_value('fillchars', { win = win })
+  local char = fillchars:match('fold:([^,]+)') or '·'
+  -- '%' starts an item in 'statuscolumn'
+  char = char == '%' and '%%' or char
+  return '%#GitViewSeparator#' .. char:rep(#BLANK_GUTTER - 1) .. ' '
+end
+
 --- What marks a row the index has changed, which is a row `unstage` would act
 --- on, in the color of what the index did to it: a staged change, and a line
 --- only the index has. The latter is a staged addition, and unstaged as a
@@ -752,11 +765,12 @@ function M.statuscolumn()
   if not l or not dlib.source_kinds[l.kind] then
     return BLANK_GUTTER
   end
-  -- A closed fold is drawn as its first row, and stands for all of them.
+  -- A closed fold is drawn as its first row, and stands for all of them. Its
+  -- fill runs on through the gutter, so the fold reads as one line across.
   if l.folded and vim.api.nvim_win_call(win, function()
     return vim.fn.foldclosed(lnum) ~= -1
   end) then
-    return BLANK_GUTTER
+    return fold_fill(win)
   end
   local function num(n, group)
     return n and ('%%#%s#%4d'):format(LNUM_HL[l.kind] or group, n) or '    '

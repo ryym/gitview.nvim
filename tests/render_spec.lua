@@ -216,7 +216,10 @@ test('the gutter is numbered for source lines and blank for the rest', function(
   local closed = render.statuscolumn()
   eq(nil, closed:find('%d'), 'a closed fold has no line numbers')
   -- the highlight-group markers take no width on screen
-  eq(#(real:gsub('%%#%S-#', '')), #closed, 'and keeps the gutter the same width')
+  local function width(s)
+    return vim.api.nvim_strwidth((s:gsub('%%#%S-#', '')))
+  end
+  eq(width(real), width(closed), 'and keeps the gutter the same width')
 
   vim.api.nvim_win_call(win, function()
     vim.cmd(folded_row .. 'foldopen')
