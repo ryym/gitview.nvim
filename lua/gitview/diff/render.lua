@@ -783,7 +783,7 @@ function M.statuscolumn()
 end
 
 --- What a view compares, for the winbar, with its shas colored as the commits
---- pane colors them.
+--- pane colors them and the rest in the winbar's own color.
 ---
 --- The shas are found in the first word, which is where every label puts them:
 --- `<sha> <subject>`, `<sha>^..<sha>`, `<sha>^..working tree`. A subject is
@@ -796,7 +796,7 @@ local function rev_statusline(rev)
   for from, hex, to in word:gmatch('()%f[%w](%x+)%f[%W]()') do
     if #hex >= 4 then
       out[#out + 1] = util.escape_statusline(word:sub(at, from - 1))
-      out[#out + 1] = '%#GitViewCommitSha#' .. hex .. '%#GitViewFileHeader#'
+      out[#out + 1] = '%#GitViewCommitSha#' .. hex .. '%*'
       at = to
     end
   end
@@ -826,7 +826,12 @@ function M.winbar()
     file = f
   end
 
-  local head = file and (' %s @ '):format(file.label) or ' '
+  -- Only the file and the shas are colored; the rest is in the winbar's own
+  -- color, as any other window's winbar is.
+  local head = ' '
+  if file then
+    head = (' %%#GitViewFileHeader#%s%%* @ '):format(util.escape_statusline(file.label))
+  end
   local tail = ''
   if #view.files > 1 then
     tail = tail .. ('   [%d files]'):format(#view.files)
@@ -834,9 +839,7 @@ function M.winbar()
   if view.note then
     tail = tail .. '   ' .. view.note
   end
-  return '%#GitViewFileHeader#'
-    .. util.escape_statusline(head)
-    .. rev_statusline(view.rev)
+  return head .. rev_statusline(view.rev)
     .. util.escape_statusline(tail)
 end
 

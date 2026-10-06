@@ -1400,7 +1400,7 @@ end
 --- @return string
 local function diff_winbar(s)
   vim.g.statusline_winid = s.diff_win
-  return (require('gitview.diff.render').winbar():gsub('%%#%w+#', ''))
+  return (require('gitview.diff.render').winbar():gsub('%%#%w+#', ''):gsub('%%%*', ''))
 end
 
 --- The rows of `buf` the cursor paint is on, 1-based.
@@ -1591,7 +1591,7 @@ test('session: the diff winbar colors the shas it names', function()
     vim.g.statusline_winid = s.diff_win
     local bar = require('gitview.diff.render').winbar()
     local function sha(c)
-      return '%#GitViewCommitSha#' .. c.sha .. '%#GitViewFileHeader#'
+      return '%#GitViewCommitSha#' .. c.sha .. '%*'
     end
     assert(bar:find(sha(s.commits[2]), 1, true), bar)
     eq(1, select(2, bar:gsub('GitViewCommitSha', '')))

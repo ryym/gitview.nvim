@@ -205,7 +205,6 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   set('GitViewStatusStaged', { link = 'Added' })
   set('GitViewStatusUnstaged', { link = 'Changed' })
   set('GitViewStatusUntracked', { link = 'Comment' })
-  set('GitViewStatusHeader', { link = 'Title' })
   set('GitViewCommitWorktree', { link = 'Comment' })
   -- As Neovim's own git syntax colors a hash, so a sha reads the same here as
   -- in `git show` or a rebase todo.
@@ -289,7 +288,7 @@ function M.winbar()
       text = text .. '   (history changed)'
     end
   end
-  return '%#GitViewStatusHeader#' .. util.escape_statusline(text)
+  return util.escape_statusline(text)
 end
 
 local ns = vim.api.nvim_create_namespace('gitview.ui.list')
