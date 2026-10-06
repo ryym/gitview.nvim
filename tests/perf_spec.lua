@@ -2,7 +2,7 @@ local perf = require('gitview.perf')
 
 local test, eq = _G.test, _G.eq
 
-local LOG = vim.fn.fnamemodify('.local/test-perf.log', ':p')
+local LOG = vim.fn.tempname()
 
 --- Run `fn` with the log pointed at a scratch file and both switches off, and
 --- return the lines it wrote with their timestamps cut off.
@@ -10,7 +10,6 @@ local LOG = vim.fn.fnamemodify('.local/test-perf.log', ':p')
 --- @return string[]
 local function logged(fn)
   local file, g, env = perf.file, vim.g.gitview_perf, vim.env.GITVIEW_PERF
-  vim.fn.mkdir(vim.fs.dirname(LOG), 'p')
   vim.fn.delete(LOG)
   perf.file = LOG
   vim.g.gitview_perf = nil
