@@ -9,10 +9,6 @@
 --- runtimepath and the runner only globs `*_spec.lua`.
 local M = {}
 
---- Kept under `.local/`, which is not tracked, so a crashed run leaves nothing
---- for `git status` to report in the repository under development.
-local ROOT = vim.fn.fnamemodify('.local/test-repo', ':p'):gsub('/$', '')
-
 --- @class gitview.TestRepo
 --- @field root string absolute path
 --- @field git fun(...: string): string run a git command, erroring on failure
@@ -24,15 +20,30 @@ local ROOT = vim.fn.fnamemodify('.local/test-repo', ':p'):gsub('/$', '')
 --- The repository starts initialised and configured but empty, so a spec
 --- decides for itself what HEAD should be — including having no HEAD at all.
 ---
+--- It lives in a temporary directory of its own, outside the repository under
+--- development and apart from any other run of the suite. A run sharing it
+--- could delete it while this one is running git there, and git would then
+--- find the repository under development above it and act on that instead.
+--- For the same reason git is kept from looking above it at all, which covers
+--- the git the plugin runs too.
+---
 --- @param fn fun(repo: gitview.TestRepo)
 function M.with_repo(fn)
-  vim.fn.delete(ROOT, 'rf')
-  vim.fn.mkdir(ROOT, 'p')
+  local parent = vim.fn.tempname()
+  vim.fn.mkdir(parent, 'p')
+  -- Resolved, as git reports paths: the temporary directory can be reached
+  -- through a symlink, as `/var` is on macOS.
+  parent = assert(vim.uv.fs_realpath(parent))
+  -- Always `test-repo`, which a spec showing the repository's name expects.
+  local root = parent .. '/test-repo'
+  vim.fn.mkdir(root)
+  local ceiling = vim.env.GIT_CEILING_DIRECTORIES
+  vim.env.GIT_CEILING_DIRECTORIES = parent
 
-  local repo = { root = ROOT }
+  local repo = { root = root }
 
   function repo.git(...)
-    local out = vim.system({ 'git', ... }, { cwd = ROOT, text = true }):wait()
+    local out = vim.system({ 'git', ... }, { cwd = root, text = true }):wait()
     if out.code ~= 0 then
       error(('git %s: %s'):format(table.concat({ ... }, ' '), out.stderr or ''), 2)
     end
@@ -40,7 +51,7 @@ function M.with_repo(fn)
   end
 
   function repo.write(path, lines)
-    local full = ROOT .. '/' .. path
+    local full = root .. '/' .. path
     vim.fn.mkdir(vim.fs.dirname(full), 'p')
     vim.fn.writefile(lines, full)
   end
@@ -53,13 +64,15 @@ function M.with_repo(fn)
   -- Set locally, so the suite neither reads nor writes the user's own
   -- configuration. Signing is turned off explicitly: a global `commit.gpgsign`
   -- would otherwise make every commit here prompt or fail.
-  repo.git('init', '-q')
-  repo.git('config', 'user.email', 'test@example.com')
-  repo.git('config', 'user.name', 'test')
-  repo.git('config', 'commit.gpgsign', 'false')
-
-  local ok, err = pcall(fn, repo)
-  vim.fn.delete(ROOT, 'rf')
+  local ok, err = pcall(function()
+    repo.git('init', '-q')
+    repo.git('config', 'user.email', 'test@example.com')
+    repo.git('config', 'user.name', 'test')
+    repo.git('config', 'commit.gpgsign', 'false')
+    fn(repo)
+  end)
+  vim.env.GIT_CEILING_DIRECTORIES = ceiling
+  vim.fn.delete(parent, 'rf')
   if not ok then
     error(err, 0)
   end
