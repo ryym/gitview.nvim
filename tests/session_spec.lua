@@ -243,6 +243,19 @@ test('session: closing drops the session and its buffer', function()
   end)
 end)
 
+-- The view is what a step filling in its syntax checks before it writes to the
+-- buffer, so one kept past the buffer would have the step write to a buffer
+-- that is gone.
+test('session: closing drops the view its diff buffer showed', function()
+  with_session(base, function(s)
+    local buf = s.diff_buf
+    assert(require('gitview.diff.render').view_of(buf), 'no view drawn')
+    session.close(s)
+    eq(false, vim.api.nvim_buf_is_valid(buf))
+    eq(nil, require('gitview.diff.render').view_of(buf))
+  end)
+end)
+
 -- Closing the tab any other way has to clean up just the same, or the session
 -- outlives what it was drawn in.
 test('session: closing the tab directly drops the session', function()

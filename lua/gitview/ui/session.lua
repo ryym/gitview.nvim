@@ -1889,6 +1889,10 @@ function M.open()
   local group = vim.api.nvim_create_augroup(augroup_name(s), { clear = true })
   vim.api.nvim_create_autocmd('TabClosed', {
     group = group,
+    -- Deleting the buffers has to fire their BufWipeout, which is what forgets
+    -- the state kept by buffer: a view kept past its buffer would have a step
+    -- filling in its syntax write to a buffer that is gone.
+    nested = true,
     callback = function()
       -- TabClosed does not say which tab went, so this checks its own.
       if not vim.api.nvim_tabpage_is_valid(s.tab) then
