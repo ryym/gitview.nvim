@@ -1616,9 +1616,10 @@ local function set_diff_keymaps(s)
         keymap.jump_files(dir)
         return
       end
+      -- The focus stays in the diff: the key was pressed while reading it, and
+      -- the next file is read there too.
       local kind = t and t.kind == 'commit_file' and 'commit_file' or 'file'
       select_nth(s, kind, (t and t.index or 1) + dir)
-      vim.api.nvim_set_current_win((pane_of(s, kind)))
     end,
     open_file = function(path, lnum)
       M.open_file(s, path, lnum)
