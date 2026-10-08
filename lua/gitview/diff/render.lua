@@ -1034,7 +1034,7 @@ function M.configure_window(win, buf)
     relativenumber = false,
     signcolumn = 'no',
     wrap = false,
-    cursorline = false,
+    cursorline = true,
     foldmethod = 'expr',
     foldexpr = 'v:lua.require("gitview.diff.render").foldexpr()',
     foldtext = 'v:lua.require("gitview.diff.render").foldtext()',
