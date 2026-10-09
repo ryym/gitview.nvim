@@ -132,10 +132,10 @@ end
 --- @param keys gitview.DiffKeys
 function M.set(buf, keys)
   local map = util.buf_mapper(buf)
-  map(']h', function()
+  map(']c', function()
     M.jump(1, rows_of('hunk_rows'))
   end, 'next hunk')
-  map('[h', function()
+  map('[c', function()
     M.jump(-1, rows_of('hunk_rows'))
   end, 'previous hunk')
   map(']f', function()

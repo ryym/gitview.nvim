@@ -201,7 +201,7 @@ then follows the edits as they are made.
 | `u`         | unstage the file  |                      | unstage the line or selection |
 | `S` / `U`   |                   |                      | stage / unstage this hunk     |
 | `]f` / `[f` |                   |                      | next / previous file          |
-| `]h` / `[h` |                   |                      | next / previous hunk          |
+| `]c` / `[c` |                   |                      | next / previous hunk          |
 | `gf`        | open the file     | open the file        | open the file at this line    |
 | `R`         | re-read           | re-read              |                               |
 | `q`         | close             | close                | close                         |
