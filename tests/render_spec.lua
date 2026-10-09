@@ -226,10 +226,54 @@ test('the gutter is numbered for source lines and blank for the rest', function(
   end)
   -- evaluating 'foldexpr' moved it
   vim.v.lnum = folded_row
-  assert(render.statuscolumn():find('%d'), 'an opened fold shows its numbers')
+  local opened = render.statuscolumn()
+  assert(opened:find('%d'), 'an opened fold shows its numbers')
+  assert(opened:find('GitViewFoldBar', 1, true), 'and a bar marking its rows')
+  eq(width(real), width(opened), 'in a gutter of the same width')
+  vim.v.lnum = source_row
+  eq(nil, render.statuscolumn():find('GitViewFoldBar', 1, true), 'a row outside a fold has no bar')
 
   vim.api.nvim_win_close(win, true)
   eq(#view.lines, #vim.api.nvim_buf_get_lines(buf, 0, -1, false))
+end)
+
+test('the bar of an opened fold bends at its first and last rows', function()
+  local buf, view = build(0)
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = 'editor',
+    width = 40,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  render.configure_window(win, buf)
+  vim.g.statusline_winid = win
+
+  local first, last
+  for i, l in ipairs(view.lines) do
+    if l.folded then
+      first = first or i
+      last = i
+    elseif first then
+      break
+    end
+  end
+  assert(first and last - first >= 2, 'expected the fixture to fold three rows or more')
+  vim.api.nvim_win_call(win, function()
+    vim.cmd(first .. 'foldopen')
+  end)
+
+  local function bar(row)
+    vim.v.lnum = row
+    return render.statuscolumn():match('%%#GitViewFoldBar#(.-) $')
+  end
+  eq('╭', bar(first))
+  for row = first + 1, last - 1 do
+    eq('│', bar(row))
+  end
+  eq('╰', bar(last))
+
+  vim.api.nvim_win_close(win, true)
 end)
 
 --- The first and last row of every closed fold in `win`.

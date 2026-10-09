@@ -111,6 +111,7 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewAddLnum', { link = 'Added' })
   set('GitViewDeleteLnum', { link = 'Removed' })
   set('GitViewSeparator', { link = 'Folded' })
+  set('GitViewFoldBar', { link = 'FoldColumn' })
   set('GitViewFileHeader', { link = 'Title' })
   -- Also defined by `ui.list`, alike, so a sha has one color in both panes
   -- whichever module is drawn first.
@@ -635,6 +636,26 @@ local function staged_bar(l)
   return ' '
 end
 
+--- What marks a row of an opened fold, which otherwise looks like any other
+--- unchanged row: a bar running down the fold, bent at its first and last rows
+--- so that where it starts and ends shows even with the rows around it off
+--- screen. A folded row is unchanged and so has no staged bar to take the place
+--- of.
+--- @param view gitview.View
+--- @param lnum integer a folded row
+--- @return string
+local function fold_bar(view, lnum)
+  local prev, next = view.lines[lnum - 1], view.lines[lnum + 1]
+  local first, last = not (prev and prev.folded), not (next and next.folded)
+  local char = '│'
+  if first and not last then
+    char = '╭'
+  elseif last and not first then
+    char = '╰'
+  end
+  return '%#GitViewFoldBar#' .. char
+end
+
 --- A count as it fits in the gutter: as it is up to four digits, and cut down
 --- to thousands or millions beyond that, so that each side of a header's count
 --- stays within four characters after its sign. It is rounded down, which keeps
@@ -780,7 +801,7 @@ function M.statuscolumn()
   return ('%s %s %s '):format(
     num(l.old_lnum, 'GitViewOldLnum'),
     num(l.new_lnum, 'GitViewNewLnum'),
-    staged_bar(l)
+    l.folded and fold_bar(view, lnum) or staged_bar(l)
   )
 end
 

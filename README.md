@@ -281,7 +281,8 @@ Both sides of the trade-off are measured in
 
 `GitViewAdd`, `GitViewDelete`, `GitViewAddText`, `GitViewDeleteText`,
 `GitViewOldLnum`, `GitViewNewLnum`, `GitViewAddLnum`, `GitViewDeleteLnum`,
-`GitViewSeparator`, `GitViewFileHeader`.
+`GitViewSeparator`, `GitViewFileHeader`. The rows of an opened fold are marked
+in the gutter with `GitViewFoldBar`.
 
 The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
 `GitViewStagedAddText`, `GitViewStagedDeleteText`, `GitViewStagedAddBar` and
