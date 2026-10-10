@@ -288,7 +288,9 @@ The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
 `GitViewStagedAddText`, `GitViewStagedDeleteText`, `GitViewStagedAddBar` and
 `GitViewStagedDeleteBar`.
 
-File headers and a commit's header use `GitViewFileRule`,
+A file's header is painted across the window, gutter included, with
+`GitViewFileHeaderBg`, and its gutter counts with `GitViewFileHeaderStatAdd`
+and `GitViewFileHeaderStatDelete`. A commit's header uses
 `GitViewCommitSubject`, `GitViewCommitAuthor`, `GitViewStatAdd` and
 `GitViewStatDelete`. The files a diff leaves out are listed in `GitViewSkipped`.
 
@@ -297,8 +299,8 @@ The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewListCursor` and `GitViewRange`.
 `GitViewCommitSha` colors the shas in the diff's winbar as well.
 
-The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`, and
-the rest link to standard groups. All are defined the first time they are
+The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`,
+`GitViewFileHeaderBg` to one derived from `CursorLine`, and the rest link to standard groups. All are defined the first time they are
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
 carries configuration, and the colors do not depend on it.

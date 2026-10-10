@@ -113,15 +113,30 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewSeparator', { link = 'Folded' })
   set('GitViewFoldBar', { link = 'FoldColumn' })
   set('GitViewFileHeader', { link = 'Title' })
+  -- A file's header is a band across the window, gutter included, so where one
+  -- file starts stands out. It is the cursor line's color pushed further from
+  -- the background: of a kind with it, yet not to be taken for it.
+  set('GitViewFileHeaderBg', scale(bg_only('CursorLine', '#2c313a'), 1.4))
   -- Also defined by `ui.list`, alike, so a sha has one color in both panes
   -- whichever module is drawn first.
   set('GitViewCommitSha', { link = 'Identifier' })
-  set('GitViewFileRule', { link = 'WinSeparator' })
   set('GitViewCommitSubject', { link = 'Title' })
   set('GitViewCommitAuthor', { link = 'Comment' })
   set('GitViewSkipped', { link = 'Comment' })
   set('GitViewStatAdd', { link = 'Added' })
   set('GitViewStatDelete', { link = 'Removed' })
+
+  -- 'statuscolumn' cannot stack groups as extmarks do, so the header's gutter
+  -- gets each of its colors with the band's background already in it.
+  local band = vim.api.nvim_get_hl(0, { name = 'GitViewFileHeaderBg', link = false })
+  --- @param name string
+  local function on_band(name)
+    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
+    h.bg, h.ctermbg = band.bg, band.ctermbg
+    return h
+  end
+  set('GitViewFileHeaderStatAdd', on_band('GitViewStatAdd'))
+  set('GitViewFileHeaderStatDelete', on_band('GitViewStatDelete'))
 end)
 
 M.setup_highlights = highlights.apply
@@ -155,12 +170,6 @@ end
 local function text_hl_of(l)
   return l.stage == 'staged' and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
 end
-
---- The rule a file's header is drawn on, so that where one file ends and the
---- next begins can be seen at a glance. It runs through the gutter up to the
---- name, and on from the name's end, where it is cut at the window's right
---- edge: it only has to be longer than any window is wide.
-local RULE = ('─'):rep(512)
 
 --- How many lines each file adds and deletes, from HEAD to the working tree in
 --- a mixed view: a row only the index has is in neither.
@@ -481,6 +490,15 @@ function M.draw(buf, view)
   --    of the screen line just as well and does obey priorities.
   for row0, l in ipairs(view.lines) do
     local line_hl = line_hl_of(l)
+    if l.kind == 'file' then
+      vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, 0, {
+        end_row = row0,
+        end_col = 0,
+        hl_group = 'GitViewFileHeaderBg',
+        hl_eol = true,
+        priority = 9,
+      })
+    end
     if line_hl then
       vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, 0, {
         end_row = row0,
@@ -539,15 +557,6 @@ function M.draw(buf, view)
         end
       end
     end
-  end
-
-  -- 5. the rest of each file's header rule, which the gutter starts
-  for _, f in ipairs(view.files) do
-    vim.api.nvim_buf_set_extmark(buf, ns_diff, f.row - 1, 0, {
-      virt_text = { { RULE, 'GitViewFileRule' } },
-      virt_text_pos = 'eol',
-      priority = 10,
-    })
   end
 
   vim.bo[buf].modifiable = false
@@ -697,19 +706,20 @@ end
 --- @param add integer
 --- @param del integer
 --- @param fill fun(cells: integer): string
+--- @param groups {add: string, del: string}
 --- @return string
-local function count_gutter(add, del, fill)
+local function count_gutter(add, del, fill, groups)
   -- the last cell is the space that parts the gutter from the text
   local width = #BLANK_GUTTER - 1
   local parts, count = {}, {}
   if add > 0 then
     local text = '+' .. abbrev_count(add)
-    parts[#parts + 1] = '%#GitViewStatAdd#' .. text
+    parts[#parts + 1] = '%#' .. groups.add .. '#' .. text
     count[#count + 1] = text
   end
   if del > 0 then
     local text = '-' .. abbrev_count(del)
-    parts[#parts + 1] = '%#GitViewStatDelete#' .. text
+    parts[#parts + 1] = '%#' .. groups.del .. '#' .. text
     count[#count + 1] = text
   end
   local len = #table.concat(count, ' ')
@@ -724,11 +734,11 @@ end
 
 --- @param cells integer
 --- @return string
-local function rule_fill(cells)
-  return '%#GitViewFileRule#' .. RULE:sub(1, #'─' * cells)
+local function band_fill(cells)
+  return '%#GitViewFileHeaderBg#' .. (' '):rep(cells)
 end
 
---- What the gutter of each file's header shows, by row: the start of the rule,
+--- What the gutter of each file's header shows, by row: the band's background,
 --- and how many lines the file adds and deletes. Worked out once per view, as
 --- 'statuscolumn' asks for it on every redraw.
 --- @type table<gitview.View, table<integer, string>>
@@ -743,7 +753,10 @@ local function header_gutters(view)
   end
   local gutters = {}
   for i, s in ipairs(file_stats(view)) do
-    gutters[view.files[i].row] = count_gutter(s.add, s.del, rule_fill)
+    gutters[view.files[i].row] = count_gutter(s.add, s.del, band_fill, {
+      add = 'GitViewFileHeaderStatAdd',
+      del = 'GitViewFileHeaderStatDelete',
+    })
   end
   header_gutter_cache[view] = gutters
   return gutters
@@ -779,7 +792,7 @@ function M.statuscolumn()
     end) then
       return count_gutter(size.add, size.del, function(cells)
         return (' '):rep(cells)
-      end)
+      end, { add = 'GitViewStatAdd', del = 'GitViewStatDelete' })
     end
     return BLANK_GUTTER
   end

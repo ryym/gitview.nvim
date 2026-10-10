@@ -123,7 +123,9 @@ test('headers and gaps are highlighted as whole lines', function()
   local groups = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     eq(nil, m[4].virt_lines, 'no virtual lines are left')
-    groups[m[2] + 1] = groups[m[2] + 1] or m[4].hl_group
+    if m[4].hl_group ~= 'GitViewFileHeaderBg' then
+      groups[m[2] + 1] = groups[m[2] + 1] or m[4].hl_group
+    end
   end
   for i, l in ipairs(view.lines) do
     if l.kind == 'file' then
@@ -189,20 +191,10 @@ local function gutter_at(buf, row)
   return gutter
 end
 
-test("a rule runs through every file's header, gutter included", function()
+test("each header's gutter carries its background", function()
   local buf, view = build({ LUA, PERL })
-  local ns = vim.api.nvim_get_namespaces()['gitview.diff']
-  local rules = {}
-  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    if m[4].virt_text_pos == 'eol' then
-      eq('GitViewFileRule', m[4].virt_text[1][2])
-      rules[#rules + 1] = m[2] + 1
-    end
-  end
-  eq({ view.files[1].row, view.files[2].row }, rules)
-
   local gutter = gutter_at(buf, view.files[2].row)
-  assert(vim.startswith(gutter, '%#GitViewFileRule#─'), 'expected the rule: ' .. gutter)
+  assert(vim.startswith(gutter, '%#GitViewFileHeaderBg# '), 'expected the background: ' .. gutter)
   eq((' '):rep(12), gutter_at(buf, view.files[2].row - 1), 'the blank line in front is left blank')
 end)
 
@@ -215,11 +207,14 @@ test("each header's gutter ends with how many lines its file adds and deletes", 
   }
   local buf, view = build({ LUA, only_add })
   eq(
-    '%#GitViewFileRule#' .. ('─'):rep(5) .. ' %#GitViewStatAdd#+1 %#GitViewStatDelete#-1 ',
+    '%#GitViewFileHeaderBg#' .. (' '):rep(5) .. ' %#GitViewFileHeaderStatAdd#+1 %#GitViewFileHeaderStatDelete#-1 ',
     gutter_at(buf, view.files[1].row)
   )
   -- a count of zero is left out
-  eq('%#GitViewFileRule#' .. ('─'):rep(8) .. ' %#GitViewStatAdd#+1 ', gutter_at(buf, view.files[2].row))
+  eq(
+    '%#GitViewFileHeaderBg#' .. (' '):rep(8) .. ' %#GitViewFileHeaderStatAdd#+1 ',
+    gutter_at(buf, view.files[2].row)
+  )
 end)
 
 --- @param n integer
@@ -238,7 +233,7 @@ test('a count of up to four digits fills the gutter as it is', function()
     { label = 'big.txt', lang = 'text', old = numbered(9999, 'old'), new = numbered(9999, 'new') },
   })
   eq(
-    '%#GitViewFileRule#%#GitViewStatAdd#+9999 %#GitViewStatDelete#-9999 ',
+    '%#GitViewFileHeaderBg#%#GitViewFileHeaderStatAdd#+9999 %#GitViewFileHeaderStatDelete#-9999 ',
     gutter_at(buf, view.files[1].row)
   )
 end)
@@ -248,7 +243,7 @@ test('a count past four digits is rounded down to thousands', function()
     { label = 'big.txt', lang = 'text', old = numbered(10000, 'old'), new = numbered(12999, 'new') },
   })
   eq(
-    '%#GitViewFileRule#' .. ('─'):rep(1) .. ' %#GitViewStatAdd#+12k %#GitViewStatDelete#-10k ',
+    '%#GitViewFileHeaderBg#' .. (' '):rep(1) .. ' %#GitViewFileHeaderStatAdd#+12k %#GitViewFileHeaderStatDelete#-10k ',
     gutter_at(buf, view.files[1].row)
   )
 end)
