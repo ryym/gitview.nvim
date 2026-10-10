@@ -122,6 +122,39 @@ row, and its diff is the mixed view above: what is staged and what is not, at
 once. Only the letters are drawn; the row itself is the path, so yanking one
 gives something pasteable.
 
+#### Files as a tree
+
+With `list_style = 'tree'`, the files pane and the files of a commit looked into
+are laid out as a tree instead, under a root row `./`:
+
+```
+▼ ./
+ M README.md
+▼ lua/gitview/
+│  M init.lua
+│ ▼ ui/
+│ │  M list.lua
+```
+
+The status letters move from the left edge to the front of each name, where they
+stay next to it however deep the file is. The rows are still whole paths, with
+the parent directory's part hidden and the letters only drawn, so yanking one
+still gives the full path. A directory holding nothing but another
+directory shares its row, as `lua/gitview/` does. The root's files sit beside it
+rather than below, so no row loses width to a level that is always there.
+
+The order is git's, not a file manager's: directories are not put first, and
+`a.lua` comes before `a/`. It is the order `git diff` lists the files in, and the
+order `]f` and a multi-file diff go by.
+
+A directory row shows no diff. `s` and `u` on it take every file in it, and on the
+root every file listed. A directory holding an unresolved conflict is refused
+either way, since staging the conflicted file would mark it resolved unseen.
+
+```lua
+require('gitview').setup({ list_style = 'tree' }) -- 'flat' by default
+```
+
 #### Recent commits
 
 The lower pane lists the most recent commits, and putting the cursor on one draws
@@ -190,21 +223,21 @@ compared too, as additions, which `git diff` itself would leave out. The row is
 there even when nothing is uncommitted, so such a range can be set up first and
 then follows the edits as they are made.
 
-| key         | in the files pane | in the commits pane  | in the diff                   |
-| ----------- | ----------------- | -------------------- | ----------------------------- |
-| `<CR>`      | focus the diff    | look into the commit |                               |
-| `<BS>`      |                   | back out of it       |                               |
-| `m`         |                   | mark, for a range    |                               |
-| `<Esc>`     |                   | clear the mark       |                               |
-| `gw`        | ignore whitespace | ignore whitespace    | ignore whitespace             |
-| `s`         | stage the file    |                      | stage the line or selection   |
-| `u`         | unstage the file  |                      | unstage the line or selection |
-| `S` / `U`   |                   |                      | stage / unstage this hunk     |
-| `]f` / `[f` |                   |                      | next / previous file          |
-| `]c` / `[c` |                   |                      | next / previous hunk          |
-| `gf`        | open the file     | open the file        | open the file at this line    |
-| `R`         | re-read           | re-read              |                               |
-| `q`         | close             | close                | close                         |
+| key         | in the files pane   | in the commits pane  | in the diff                   |
+| ----------- | ------------------- | -------------------- | ----------------------------- |
+| `<CR>`      | focus the diff      | look into the commit |                               |
+| `<BS>`      |                     | back out of it       |                               |
+| `m`         |                     | mark, for a range    |                               |
+| `<Esc>`     |                     | clear the mark       |                               |
+| `gw`        | ignore whitespace   | ignore whitespace    | ignore whitespace             |
+| `s`         | stage file / dir    |                      | stage the line or selection   |
+| `u`         | unstage file / dir  |                      | unstage the line or selection |
+| `S` / `U`   |                     |                      | stage / unstage this hunk     |
+| `]f` / `[f` |                     |                      | next / previous file          |
+| `]c` / `[c` |                     |                      | next / previous hunk          |
+| `gf`        | open the file       | open the file        | open the file at this line    |
+| `R`         | re-read             | re-read              |                               |
+| `q`         | close               | close                | close                         |
 
 `gf` opens the file in the tab page `:GitView` was first run from, and leaves the
 session open to come back to. From the diff it lands on the line under the
@@ -216,8 +249,9 @@ the index and in the working tree both has no obvious sense in which it is
 staged or not, and a row here states that state rather than hiding it.
 
 Where the key is pressed decides what it acts on. In the list, `s` and `u` take
-the whole file. In the diff they take the row under the cursor, or the rows a
-visual selection covers, and `S` and `U` take the whole change the cursor is in.
+the whole file, or every file of a directory in a tree. In the diff they take
+the row under the cursor, or the rows a visual selection covers, and `S` and `U`
+take the whole change the cursor is in.
 Both panes are re-read from git afterwards.
 
 Because the diff is a mixed view, the two directions are never ambiguous even
@@ -296,7 +330,8 @@ and `GitViewFileHeaderStatDelete`. A commit's header uses
 
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,
-`GitViewListCursor` and `GitViewRange`.
+`GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
+`GitViewIndent`.
 `GitViewCommitSha` colors the shas in the diff's winbar as well.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`,

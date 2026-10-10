@@ -12,6 +12,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `status.lua`         | What is uncommitted, as one entry per file               |
 | `stage.lua`          | Which git command moves a file into or out of the index  |
+| `tree.lua`           | Laying out the listed paths as a tree of directories     |
 | `index.lua`          | Writing part of a file's changes into the index          |
 | `util.lua`           | Messages shown to the user                              |
 | `perf.lua`           | Timings logged for development, off by default          |
@@ -29,8 +30,8 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 The dependency direction is one-way: `init` only opens a session, `source` uses
 `status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
 `git`, `view` uses `lines`, `mixed` and `highlight`, `render` uses `highlight`,
-`worddiff` and `lines`, `git` and `render` use `perf`, and `config`, `util`
-and `perf` depend on nothing but Neovim.
+`worddiff` and `lines`, `git` and `render` use `perf`, and `config`, `util`,
+`tree` and `perf` depend on nothing but Neovim.
 
 `ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
 under `diff/` knows that `ui` exists.
@@ -58,7 +59,7 @@ part of it is on screen.
 
 A row stands for a `gitview.ListTarget` — a kind and an index — rather than for
 an entry, because a row is no longer always a file: it can be a commit, the
-working tree standing in the commit list, or a file of a range. A row can also stand for nothing, which is what the notices are. The
+working tree standing in the commit list, a file of a range, or a directory. A row can also stand for nothing, which is what the notices are. The
 mapping is kept in both directions: the cursor picks a target, but `]f` picks a
 file from inside the diff.
 
@@ -70,6 +71,32 @@ decision in `'statuscolumn'` would mean teaching it every kind of row there is.
 The one thing it decides is that a commits pane listing commits has no gutter
 at all: none of its rows has anything to put there, and the width goes to the
 subjects.
+
+#### Files as a tree
+
+A tree is drawn over the same rows rather than replacing them. A file's row is
+still its whole path: the parent directory's part is concealed and the depth
+drawn in front as inline virtual text, so yanking a row gives the same thing
+either way. The status letters are drawn there too, after the indent, rather
+than in `'statuscolumn'`, which a tree leaves empty: at the left edge they would
+drift away from the name the deeper a file is. Each level of indent is drawn as
+a guide; indent-blankline cannot draw one here, since it reads the whitespace a
+line starts with and these rows have none. The tree only adds rows, one per
+directory and one for the root.
+
+The rows keep the entries' order, which is byte order, and `tree.lua` builds
+the tree in that order without sorting siblings. In byte order a directory's
+paths are contiguous and siblings come in the order git sorts a tree in, so the
+rows from top to bottom are still the entries by index. That is what keeps `]f`,
+the files of a multi-file diff and `git diff` in step with the list; putting
+directories first would mean sorting the entries themselves, everywhere a list
+of files is made.
+
+A directory row's target is the first file in it, which is also the next file
+below it, plus its path. The path tells it apart from that file and from an
+enclosing directory starting at the same file, and is what finds it again after
+a refresh. A directory is a selection like any other, but the diff only names
+it: reading all of its files on every pass of the cursor is a cost not taken.
 
 What follows the cursor is painted apart from the rows, in namespaces of its own,
 since the cursor moves far more often than the list changes: the name of the
