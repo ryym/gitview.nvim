@@ -2868,3 +2868,31 @@ test('session: `s` on the root stages everything', function()
     eq('M  README.md\nM  src/a.lua\nM  src/b.lua\n', repo.git('status', '--short'))
   end)
 end)
+
+-- The tree keeps the entries' order rather than putting directories first, so
+-- the files a multi-file diff lists run in the order the files pane shows them.
+-- These names are the ones where the two orders part: `-` and `.` sort before
+-- `/`, and capitals before lower case.
+test('session: a tree lists the files in the order the working-tree diff does', function()
+  with_tree_session(function(repo)
+    for _, path in ipairs({ 'B.md', 'a-b/y.lua', 'a.lua', 'a/x.lua' }) do
+      repo.write(path, { 'one' })
+    end
+    repo.commit('init')
+    for _, path in ipairs({ 'B.md', 'a-b/y.lua', 'a.lua', 'a/x.lua' }) do
+      repo.write(path, { 'two' })
+    end
+  end, function(s)
+    local listed = {}
+    for row = 1, vim.api.nvim_buf_line_count(s.files_buf) do
+      local target = list.target_at(s.files_buf, row)
+      if target and target.kind == 'file' then
+        listed[#listed + 1] = s.entries[target.index].path
+      end
+    end
+    eq({ 'B.md', 'a-b/y.lua', 'a.lua', 'a/x.lua' }, listed)
+    goto_worktree(s)
+    session.show_selected(s)
+    eq(listed, view_files(s))
+  end)
+end)
