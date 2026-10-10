@@ -2269,6 +2269,42 @@ test('session: an opened header stays open from one commit to the next', functio
   end)
 end)
 
+--- Two commits changing the same lines of one file, so that each folds the
+--- same rows.
+local function spread_history(repo)
+  repo.write('f.txt', spread_lines({ [2] = 'line 2', [19] = 'line 19' }))
+  repo.commit('init')
+  repo.write('f.txt', spread_lines())
+  repo.commit('first')
+  repo.write('f.txt', spread_lines({ [2] = 'two', [19] = 'nineteen' }))
+  repo.commit('second')
+end
+
+-- The header is carried over from one commit to the next, but a run of
+-- unchanged lines is only the same run in the same comparison.
+test('session: an opened run is closed again in another commit', function()
+  with_session(spread_history, function(s)
+    show_commit(s, 1)
+    open_fold(s, 'line 10')
+    show_commit(s, 2)
+    eq(false, fold_open(s, 'line 10'))
+    show_commit(s, 1)
+    eq(false, fold_open(s, 'line 10'))
+  end)
+end)
+
+-- Moving the mark compares something else while the same commit is selected.
+test('session: an opened run is closed again in another range', function()
+  with_session(spread_history, function(s)
+    goto_commit(s, 2)
+    session.set_mark(s)
+    show_commit(s, 1)
+    open_fold(s, 'line 10')
+    session.clear_mark(s)
+    eq(false, fold_open(s, 'line 10'))
+  end)
+end)
+
 -- A fold no longer than 'foldminlines' is never shown closed, and reads as open
 -- to the check that carries the reader's choice over to the next commit: one
 -- short header would leave every header after it open.

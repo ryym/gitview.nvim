@@ -203,10 +203,16 @@ end
 --- says off the screen.
 local HEADER_FOLD_ROW = 2
 
---- What names a fold across views: `header` for a commit's header, and the
---- file and the new line number of its first row for a run of unchanged lines.
---- Staging leaves the working tree alone, and a commit never changes, so a run
---- keeps its name for as long as the same thing is being redrawn.
+--- What names a fold across views: `header` for a commit's header, and what is
+--- compared, the file and the new line number of its first row for a run of
+--- unchanged lines.
+---
+--- The header is the same fold in every commit, so whether it is open goes from
+--- one commit to the next. A run is only the same run within the same
+--- comparison: staging leaves the working tree alone, and a commit never
+--- changes, so a run keeps its name for as long as the same thing is being
+--- redrawn. Another commit, or a range with another end, names its runs anew
+--- even where a file starts its runs at the same lines.
 --- @param view gitview.View
 --- @param row integer 1-based first row of the fold
 --- @return string
@@ -215,7 +221,7 @@ local function fold_key(view, row)
     return 'header'
   end
   local l = view.lines[row]
-  return ('%s:%d'):format(view.files[l.file].path, l.new_lnum)
+  return ('%s:%s:%d'):format(view.rev, view.files[l.file].path, l.new_lnum)
 end
 
 --- The first row of every fold `view` makes.
