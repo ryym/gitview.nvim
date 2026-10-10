@@ -2737,3 +2737,114 @@ test('session: a winbar too narrow for all but the subject is cut from the right
     assert(bar:find('^ a.lua @ '), bar)
   end)
 end)
+
+--- Run `fn` with the file lists laid out as trees.
+--- @param setup fun(repo: gitview.TestRepo)
+--- @param fn fun(s: gitview.Session, repo: gitview.TestRepo)
+local function with_tree_session(setup, fn)
+  local config = require('gitview.config')
+  local kept = config.values.list_style
+  config.values.list_style = 'tree'
+  local ok, err = pcall(with_session, setup, fn)
+  config.values.list_style = kept
+  if not ok then
+    error(err, 0)
+  end
+end
+
+local function nested(repo)
+  repo.write('README.md', { 'one' })
+  repo.write('src/a.lua', { 'one' })
+  repo.write('src/b.lua', { 'one' })
+  repo.commit('init')
+  repo.write('README.md', { 'two' })
+  repo.write('src/a.lua', { 'two' })
+  repo.write('src/b.lua', { 'two' })
+end
+
+--- Put the files pane's cursor on a row and follow it, as moving there does.
+--- @param s gitview.Session
+--- @param row integer
+local function files_cursor(s, row)
+  vim.api.nvim_set_current_win(s.files_win)
+  vim.api.nvim_win_set_cursor(s.files_win, { row, 0 })
+  session.follow_cursor(s, s.files_win)
+end
+
+-- The rows stay whole paths, so a yanked row still names the file; the tree is
+-- drawn over them.
+test('session: a tree lists directories between the files, as paths', function()
+  with_tree_session(nested, function(s)
+    eq({ './', 'README.md', 'src/', 'src/a.lua', 'src/b.lua' }, rows(s))
+  end)
+end)
+
+-- The first row of a tree is the root, which shows nothing.
+test('session: a tree opens on its first file rather than its root', function()
+  with_tree_session(nested, function(s)
+    eq(2, vim.api.nvim_win_get_cursor(s.files_win)[1])
+    eq({ kind = 'file', index = 1 }, s.selected)
+  end)
+end)
+
+test('session: a directory row shows no diff', function()
+  with_tree_session(nested, function(s)
+    files_cursor(s, 3)
+    eq({ kind = 'dir', index = 2, path = 'src' }, s.selected)
+    eq({ 'src/   (directory)' }, diff_rows(s))
+    eq(nil, s.index_lines)
+    files_cursor(s, 1)
+    eq({ './   (directory)' }, diff_rows(s))
+  end)
+end)
+
+test('session: `]f` and `[f` pass over directory rows', function()
+  with_tree_session(nested, function(s)
+    press_diff(s, ']f')
+    eq(2, selected(s))
+    eq(4, vim.api.nvim_win_get_cursor(s.files_win)[1])
+    press_diff(s, '[f')
+    eq(1, selected(s))
+    eq(2, vim.api.nvim_win_get_cursor(s.files_win)[1])
+  end)
+end)
+
+-- A directory's row stands just above its first file, so that is the file
+-- below and the one before it is the file above.
+test('session: `]f` and `[f` from a directory go to the files either side', function()
+  with_tree_session(nested, function(s)
+    files_cursor(s, 3)
+    press_diff(s, ']f')
+    eq({ kind = 'file', index = 2 }, s.selected)
+    files_cursor(s, 3)
+    press_diff(s, '[f')
+    eq({ kind = 'file', index = 1 }, s.selected)
+  end)
+end)
+
+test('session: a directory stays selected across a refresh', function()
+  with_tree_session(nested, function(s, repo)
+    files_cursor(s, 3)
+    repo.write('A.md', { 'new' })
+    session.refresh(s)
+    settle(s)
+    eq({ './', 'A.md', 'README.md', 'src/', 'src/a.lua', 'src/b.lua' }, rows(s))
+    eq({ kind = 'dir', index = 3, path = 'src' }, s.selected)
+    eq(4, vim.api.nvim_win_get_cursor(s.files_win)[1])
+  end)
+end)
+
+test('session: a commit looked into lists its files as a tree', function()
+  with_tree_session(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('init')
+    repo.write('lib/x.lua', { 'one' })
+    repo.commit('second')
+  end, function(s)
+    show_commit(s, 1)
+    session.enter(s)
+    eq({ './', 'lib/', 'lib/x.lua' }, commit_rows(s))
+    eq(3, vim.api.nvim_win_get_cursor(s.commits_win)[1])
+    eq({ kind = 'commit_file', index = 1 }, s.selected)
+  end)
+end)

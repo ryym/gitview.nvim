@@ -89,7 +89,7 @@ end
 --- revision here: the point of the view is what has not been committed.
 local REV = 'HEAD, staged + unstaged'
 
---- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file', id:string}
+--- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir', id:string}
 
 --- @param s gitview.Session
 --- @return gitview.SelectionId?
@@ -99,7 +99,9 @@ local function selection_id(s)
     return nil
   end
   local named
-  if t.kind == 'file' then
+  if t.kind == 'dir' or t.kind == 'commit_dir' then
+    named = t.path
+  elseif t.kind == 'file' then
     local e = s.entries[t.index]
     named = e and e.path
   elseif t.kind == 'commit' then
@@ -162,11 +164,11 @@ end
 --- Which pane a kind of target lives in. The sidebar holds two lists, and a
 --- selection belongs to exactly one of them.
 --- @param s gitview.Session
---- @param kind 'file'|'commit'|'worktree'|'commit_file'
+--- @param kind 'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir'
 --- @return integer win
 --- @return integer buf
 local function pane_of(s, kind)
-  if kind == 'file' then
+  if kind == 'file' or kind == 'dir' then
     return s.files_win, s.files_buf
   end
   return s.commits_win, s.commits_buf
@@ -722,7 +724,7 @@ local function reads_worktree(s)
   if t.kind == 'commit' then
     return s.mark == list.WORKTREE
   end
-  if t.kind == 'commit_file' then
+  if t.kind == 'commit_file' or t.kind == 'commit_dir' then
     return s.scope ~= nil and s.scope.range.new == nil
   end
   return true
@@ -774,6 +776,13 @@ function M.show_selected(s, keep_unchanged, span)
   end
   if target.kind == 'commit_file' then
     show_commit_file(s, target.index)
+    return
+  end
+  -- A directory's files could be shown together as a commit's are, but reading
+  -- them all on every pass of the cursor over the row is a cost not taken yet.
+  if target.kind == 'dir' or target.kind == 'commit_dir' then
+    local name = target.path == '' and './' or target.path .. '/'
+    render.notice(s.diff_buf, ('%s   (directory)'):format(name))
     return
   end
 
@@ -934,6 +943,17 @@ local function target_of_id(s, id)
   if id.kind == 'worktree' then
     return has_worktree_row(s) and { kind = 'worktree', index = 1 } or nil
   end
+  -- A directory is still there as long as a file in it is.
+  if id.kind == 'dir' or id.kind == 'commit_dir' then
+    local files = id.kind == 'dir' and s.entries or (s.scope and s.scope.changes or {})
+    local prefix = id.id == '' and '' or id.id .. '/'
+    for i, it in ipairs(files) do
+      if it.path:sub(1, #prefix) == prefix then
+        return { kind = id.kind, index = i, path = id.id }
+      end
+    end
+    return nil
+  end
   local haystack, name
   if id.kind == 'file' then
     haystack, name = s.entries, 'path'
@@ -971,11 +991,13 @@ end
 --- @param target gitview.ListTarget? where the cursor should end up
 --- @param keep_unchanged boolean? passed on to `show_selected`
 local function redraw_list(s, target, keep_unchanged)
+  local as_tree = config.values.list_style == 'tree'
   list.draw(s.files_buf, {
     pane = 'files',
     root = s.root,
     entries = s.entries,
     notice = s.files_notice,
+    tree = as_tree,
   })
   list.draw(s.commits_buf, {
     pane = 'commits',
@@ -984,6 +1006,7 @@ local function redraw_list(s, target, keep_unchanged)
     worktree = has_worktree_row(s),
     scope = s.scope,
     stale = s.commits_stale,
+    tree = as_tree,
   })
   clamp_cursor(s.files_win)
   clamp_cursor(s.commits_win)
@@ -1103,6 +1126,9 @@ local function read_status(s, report, keep_unchanged)
       return
     end
     local id = selection_id(s)
+    -- The first list read puts the cursor on the first file rather than the
+    -- first row, which in a tree is the root and shows nothing.
+    local first = s.files_notice ~= nil and #s.entries == 0
     s.entries = entries
     s.files_notice = nil
     s.outdated = nil
@@ -1116,7 +1142,11 @@ local function read_status(s, report, keep_unchanged)
     end
     -- The working-tree row comes and goes with the entries, and its mark with it.
     drop_lost_mark(s)
-    redraw_list(s, target_of_id(s, id), keep_unchanged)
+    local target = target_of_id(s, id)
+    if not target and first and #entries > 0 then
+      target = { kind = 'file', index = 1 }
+    end
+    redraw_list(s, target, keep_unchanged)
   end)
 end
 
@@ -1354,6 +1384,10 @@ local function open_listed(s, win)
   end
   if target and target.kind == 'worktree' then
     util.info('the uncommitted changes are many files; open one from the files pane')
+    return
+  end
+  if target and (target.kind == 'dir' or target.kind == 'commit_dir') then
+    util.info('a directory is many files; open one of them')
     return
   end
   if not item then
@@ -1618,8 +1652,13 @@ local function set_diff_keymaps(s)
       end
       -- The focus stays in the diff: the key was pressed while reading it, and
       -- the next file is read there too.
-      local kind = t and t.kind == 'commit_file' and 'commit_file' or 'file'
-      select_nth(s, kind, (t and t.index or 1) + dir)
+      local in_scope = t and (t.kind == 'commit_file' or t.kind == 'commit_dir')
+      local kind = in_scope and 'commit_file' or 'file'
+      -- A directory's index is the next file below it, which `]f` goes to
+      -- rather than past.
+      local is_dir = t and (t.kind == 'dir' or t.kind == 'commit_dir')
+      local step = (is_dir and dir > 0) and 0 or dir
+      select_nth(s, kind, (t and t.index or 1) + step)
     end,
     open_file = function(path, lnum)
       M.open_file(s, path, lnum)

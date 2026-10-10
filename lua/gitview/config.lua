@@ -12,6 +12,8 @@ local M = {}
 --- @field commit_count integer how many recent commits `:GitView` lists
 --- @field commit_ratio number share of the sidebar height the commit list takes
 --- @field no_highlight string[] filetypes shown without syntax highlighting
+--- @field list_style 'flat'|'tree' whether the sidebar lists files by their
+---        paths alone or as a tree of directories
 
 --- @type gitview.Config
 M.values = {
@@ -23,6 +25,7 @@ M.values = {
   commit_count = 100,
   commit_ratio = 0.4,
   no_highlight = {},
+  list_style = 'flat',
 }
 
 --- @param opts? gitview.Config
