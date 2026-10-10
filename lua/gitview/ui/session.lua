@@ -781,8 +781,7 @@ function M.show_selected(s, keep_unchanged, span)
   -- A directory's files could be shown together as a commit's are, but reading
   -- them all on every pass of the cursor over the row is a cost not taken yet.
   if target.kind == 'dir' or target.kind == 'commit_dir' then
-    local name = target.path == '' and './' or target.path .. '/'
-    render.notice(s.diff_buf, ('%s   (directory)'):format(name))
+    render.notice(s.diff_buf, ('%s   (directory)'):format(list.dir_label(assert(target.path))))
     return
   end
 
@@ -932,6 +931,24 @@ end
 --- again: the file section changes length, which moves every commit row below
 --- it, and a file removed from the list shifts the indices of the rest.
 ---
+--- The files in a directory, with their indices, in list order.
+--- @generic T: {path:string}
+--- @param files T[]
+--- @param dir string without a trailing slash; `''` for the root
+--- @return T[] files
+--- @return integer[] indices
+local function files_in(files, dir)
+  local prefix = dir == '' and '' or dir .. '/'
+  local found, indices = {}, {}
+  for i, f in ipairs(files) do
+    if f.path:sub(1, #prefix) == prefix then
+      found[#found + 1] = f
+      indices[#indices + 1] = i
+    end
+  end
+  return found, indices
+end
+
 --- The reverse of `selection_id` against the lists as they now are.
 --- @param s gitview.Session
 --- @param id gitview.SelectionId?
@@ -946,13 +963,8 @@ local function target_of_id(s, id)
   -- A directory is still there as long as a file in it is.
   if id.kind == 'dir' or id.kind == 'commit_dir' then
     local files = id.kind == 'dir' and s.entries or (s.scope and s.scope.changes or {})
-    local prefix = id.id == '' and '' or id.id .. '/'
-    for i, it in ipairs(files) do
-      if it.path:sub(1, #prefix) == prefix then
-        return { kind = id.kind, index = i, path = id.id }
-      end
-    end
-    return nil
+    local _, indices = files_in(files, id.id)
+    return indices[1] and { kind = id.kind, index = indices[1], path = id.id } or nil
   end
   local haystack, name
   if id.kind == 'file' then
@@ -1409,7 +1421,7 @@ local function wait_for_read(s)
   return true
 end
 
---- Change the index for the file under the cursor, then redraw.
+--- Change the index for the file or directory under the cursor, then redraw.
 ---
 --- Both panes are rebuilt from git rather than adjusted in place: the status
 --- letters, the file's three versions and which lines count as staged all move
@@ -1420,21 +1432,35 @@ end
 --- ordered by path, so the row goes on meaning the same file.
 ---
 --- @param s gitview.Session
---- @param decide fun(e: gitview.StatusEntry, has_head: boolean): gitview.StageAction?, string?
-local function apply_to_selected(s, decide)
+--- @param op 'stage'|'unstage'
+local function apply_to_selected(s, op)
   local target = s.selected
   if not target or wait_for_read(s) then
     return
   end
-  if target.kind ~= 'file' then
+  local action, why
+  if target.kind == 'dir' then
+    local entries = files_in(s.entries, assert(target.path))
+    local name = list.dir_label(assert(target.path))
+    if op == 'stage' then
+      action, why = stage.stage_all(entries, name)
+    else
+      action, why = stage.unstage_all(entries, s.has_head, name)
+    end
+  elseif target.kind == 'file' then
+    local entry = s.entries[target.index]
+    if not entry then
+      return
+    end
+    if op == 'stage' then
+      action, why = stage.stage(entry)
+    else
+      action, why = stage.unstage(entry, s.has_head)
+    end
+  else
     util.info('only an uncommitted file can be staged')
     return
   end
-  local entry = s.entries[target.index]
-  if not entry then
-    return
-  end
-  local action, why = decide(entry, s.has_head)
   if not action then
     util.info(why or 'nothing to do')
     return
@@ -1571,11 +1597,11 @@ local function set_files_keymaps(s)
   -- has no obvious sense in which it is on or off, and a row here states that
   -- state rather than hiding it, so the direction is given explicitly.
   map('s', function()
-    apply_to_selected(s, stage.stage)
-  end, 'stage the file under the cursor')
+    apply_to_selected(s, 'stage')
+  end, 'stage the file or directory under the cursor')
   map('u', function()
-    apply_to_selected(s, stage.unstage)
-  end, 'unstage the file under the cursor')
+    apply_to_selected(s, 'unstage')
+  end, 'unstage the file or directory under the cursor')
   set_shared_keymaps(s, s.files_buf)
 end
 

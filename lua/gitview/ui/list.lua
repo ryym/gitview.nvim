@@ -120,6 +120,14 @@ local DIR_MARK = '▼ '
 --- yanked row still names something.
 local ROOT_TEXT = './'
 
+--- What a directory is called: its row's text, which is also how a message
+--- names it.
+--- @param path string without a trailing slash; `''` for the root
+--- @return string
+function M.dir_label(path)
+  return path == '' and ROOT_TEXT or path .. '/'
+end
+
 --- The files of a list laid out as a tree.
 ---
 --- A row's text stays the whole path, so yanking one still gives something
@@ -175,7 +183,7 @@ local function tree_rows(files, dir_kind)
       row.gutter = nil
       row.lead = vim.list_extend(vim.deepcopy(f.letters), { { ' ' } })
     else
-      local text = n.dir == '' and ROOT_TEXT or n.dir .. '/'
+      local text = M.dir_label(n.dir)
       local spans = { { from = n.col, to = #text, group = 'GitViewDirectory' } }
       if n.col > 0 then
         table.insert(spans, 1, { from = 0, to = n.col, conceal = true })
