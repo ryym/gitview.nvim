@@ -318,3 +318,107 @@ test("list: commit rows have no gutter, a commit's files do", function()
   model.scope = { commit = commit('abc1234', 'x'), changes = { change('M', 'a.txt') } }
   eq('%#GitViewStatusStaged#M  ', commits_gutter(model))
 end)
+
+--- @param rows gitview.ListRow[]
+--- @param i integer
+--- @return {from:integer, to:integer}[]
+local function concealed(rows, i)
+  local out = {}
+  for _, sp in ipairs(rows[i].spans or {}) do
+    if sp.conceal then
+      out[#out + 1] = { from = sp.from, to = sp.to }
+    end
+  end
+  return out
+end
+
+test('list: a tree keeps each row a whole path and hides the parent part', function()
+  local rows = list.content({
+    pane = 'files',
+    tree = true,
+    entries = { entry('M', ' ', 'README.md'), entry('M', ' ', 'lua/gitview/ui/list.lua') },
+  })
+  eq({ './', 'README.md', 'lua/gitview/ui/', 'lua/gitview/ui/list.lua' }, texts(rows))
+  eq({}, concealed(rows, 2))
+  eq({}, concealed(rows, 3))
+  eq({ { from = 0, to = 15 } }, concealed(rows, 4))
+  eq({ 0, 0, 0, 1 }, vim.tbl_map(function(r)
+    return r.indent
+  end, rows))
+  -- colored from the name on, past what is hidden
+  eq(15, rows[4].subject)
+end)
+
+-- Neither the diff nor the status letters have anything to say about a
+-- directory, so its row has no subject to color and no gutter.
+test('list: a directory row stands for the first file in it', function()
+  local rows = list.content({
+    pane = 'files',
+    tree = true,
+    entries = { entry(' ', 'M', 'a.txt'), entry(' ', 'M', 'src/x/b.txt'), entry(' ', 'M', 'src/y.txt') },
+  })
+  eq({ './', 'a.txt', 'src/', 'src/x/', 'src/x/b.txt', 'src/y.txt' }, texts(rows))
+  eq({ kind = 'dir', index = 1, path = '' }, rows[1].target)
+  eq({ kind = 'dir', index = 2, path = 'src' }, rows[3].target)
+  eq({ kind = 'dir', index = 2, path = 'src/x' }, rows[4].target)
+  eq({ { from = 0, to = 4 } }, concealed(rows, 4))
+  eq(nil, rows[3].subject)
+  eq(nil, rows[3].gutter)
+  -- in front of the name: a directory's mark, or a file's status letters
+  eq({ '▼ ', ' M ', '▼ ', '▼ ', ' M ', ' M ' }, vim.tbl_map(function(r)
+    return table.concat(vim.tbl_map(function(chunk)
+      return chunk[1]
+    end, r.lead))
+  end, rows))
+  eq({ 'GitViewStatusStaged', 'GitViewStatusUnstaged' }, { rows[2].lead[1][2], rows[2].lead[2][2] })
+  -- which leaves the gutter with nothing to draw
+  eq(nil, rows[2].gutter)
+  eq({ kind = 'file', index = 3 }, rows[6].target)
+end)
+
+test('list: a rename within a directory hides the directory on both sides', function()
+  local rows = list.content({
+    pane = 'files',
+    tree = true,
+    entries = { entry('R', ' ', 'src/new.lua', 'src/old.lua') },
+  })
+  eq('src/old.lua -> src/new.lua', rows[3].text)
+  eq({ { from = 0, to = 4 }, { from = 15, to = 19 } }, concealed(rows, 3))
+  eq(4, rows[3].subject)
+end)
+
+-- Where the file came from is part of what the rename says.
+test('list: a rename across directories is shown whole', function()
+  local rows = list.content({
+    pane = 'files',
+    tree = true,
+    entries = { entry('R', ' ', 'src/new.lua', 'lib/old.lua') },
+  })
+  eq('lib/old.lua -> src/new.lua', rows[3].text)
+  eq({}, concealed(rows, 3))
+  eq(0, rows[3].subject)
+end)
+
+test('list: a commit looked into lists its files as a tree too', function()
+  local rows = list.content({
+    pane = 'commits',
+    tree = true,
+    scope = {
+      range = { old = 'a', new = 'b' },
+      label = 'b',
+      at = 'b',
+      changes = { { status = 'M', path = 'lib/x.lua', old_path = 'lib/x.lua', binary = false } },
+    },
+  })
+  eq({ './', 'lib/', 'lib/x.lua' }, texts(rows))
+  eq({ kind = 'commit_dir', index = 1, path = 'lib' }, rows[2].target)
+  eq({ kind = 'commit_file', index = 1 }, rows[3].target)
+end)
+
+-- The tree draws over the rows; a flat list is what it always was.
+test('list: a flat list has no directory rows', function()
+  local rows = list.content({ pane = 'files', entries = { entry('M', ' ', 'src/a.txt') } })
+  eq({ 'src/a.txt' }, texts(rows))
+  eq(nil, rows[1].indent)
+  eq(nil, rows[1].spans)
+end)

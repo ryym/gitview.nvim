@@ -5,6 +5,7 @@
 --- nothing else, so yanking a line gives a path that can be pasted somewhere
 --- useful, while the two status letters are painted by `'statuscolumn'`.
 local status = require('gitview.status')
+local tree = require('gitview.tree')
 local util = require('gitview.util')
 
 local M = {}
@@ -29,11 +30,18 @@ local M = {}
 --- @field scope gitview.ListScope? the commits pane, looking into a range
 --- @field stale boolean? the commits pane, holding a list `git log` no longer
 ---        agrees with; see `ui.session`
+--- @field tree boolean? files laid out as a tree of directories rather than
+---        one path after another
 
 --- @class gitview.ListTarget what a row stands for
---- @field kind 'file'|'commit'|'worktree'|'commit_file'
+--- @field kind 'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir'
 --- @field index integer into the entries, the commits, or the scope's changes.
----        Always 1 for the working tree, which there is only one of
+---        Always 1 for the working tree, which there is only one of. For a
+---        directory, the first file in it, which is also the next file below
+---        its row
+--- @field path string? the directory, without a trailing slash; `''` for the
+---        root. A directory and the first file in it share an index, and so
+---        may a directory and the one it is in
 
 --- @class gitview.ListSpan a stretch of a row drawn differently from its text
 --- @field from integer 0-based byte column
@@ -48,7 +56,13 @@ local M = {}
 --- @field spans gitview.ListSpan[]? drawn over the text as extmarks
 --- @field subject integer? 0-based byte column where what the row names begins,
 ---        past any sha in front of it; colored while the diff shows the row.
----        Absent on a row standing for nothing
+---        Absent on a row standing for nothing, and on a directory, which the
+---        diff has nothing to show for
+--- @field indent integer? how many levels of a tree the row is nested in, each
+---        drawn in front of the text as a guide
+--- @field lead [string, string?][]? drawn after the indent, in front of the
+---        name, as `virt_text` chunks: a directory's mark, or in a tree a file's
+---        status letters
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
@@ -84,20 +98,127 @@ M.EMPTY_COMMIT_NOTICE = 'this commit changed nothing'
 --- paths stay in one column.
 local BLANK_GUTTER = '   '
 
+--- What one level of a tree is drawn as: a guide, as indent-blankline draws one,
+--- within the two columns a level takes anyway. Lines joining a directory to
+--- each child (`├`, `└`) would need more width than a narrow sidebar has.
+---
+--- Drawn rather than taken from indent-blankline itself, which reads the
+--- whitespace at the start of each line: a row here has none, since the indent
+--- is virtual text and the text is the path alone.
+local INDENT_GUIDE = '│ '
+
+--- What a directory's row starts with. Every directory is open while there is
+--- no way to close one, and the mark is there so a directory stands apart from
+--- its files by more than a trailing slash.
+---
+--- `▼` is East Asian Ambiguous: two columns wide where 'ambiwidth' is double,
+--- which is fine as long as the terminal agrees. The unambiguous `▾` is drawn
+--- too small in many fonts to be read at a glance.
+local DIR_MARK = '▼ '
+
+--- What the root of a tree is called. It is a path like every other row, so a
+--- yanked row still names something.
+local ROOT_TEXT = './'
+
+--- The files of a list laid out as a tree.
+---
+--- A row's text stays the whole path, so yanking one still gives something
+--- pasteable: the parent directory's part is concealed and the depth drawn in
+--- front as an indent. A rename is placed where its new path is. When both
+--- sides are in that directory, both drop the directory's part, which reads
+--- `old.lua -> new.lua`; otherwise the whole label is shown, since it says
+--- where the file came from.
+---
+--- The status letters move from the gutter to the front of the name. At the
+--- left edge they would sit further from the name the deeper the file is.
+---
+--- @param files {path:string, old:string?, row:gitview.ListRow, letters:[string, string][]}[]
+---        in byte order of `path`; see `gitview.tree`. `old` is the other side of
+---        a rename, `row` what the flat list would show, and `letters` the status
+---        letters it shows in its gutter
+--- @param dir_kind 'dir'|'commit_dir'
+--- @return gitview.ListRow[]
+local function tree_rows(files, dir_kind)
+  local paths = vim.tbl_map(function(f)
+    return f.path
+  end, files)
+  local nodes = tree.build(paths)
+
+  -- A directory's target is the first file in it, which is the next file below.
+  local next_file = {}
+  local seen
+  for i = #nodes, 1, -1 do
+    seen = nodes[i].index or seen
+    next_file[i] = seen
+  end
+
+  local rows = {}
+  for i, n in ipairs(nodes) do
+    local row --- @type gitview.ListRow
+    if n.index then
+      local f = files[n.index]
+      row = f.row
+      local spans = {}
+      local parent = f.path:sub(1, n.col)
+      if not f.old then
+        spans[1] = { from = 0, to = n.col, conceal = true }
+        row.subject = n.col
+      elseif f.old:sub(1, n.col) == parent and not f.old:find('/', n.col + 1, true) then
+        local new_at = #f.old + #' -> '
+        spans[1] = { from = 0, to = n.col, conceal = true }
+        spans[2] = { from = new_at, to = new_at + n.col, conceal = true }
+        row.subject = n.col
+      end
+      row.spans = vim.tbl_filter(function(sp)
+        return sp.to > sp.from
+      end, spans)
+      row.gutter = nil
+      row.lead = vim.list_extend(vim.deepcopy(f.letters), { { ' ' } })
+    else
+      local text = n.dir == '' and ROOT_TEXT or n.dir .. '/'
+      local spans = { { from = n.col, to = #text, group = 'GitViewDirectory' } }
+      if n.col > 0 then
+        table.insert(spans, 1, { from = 0, to = n.col, conceal = true })
+      end
+      row = {
+        text = text,
+        target = { kind = dir_kind, index = next_file[i], path = n.dir },
+        spans = spans,
+        lead = { { DIR_MARK, 'GitViewDirectory' } },
+      }
+    end
+    row.indent = n.depth
+    rows[i] = row
+  end
+  return rows
+end
+
+--- An entry's status letters, each with its highlight group.
+--- @param e gitview.StatusEntry
+--- @return [string, string][]
+local function letters_of(e)
+  if status.is_untracked(e) then
+    return { { '??', 'GitViewStatusUntracked' } }
+  end
+  return { { e.index_status, 'GitViewStatusStaged' }, { e.worktree_status, 'GitViewStatusUnstaged' } }
+end
+
 --- The gutter is computed when the row is built rather than when the screen
 --- line is drawn, because rows no longer all stand for the same kind of thing:
 --- an entry has two status letters, a commit has none, and `'statuscolumn'`
 --- would otherwise have to know about every kind.
---- @param e gitview.StatusEntry
+---
+--- Padded to the width of two letters and a space, so the paths stay in one
+--- column whichever kind of file the row is.
+--- @param letters [string, string][]
 --- @return string
-local function gutter_of(e)
-  if status.is_untracked(e) then
-    return '%#GitViewStatusUntracked#?? '
+local function gutter_of(letters)
+  local out, width = {}, 0
+  for _, l in ipairs(letters) do
+    out[#out + 1] = ('%%#%s#%s'):format(l[2], l[1])
+    width = width + #l[1]
   end
-  return ('%%#GitViewStatusStaged#%s%%#GitViewStatusUnstaged#%s '):format(
-    e.index_status,
-    e.worktree_status
-  )
+  return table.concat(out) .. (' '):rep(#BLANK_GUTTER - width)
 end
 
 --- The files one commit changed, shown in the commits pane in place of the
@@ -109,23 +230,26 @@ end
 --- row of the buffer has to stand for it.
 ---
 --- @param scope gitview.ListScope
+--- @param as_tree boolean?
 --- @return gitview.ListRow[]
-local function scope_rows(scope)
+local function scope_rows(scope, as_tree)
   if #scope.changes == 0 then
     return { { text = M.EMPTY_COMMIT_NOTICE } }
   end
-  local rows = {}
+  local rows, files = {}, {}
   for i, c in ipairs(scope.changes) do
+    -- One letter, in the color the list already uses for a settled change.
+    local letters = { { c.status, 'GitViewStatusStaged' } }
     rows[i] = {
       text = status.change_label(c),
-      -- One letter, in the color the list already uses for a settled change,
-      -- padded to the width the two letters of an entry take.
-      gutter = ('%%#GitViewStatusStaged#%s  '):format(c.status),
+      gutter = gutter_of(letters),
       target = { kind = 'commit_file', index = i },
       subject = 0,
     }
+    local renamed = (c.status == 'R' or c.status == 'C') and c.old_path or nil
+    files[i] = { path = c.path, old = renamed, row = rows[i], letters = letters }
   end
-  return rows
+  return as_tree and tree_rows(files, 'commit_dir') or rows
 end
 
 --- What hides the tail of a sha at the start of a row. `%h` is never shorter
@@ -150,20 +274,23 @@ function M.content(model)
     if #entries == 0 then
       return { { text = M.EMPTY_NOTICE } }
     end
-    local rows = {}
+    local rows, files = {}, {}
     for i, e in ipairs(entries) do
+      local letters = letters_of(e)
       rows[i] = {
         text = status.label(e),
-        gutter = gutter_of(e),
+        gutter = gutter_of(letters),
         target = { kind = 'file', index = i },
         subject = 0,
       }
+      local renamed = e.head_path and e.head_path ~= e.path and e.head_path or nil
+      files[i] = { path = e.path, old = renamed, row = rows[i], letters = letters }
     end
-    return rows
+    return model.tree and tree_rows(files, 'dir') or rows
   end
 
   if model.scope then
-    return scope_rows(model.scope)
+    return scope_rows(model.scope, model.tree)
   end
   local commits = model.commits or {}
   if #commits == 0 then
@@ -206,6 +333,9 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   set('GitViewStatusUnstaged', { link = 'Changed' })
   set('GitViewStatusUntracked', { link = 'Comment' })
   set('GitViewCommitWorktree', { link = 'Comment' })
+  set('GitViewDirectory', { link = 'Directory' })
+  -- What indent-blankline's own guides default to, so the two look alike.
+  set('GitViewIndent', { link = 'Whitespace' })
   -- As Neovim's own git syntax colors a hash, so a sha reads the same here as
   -- in `git show` or a rebase todo.
   set('GitViewCommitSha', { link = 'Identifier' })
@@ -245,6 +375,10 @@ function M.statuscolumn()
   -- give the width away: the subjects take it instead. A commit's files keep
   -- the gutter for their status letters.
   if state.pane == 'commits' and not state.scope then
+    return ''
+  end
+  -- A tree draws the status letters in front of each name instead.
+  if state.tree then
     return ''
   end
   if vim.v.virtnum ~= 0 then
@@ -318,6 +452,17 @@ function M.draw(buf, model)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, texts)
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
   for i, r in ipairs(rows) do
+    local lead = {}
+    for _ = 1, r.indent or 0 do
+      lead[#lead + 1] = { INDENT_GUIDE, 'GitViewIndent' }
+    end
+    vim.list_extend(lead, r.lead or {})
+    if #lead > 0 then
+      vim.api.nvim_buf_set_extmark(buf, ns, i - 1, 0, {
+        virt_text = lead,
+        virt_text_pos = 'inline',
+      })
+    end
     for _, span in ipairs(r.spans or {}) do
       vim.api.nvim_buf_set_extmark(buf, ns, i - 1, span.from, {
         end_col = span.to,
@@ -337,6 +482,7 @@ function M.draw(buf, model)
     commits = model.commits or {},
     scope = model.scope,
     stale = model.stale,
+    tree = model.tree,
     rows = rows,
   }
 end
@@ -445,7 +591,7 @@ function M.row_of(buf, target)
     return nil
   end
   for row, r in ipairs(state.rows) do
-    if r.target and r.target.kind == target.kind and r.target.index == target.index then
+    if M.same_target(r.target, target) then
       return row
     end
   end
@@ -461,7 +607,7 @@ function M.same_target(a, b)
   if not a or not b then
     return a == nil and b == nil
   end
-  return a.kind == b.kind and a.index == b.index
+  return a.kind == b.kind and a.index == b.index and a.path == b.path
 end
 
 return M
