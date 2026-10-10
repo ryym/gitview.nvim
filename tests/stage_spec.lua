@@ -130,3 +130,100 @@ test('stage: an unmerged path is allowed, and resolves it', function()
     (stage.stage(entry({ index_status = 'U', worktree_status = 'U', conflicted = true })))
   )
 end)
+
+--- The entries of a real repository whose paths start with `prefix`.
+--- @param repo gitview.TestRepo
+--- @param prefix string
+--- @return gitview.StatusEntry[]
+local function entries_under(repo, prefix)
+  return vim.tbl_filter(function(e)
+    return e.path:sub(1, #prefix) == prefix
+  end, assert(status.list(repo.root)))
+end
+
+test('stage_all: passes only the files with something to stage, on stdin', function()
+  local action = stage.stage_all({
+    entry({ path = 'd/a.txt', worktree_status = 'M' }),
+    entry({ path = 'd/b.txt', index_status = 'M' }),
+    entry({ path = 'd/c.txt', index_status = '?', worktree_status = '?' }),
+  }, 'd/')
+  eq({
+    what = 'git add',
+    args = { 'add', '--pathspec-from-file=-', '--pathspec-file-nul' },
+    stdin = 'd/a.txt\0d/c.txt',
+  }, action)
+end)
+
+test('stage_all: a directory with nothing unstaged says so', function()
+  local action, why = stage.stage_all({ entry({ path = 'd/a.txt', index_status = 'M' }) }, 'd/')
+  eq(nil, action)
+  eq('nothing to stage in d/', why)
+end)
+
+-- Staging an unmerged file marks it resolved, which is fine done to that file
+-- and not done in passing to a whole directory.
+test('stage_all and unstage_all: a conflict anywhere refuses the directory', function()
+  local entries = {
+    entry({ path = 'd/a.txt', worktree_status = 'M', index_status = 'M' }),
+    entry({ path = 'd/b.txt', index_status = 'U', worktree_status = 'U', conflicted = true }),
+  }
+  local why = 'd/ has an unresolved conflict in d/b.txt; resolve it first'
+  eq({ nil, why }, { stage.stage_all(entries, 'd/') })
+  eq({ nil, why }, { stage.unstage_all(entries, true, 'd/') })
+end)
+
+test('unstage_all: a rename into the directory passes its old name too', function()
+  local action = stage.unstage_all({
+    entry({ path = 'd/a.txt', head_path = 'd/a.txt', index_status = 'M' }),
+    entry({ path = 'd/new.txt', head_path = 'old.txt', index_status = 'R' }),
+    entry({ path = 'd/c.txt', worktree_status = 'M' }),
+  }, true, 'd/')
+  eq({
+    what = 'git restore --staged',
+    args = { 'restore', '--staged', '--pathspec-from-file=-', '--pathspec-file-nul' },
+    stdin = 'd/a.txt\0d/new.txt\0old.txt',
+  }, action)
+end)
+
+test('unstage_all: without a HEAD the entries leave the index instead', function()
+  local action = stage.unstage_all({ entry({ path = 'd/a.txt', index_status = 'A', head_path = nil }) }, false, 'd/')
+  eq({
+    what = 'git rm --cached',
+    args = { 'rm', '--cached', '-f', '-q', '--pathspec-from-file=-', '--pathspec-file-nul' },
+    stdin = 'd/a.txt',
+  }, action)
+end)
+
+test('stages and unstages a directory in a real repository', function()
+  helpers.with_repo(function(repo)
+    repo.write('d/a.txt', { 'one' })
+    repo.write('d/gone.txt', { 'one' })
+    repo.write('old.txt', { 'a', 'b', 'c' })
+    repo.write('out.txt', { 'one' })
+    repo.commit('init')
+    repo.write('d/a.txt', { 'two' })
+    repo.write('d/new.txt', { 'new' })
+    repo.write('out.txt', { 'two' })
+    vim.fn.delete(repo.root .. '/d/gone.txt')
+    repo.git('mv', 'old.txt', 'd/moved.txt')
+
+    eq(nil, stage.run(assert(stage.stage_all(entries_under(repo, 'd/'), 'd/')), repo.root))
+    eq('M  d/a.txt\nD  d/gone.txt\nR  old.txt -> d/moved.txt\nA  d/new.txt\n M out.txt\n', repo.git('status', '--short'))
+
+    eq(nil, stage.run(assert(stage.unstage_all(entries_under(repo, 'd/'), true, 'd/')), repo.root))
+    -- The old name of the rename is back in the index too, not left deleted.
+    eq('', repo.git('diff', '--cached'))
+  end)
+end)
+
+test('unstages a directory before the first commit', function()
+  helpers.with_repo(function(repo)
+    repo.write('d/a.txt', { 'one' })
+    repo.write('d/b.txt', { 'one' })
+    repo.git('add', '-A')
+    repo.write('d/a.txt', { 'one', 'two' })
+
+    eq(nil, stage.run(assert(stage.unstage_all(entries_under(repo, 'd/'), false, 'd/')), repo.root))
+    eq('?? d/\n', repo.git('status', '--short'))
+  end)
+end)

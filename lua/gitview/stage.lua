@@ -5,8 +5,9 @@
 --- the same split the parsers in `git.lua` already follow: deciding what to ask
 --- git is the part worth pinning down.
 ---
---- Only whole files are handled here. Staging part of a file means writing a new
---- index entry, which is a different mechanism entirely.
+--- Only whole files are handled here, one at a time or the files of a directory
+--- together. Staging part of a file means writing a new index entry, which is a
+--- different mechanism entirely.
 local git = require('gitview.git')
 local status = require('gitview.status')
 
@@ -15,6 +16,8 @@ local M = {}
 --- @class gitview.StageAction
 --- @field what string the command, as the user would recognise it in an error
 --- @field args string[] argv after `git`
+--- @field stdin string? fed to the command; the paths, when there may be more of
+---        them than a command line takes
 
 --- The command that stages everything uncommitted in one file.
 ---
@@ -75,11 +78,101 @@ function M.unstage(e, has_head)
   return { what = 'git restore --staged', args = args }
 end
 
+--- Arguments that read NUL-separated paths from stdin, for a directory's files.
+local PATHS_FROM_STDIN = { '--pathspec-from-file=-', '--pathspec-file-nul' }
+
+--- @param paths string[]
+--- @return string
+local function nul_joined(paths)
+  return table.concat(paths, '\0')
+end
+
+--- Why a directory is refused when it holds an unmerged path, or nil.
+---
+--- Unstaging one is refused for the reason `unstage` gives. Staging one is
+--- allowed file by file, where it is how a conflict is marked resolved, but
+--- staging a whole directory would mark it resolved without that file ever
+--- having been looked at.
+--- @param entries gitview.StatusEntry[]
+--- @param name string what to call the directory
+--- @return string?
+local function refused_for_conflict(entries, name)
+  for _, e in ipairs(entries) do
+    if e.conflicted then
+      return ('%s has an unresolved conflict in %s; resolve it first'):format(name, e.path)
+    end
+  end
+  return nil
+end
+
+--- The command that stages everything uncommitted in a directory.
+---
+--- The paths are the entries' own rather than the directory's, so that the
+--- same rules as `stage` apply file by file.
+---
+--- @param entries gitview.StatusEntry[] the files in the directory
+--- @param name string what to call the directory
+--- @return gitview.StageAction? action
+--- @return string? why nothing to do, phrased for the user
+function M.stage_all(entries, name)
+  local why = refused_for_conflict(entries, name)
+  if why then
+    return nil, why
+  end
+  local paths = {}
+  for _, e in ipairs(entries) do
+    if status.has_unstaged(e) then
+      paths[#paths + 1] = e.path
+    end
+  end
+  if #paths == 0 then
+    return nil, ('nothing to stage in %s'):format(name)
+  end
+  return { what = 'git add', args = vim.list_extend({ 'add' }, PATHS_FROM_STDIN), stdin = nul_joined(paths) }
+end
+
+--- The command that takes a directory's staged changes back out of the index.
+---
+--- As with `unstage`, a rename takes both of its names. Naming the directory
+--- instead would miss the old name of a file renamed into it from elsewhere,
+--- leaving that path deleted in the index.
+---
+--- @param entries gitview.StatusEntry[] the files in the directory
+--- @param has_head boolean whether the repository has a commit
+--- @param name string what to call the directory
+--- @return gitview.StageAction? action
+--- @return string? why nothing to do, phrased for the user
+function M.unstage_all(entries, has_head, name)
+  local why = refused_for_conflict(entries, name)
+  if why then
+    return nil, why
+  end
+  local paths = {}
+  for _, e in ipairs(entries) do
+    if status.has_staged(e) then
+      paths[#paths + 1] = e.path
+      if has_head and e.head_path and e.head_path ~= e.path then
+        paths[#paths + 1] = e.head_path
+      end
+    end
+  end
+  if #paths == 0 then
+    return nil, ('nothing to unstage in %s'):format(name)
+  end
+  if not has_head then
+    local args = vim.list_extend({ 'rm', '--cached', '-f', '-q' }, PATHS_FROM_STDIN)
+    return { what = 'git rm --cached', args = args, stdin = nul_joined(paths) }
+  end
+  local args = vim.list_extend({ 'restore', '--staged' }, PATHS_FROM_STDIN)
+  return { what = 'git restore --staged', args = args, stdin = nul_joined(paths) }
+end
+
 --- @param action gitview.StageAction
 --- @param root string repository root
 --- @return gitview.GitError? err
 function M.run(action, root)
-  local res = git.run(vim.list_extend({ 'git' }, action.args), root)
+  local opts = action.stdin and { stdin = action.stdin } or nil
+  local res = git.run(vim.list_extend({ 'git' }, action.args), root, opts)
   if res.ok then
     return nil
   end
