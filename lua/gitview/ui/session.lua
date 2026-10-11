@@ -1628,7 +1628,7 @@ local function apply_to_rows(s, op, first, last)
   -- contents to write them into are read for one file. Of the views of many
   -- files, only a directory's sits among the files that can be staged by row.
   if target and target.kind == 'dir' then
-    util.info("lines can be staged in a single file's diff; s and u on the directory row take all of its files")
+    util.info("lines can be staged only in a single file's diff; the directory's row in the list takes all of its files")
     return
   end
   if wait_for_read(s) then
