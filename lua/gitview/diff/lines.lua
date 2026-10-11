@@ -4,7 +4,8 @@ local worddiff = require('gitview.diff.worddiff')
 local M = {}
 
 --- A line of the rendered buffer. `context`, `add` and `del` carry source text
---- and are the only kinds with a place in one of the two versions; `file` and
+--- and are the only kinds with a place in one of the two versions, as is
+--- `conflict`, a line of an unmerged file between its conflict markers; `file` and
 --- `blank` are structural lines the view inserts, `subject`, `author`, `body`
 --- and `stat` make up a commit's header, and `notice` stands where the diff
 --- will be once it is read. None of those carry line numbers or a
@@ -12,7 +13,9 @@ local M = {}
 ---
 --- @class gitview.Line
 --- @field text string source text without any gutter
---- @field kind 'context'|'add'|'del'|'file'|'blank'|'subject'|'author'|'body'|'stat'|'notice'|'skipped'
+--- @field kind 'context'|'add'|'del'|'conflict'|'file'|'blank'|'subject'|'author'|'body'|'stat'|'notice'|'skipped'
+--- @field part 'marker'|'ours'|'base'|'theirs'? which part of a conflict a
+---       `conflict` line is; see gitview.diff.conflict
 --- @field byline string? a commit's author line only: who wrote it and how long
 ---       ago, said in brief for the header folded into that line
 --- @field old_lnum integer? 1-based line number in the old version
