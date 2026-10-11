@@ -18,6 +18,8 @@ local M = {}
 --- @field old_lines string[]
 --- @field new_lines string[]
 --- @field index_lines string[]? given only for a mixed view; see gitview.diff.mixed
+--- @field conflicted true? an unmerged file, shown as `new_lines` has it rather
+---       than as a diff; see gitview.diff.conflict
 
 --- The working tree's version of a file: the file on disk, never a buffer.
 ---
@@ -71,14 +73,12 @@ end
 
 --- @class gitview.Skipped paths left out of a view, by why they were
 --- @field binary string[]
---- @field conflicted string[] unmerged paths, which have no index version to
----        build a mixed view's middle from
 
 --- A `Skipped` with every group empty: what the error paths report, and what
 --- `partition_showable` starts from.
 --- @return gitview.Skipped
 local function no_skipped()
-  return { binary = {}, conflicted = {} }
+  return { binary = {} }
 end
 
 --- Split a change list into the files that can be shown and those that cannot.
@@ -185,8 +185,8 @@ end
 --- the first two, a staged deletion has no index version, and a file deleted
 --- from the working tree has no third.
 ---
---- @param entries gitview.StatusEntry[] neither binary nor unmerged; those have
----        nothing to read
+--- @param entries gitview.StatusEntry[] neither binary nor unmerged; the first
+---        have nothing to read, and the second no index version at stage 0
 --- @param root string repository root
 --- @return gitview.Source[]
 local function sources_of(entries, root)
@@ -226,32 +226,65 @@ local function sources_of(entries, root)
   return sources
 end
 
---- Every entry's three versions, for one view of everything uncommitted.
+--- An unmerged entry, read from the working tree alone.
+---
+--- Its index holds the merge stages and no stage 0, so there is no middle for a
+--- mixed view, and HEAD has nothing to say about how the merge went. What the
+--- working tree holds, conflict markers and all, is what is left to resolve. A
+--- path deleted from it, as by a conflict that both sides deleted, is empty.
+--- @param entry gitview.StatusEntry
+--- @param root string repository root
+--- @return gitview.Source
+local function conflict_source(entry, root)
+  local path = vim.fs.joinpath(root, entry.path)
+  return {
+    path = path,
+    label = status.label(entry),
+    ft = M.filetype_of(path),
+    old_lines = {},
+    new_lines = M.working_lines(path),
+    conflicted = true,
+  }
+end
+
+--- Every entry's versions, for one view of everything uncommitted: three for
+--- most, and the working tree's alone for an unmerged one. The sources are in
+--- the order of `entries`.
 --- @param entries gitview.StatusEntry[]
 --- @param root string repository root
 --- @return gitview.Source[] sources
 --- @return gitview.Skipped skipped
 function M.for_entries(entries, root)
   local showable, skipped = partition_showable(entries)
-  local wanted = {}
+  -- The unmerged ones are read in place, and the slots of the rest filled in
+  -- from the one batch they are read in.
+  local sources, wanted, slots = {}, {}, {}
   for _, e in ipairs(showable) do
     if e.conflicted then
-      skipped.conflicted[#skipped.conflicted + 1] = e.path
+      sources[#sources + 1] = conflict_source(e, root)
     else
       wanted[#wanted + 1] = e
+      sources[#sources + 1] = false
+      slots[#wanted] = #sources
     end
   end
-  return sources_of(wanted, root), skipped
+  for i, src in ipairs(sources_of(wanted, root)) do
+    sources[slots[i]] = src
+  end
+  return sources, skipped
 end
 
---- One entry's three versions, for a view showing a single file.
+--- One entry's versions, for a view showing a single file. As in `for_entries`,
+--- an unmerged entry has only the working tree's.
 --- @param entry gitview.StatusEntry
 --- @param root string repository root
---- @return gitview.Source? source nil when there is nothing to read: a binary
----         file, or an unmerged one, whose index version is not at stage 0
+--- @return gitview.Source? source nil for a binary file, which has nothing to read
 function M.for_entry(entry, root)
-  if entry.binary or entry.conflicted then
+  if entry.binary then
     return nil
+  end
+  if entry.conflicted then
+    return conflict_source(entry, root)
   end
   return sources_of({ entry }, root)[1]
 end

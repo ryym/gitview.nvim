@@ -30,8 +30,9 @@ local UNMERGED = 'U'
 --- @field index_status string one character, as `git status --short` prints X
 --- @field worktree_status string one character, as it prints Y
 --- @field binary boolean no diff can be shown
---- @field conflicted boolean an unresolved merge; no diff can be shown either,
----        and writing to the index would discard the merge stages
+--- @field conflicted boolean an unresolved merge, shown as its working tree has
+---        it rather than as a diff. Writing to the index would discard the
+---        merge stages.
 
 --- Build the entries from three listings.
 ---

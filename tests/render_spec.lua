@@ -641,3 +641,48 @@ test('a view replaced before its syntax is filled in leaves nothing behind', fun
   end
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
+
+-- A marker is no code in any language, and a parser makes an error of it. The
+-- lines between them are code, broken up as it is.
+test('a conflict colors its code but not its markers', function()
+  local view = assert(require('gitview.diff.view').build({
+    {
+      path = '/tmp/c.lua',
+      label = 'c.lua',
+      ft = 'lua',
+      old_lines = {},
+      new_lines = {
+        '<<<<<<< HEAD',
+        'local a = "ours"',
+        '=======',
+        'local a = "theirs"',
+        '>>>>>>> other',
+      },
+      conflicted = true,
+    },
+  }, 'HEAD', 3, { algorithm = 'histogram' }))
+  local buf = render.render(view)
+  for row = 1, #view.lines - 1 do
+    local l = view.lines[row + 1]
+    local n = #marks(buf, 'gitview.syntax', row)
+    if l.part == 'marker' then
+      eq(0, n, 'marker row ' .. row)
+    else
+      assert(n > 0, 'no syntax on row ' .. row)
+    end
+  end
+  local groups = {}
+  for row = 1, #view.lines - 1 do
+    for _, m in ipairs(marks(buf, 'gitview.diff', row)) do
+      groups[#groups + 1] = m[4].hl_group
+    end
+  end
+  eq({
+    'GitViewConflictMarker',
+    'GitViewConflictOurs',
+    'GitViewConflictMarker',
+    'GitViewConflictTheirs',
+    'GitViewConflictMarker',
+  }, groups)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)

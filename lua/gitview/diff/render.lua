@@ -32,6 +32,8 @@ end
 --- @field index_buf integer? ghost buffer holding the index version, mixed views only
 --- @field lang string language for highlight collection
 --- @field row integer 1-based row of this file's header line
+--- @field conflicts integer? how many conflicts an unmerged file has, which its
+---       header shows in place of what it adds and deletes
 
 --- @class gitview.View
 --- @field lines gitview.Line[]
@@ -106,6 +108,24 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewStagedDeleteText', scale(del, 0.9))
   set('GitViewStagedAddBar', { link = 'Added' })
   set('GitViewStagedDeleteBar', { link = 'Removed' })
+  -- The two sides of a conflict are equals, so neither takes the add or the
+  -- delete color, which would read as one side replacing the other. Each has a
+  -- hue of its own mixed into the background, about as faint as a staged
+  -- change; their syntax is replayed over it, and the background is what tells
+  -- them from the code around them. The markers are stronger, so that where
+  -- each side ends stands out.
+  local dark = vim.o.background ~= 'light'
+  --- @param rgb integer
+  --- @param factor number
+  --- @param cterm integer[] for a dark and a light background
+  local function tint(rgb, factor, cterm)
+    return scale({ bg = rgb, ctermbg = cterm[dark and 1 or 2] }, factor)
+  end
+  set('GitViewConflictOurs', tint(0x4c8bf5, 0.2, { 17, 189 }))
+  set('GitViewConflictTheirs', tint(0xb35ee8, 0.2, { 53, 225 }))
+  set('GitViewConflictBase', tint(0x9a9a9a, 0.2, { 236, 254 }))
+  set('GitViewConflictMarker', tint(0xe0a020, 0.35, { 58, 229 }))
+  set('GitViewConflictCount', { link = 'DiagnosticWarn' })
   set('GitViewOldLnum', { link = 'LineNr' })
   set('GitViewNewLnum', { link = 'LineNr' })
   set('GitViewAddLnum', { link = 'Added' })
@@ -137,6 +157,7 @@ local highlights = util.highlights('gitview.highlights', function(set)
   end
   set('GitViewFileHeaderStatAdd', on_band('GitViewStatAdd'))
   set('GitViewFileHeaderStatDelete', on_band('GitViewStatDelete'))
+  set('GitViewFileHeaderConflictCount', on_band('GitViewConflictCount'))
 end)
 
 M.setup_highlights = highlights.apply
@@ -158,10 +179,19 @@ local TEXT_HL = { add = 'GitViewAddText', del = 'GitViewDeleteText' }
 local STAT_HL = { ['%++'] = 'GitViewStatAdd', ['%-+'] = 'GitViewStatDelete' }
 local STAGED_LINE_HL = { add = 'GitViewStagedAdd', del = 'GitViewStagedDelete' }
 local STAGED_TEXT_HL = { add = 'GitViewStagedAddText', del = 'GitViewStagedDeleteText' }
+local CONFLICT_HL = {
+  marker = 'GitViewConflictMarker',
+  ours = 'GitViewConflictOurs',
+  base = 'GitViewConflictBase',
+  theirs = 'GitViewConflictTheirs',
+}
 
 --- @param l gitview.Line
 --- @return string?
 local function line_hl_of(l)
+  if l.kind == 'conflict' then
+    return CONFLICT_HL[l.part]
+  end
   return l.stage == 'staged' and STAGED_LINE_HL[l.kind] or LINE_HL[l.kind]
 end
 
@@ -320,7 +350,7 @@ local function rows_by_file(view)
     folded[i] = { file = i, rows = {}, want = { old = {}, new = {}, index = {} } }
   end
   for row, l in ipairs(view.lines) do
-    if dlib.source_kinds[l.kind] then
+    if dlib.has_syntax(l) then
       local job = (l.folded and folded or open)[l.file]
       table.insert(job.rows, row)
       job.want[l.side][l.row] = true
@@ -705,30 +735,22 @@ local function commit_size(view)
   }
 end
 
---- A gutter ending with how many lines are added and deleted, right before the
---- text, where the eye already is and where a long line cannot run into it. The
---- count is at most `+9999 -9999`, which is as wide as the gutter leaves room
---- for, and `fill` pads it out to the gutter's width on its left.
---- @param add integer
---- @param del integer
+--- A gutter ending with `counts`, right before the text, where the eye already
+--- is and where a long line cannot run into it. The counts are at most as wide
+--- as `+9999 -9999`, which is what the gutter leaves room for, and `fill` pads
+--- them out to the gutter's width on their left.
+--- @param counts {text: string, group: string}[]
 --- @param fill fun(cells: integer): string
---- @param groups {add: string, del: string}
 --- @return string
-local function count_gutter(add, del, fill, groups)
+local function counts_gutter(counts, fill)
   -- the last cell is the space that parts the gutter from the text
   local width = #BLANK_GUTTER - 1
-  local parts, count = {}, {}
-  if add > 0 then
-    local text = '+' .. abbrev_count(add)
-    parts[#parts + 1] = '%#' .. groups.add .. '#' .. text
-    count[#count + 1] = text
+  local parts, texts = {}, {}
+  for _, c in ipairs(counts) do
+    parts[#parts + 1] = '%#' .. c.group .. '#' .. c.text
+    texts[#texts + 1] = c.text
   end
-  if del > 0 then
-    local text = '-' .. abbrev_count(del)
-    parts[#parts + 1] = '%#' .. groups.del .. '#' .. text
-    count[#count + 1] = text
-  end
-  local len = #table.concat(count, ' ')
+  local len = #table.concat(texts, ' ')
   local pad, gap = width, ''
   if len > 0 then
     -- a space parts the padding from the count, if there is room left for one
@@ -738,6 +760,23 @@ local function count_gutter(add, del, fill, groups)
   return fill(pad) .. gap .. table.concat(parts, ' ') .. ' '
 end
 
+--- A gutter ending with how many lines are added and deleted.
+--- @param add integer
+--- @param del integer
+--- @param fill fun(cells: integer): string
+--- @param groups {add: string, del: string}
+--- @return string
+local function count_gutter(add, del, fill, groups)
+  local counts = {}
+  if add > 0 then
+    counts[#counts + 1] = { text = '+' .. abbrev_count(add), group = groups.add }
+  end
+  if del > 0 then
+    counts[#counts + 1] = { text = '-' .. abbrev_count(del), group = groups.del }
+  end
+  return counts_gutter(counts, fill)
+end
+
 --- @param cells integer
 --- @return string
 local function band_fill(cells)
@@ -745,8 +784,9 @@ local function band_fill(cells)
 end
 
 --- What the gutter of each file's header shows, by row: the band's background,
---- and how many lines the file adds and deletes. Worked out once per view, as
---- 'statuscolumn' asks for it on every redraw.
+--- and how many lines the file adds and deletes, or for an unmerged file, how
+--- many conflicts it has. Worked out once per view, as 'statuscolumn' asks for
+--- it on every redraw.
 --- @type table<gitview.View, table<integer, string>>
 local header_gutter_cache = setmetatable({}, { __mode = 'k' })
 
@@ -759,10 +799,17 @@ local function header_gutters(view)
   end
   local gutters = {}
   for i, s in ipairs(file_stats(view)) do
-    gutters[view.files[i].row] = count_gutter(s.add, s.del, band_fill, {
-      add = 'GitViewFileHeaderStatAdd',
-      del = 'GitViewFileHeaderStatDelete',
-    })
+    local f = view.files[i]
+    if f.conflicts then
+      gutters[f.row] = counts_gutter({
+        { text = '!' .. abbrev_count(f.conflicts), group = 'GitViewFileHeaderConflictCount' },
+      }, band_fill)
+    else
+      gutters[f.row] = count_gutter(s.add, s.del, band_fill, {
+        add = 'GitViewFileHeaderStatAdd',
+        del = 'GitViewFileHeaderStatDelete',
+      })
+    end
   end
   header_gutter_cache[view] = gutters
   return gutters

@@ -495,9 +495,9 @@ local function read_entries(s, entries)
   end
   local sources, skipped = perf.measure('source', source.for_entries, entries, s.root)
   return function()
-    local view, unchanged =
+    local view, left_out =
       perf.measure('build', vlib.build, sources, REV, config.values.context, diff_opts(s))
-    view = vlib.list_skipped(view, REV, skipped, unchanged, no_view_reason(s))
+    view = vlib.list_skipped(view, REV, skipped, left_out, no_view_reason(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(REV, no_view_reason(s)))
       return
@@ -549,9 +549,9 @@ local function read_commit(s, target)
     and perf.measure('detail', commit_detail, s, assert(commit))
 
   return function()
-    local view, unchanged =
+    local view, left_out =
       perf.measure('build', vlib.build, read.sources, label, config.values.context, diff_opts(s))
-    view = vlib.list_skipped(view, label, read.skipped, unchanged, no_view_reason(s))
+    view = vlib.list_skipped(view, label, read.skipped, left_out, no_view_reason(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
       return
@@ -582,10 +582,7 @@ local function range_read_in(read, root, dir)
   local function under(path)
     return path:sub(1, #rel) == rel
   end
-  local skipped = {
-    binary = vim.tbl_filter(under, read.skipped.binary),
-    conflicted = vim.tbl_filter(under, read.skipped.conflicted),
-  }
+  local skipped = { binary = vim.tbl_filter(under, read.skipped.binary) }
   return sources, skipped
 end
 
@@ -613,9 +610,9 @@ local function read_scope_dir(s, target)
   end
   local sources, skipped = range_read_in(read, s.root, assert(target.path))
   return function()
-    local view, unchanged =
+    local view, left_out =
       perf.measure('build', vlib.build, sources, scope.label, config.values.context, diff_opts(s))
-    view = vlib.list_skipped(view, scope.label, skipped, unchanged, no_view_reason(s))
+    view = vlib.list_skipped(view, scope.label, skipped, left_out, no_view_reason(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(scope.label, no_view_reason(s)))
       return
@@ -948,19 +945,18 @@ function M.show_selected(s, keep_unchanged, span)
     render.notice(s.diff_buf, ('%s   (binary file)'):format(status.label(entry)))
     return
   end
-  -- An unmerged path holds the three merge stages and no stage 0, so there is no
-  -- index version to build the middle of a mixed view from.
-  if entry.conflicted then
-    render.notice(s.diff_buf, ('%s   (unresolved conflict)'):format(status.label(entry)))
-    return
-  end
-
   local src = perf.measure('source', source.for_entry, entry, s.root)
   local view = src
     and perf.measure('build', vlib.build, { src }, REV, config.values.context, diff_opts(s))
   if not view then
-    -- a pure rename or a mode change: a real change with no lines to show
-    render.notice(s.diff_buf, ('%s   %s'):format(status.label(entry), no_view_reason(s)))
+    -- A pure rename or a mode change is a real change with no lines to show. An
+    -- unmerged file with no conflict marked out is still unresolved until it is
+    -- added, which `s` in the list does.
+    local reason = no_view_reason(s)
+    if entry.conflicted then
+      reason = '(unresolved conflict with no markers; s marks it resolved)'
+    end
+    render.notice(s.diff_buf, ('%s   %s'):format(status.label(entry), reason))
     return
   end
   view.note = note_of(s)

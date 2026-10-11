@@ -4,8 +4,8 @@ local worddiff = require('gitview.diff.worddiff')
 local M = {}
 
 --- A line of the rendered buffer. `context`, `add` and `del` carry source text
---- and are the only kinds with a place in one of the two versions, as is
---- `conflict`, a line of an unmerged file between its conflict markers; `file` and
+--- and are the only kinds with a place in one of the versions, with `conflict`
+--- for a line of an unmerged file that is part of a conflict; `file` and
 --- `blank` are structural lines the view inserts, `subject`, `author`, `body`
 --- and `stat` make up a commit's header, and `notice` stands where the diff
 --- will be once it is read. None of those carry line numbers or a
@@ -34,9 +34,18 @@ local M = {}
 ---       in the index's line numbers, which neither `old_lnum` nor `new_lnum`
 ---       gives. `side == 'index'` tells the two meanings apart.
 
---- Kinds that stand for a line of one of the two versions.
+--- Kinds that stand for a line of one of the versions, and so have a number in
+--- the gutter.
 --- @type table<string, true>
-M.source_kinds = { context = true, add = true, del = true }
+M.source_kinds = { context = true, add = true, del = true, conflict = true }
+
+--- Whether a line takes the syntax of the version it comes from. A conflict's
+--- markers are no code in any language, and would only be colored as errors.
+--- @param l gitview.Line
+--- @return boolean
+function M.has_syntax(l)
+  return M.source_kinds[l.kind] == true and l.part ~= 'marker'
+end
 
 --- `linematch` is off by default. It is a Neovim-only post-pass that re-pairs
 --- lines inside a hunk and splits the hunk accordingly, which makes the result

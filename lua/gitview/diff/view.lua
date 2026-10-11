@@ -1,9 +1,17 @@
 --- Turning sources into the one structure a diff buffer is drawn from.
+local conflict = require('gitview.diff.conflict')
 local dlib = require('gitview.diff.lines')
 local hl = require('gitview.diff.highlight')
 local mixed = require('gitview.diff.mixed')
 
 local M = {}
+
+--- Sources a view has no lines for, by label.
+--- @class gitview.LeftOut
+--- @field unchanged string[] no textual difference, such as a pure rename or a
+---        mode change
+--- @field unmarked string[] unmerged, with no conflict marked out: one side
+---        deleted the file, or the markers were removed by hand
 
 --- Concatenate the diffs of several sources into one view.
 ---
@@ -11,23 +19,27 @@ local M = {}
 --- and its filetype. The ghost buffers it creates are the view's only resource,
 --- and `dispose` is what frees them.
 ---
+--- An unmerged source is shown as its working tree has it rather than as a
+--- diff, with each conflict where a hunk would be.
+---
 --- @param sources gitview.Source[]
 --- @param rev string
 --- @param context integer
 --- @param diff_opts {algorithm:string, linematch:integer}
 --- @return gitview.View? view nil when nothing differs
---- @return string[] unchanged labels of sources with no textual difference,
----         such as a pure rename or a mode change
+--- @return gitview.LeftOut left_out
 function M.build(sources, rev, context, diff_opts)
   local lines, files, hunk_rows, file_rows = {}, {}, {}, {}
-  local unchanged = {}
+  local left_out = { unchanged = {}, unmarked = {} } --- @type gitview.LeftOut
   -- A third version is what makes a view mixed, so the sources say so and the
   -- caller has nothing to add afterwards.
   local is_mixed = false
 
   for _, src in ipairs(sources) do
     local flines, fhunks
-    if src.index_lines then
+    if src.conflicted then
+      flines, fhunks = conflict.build(src.new_lines, context)
+    elseif src.index_lines then
       is_mixed = true
       flines, fhunks =
         mixed.build(src.old_lines, src.index_lines, src.new_lines, context, diff_opts)
@@ -38,7 +50,7 @@ function M.build(sources, rev, context, diff_opts)
       end
     end
     if not flines then
-      unchanged[#unchanged + 1] = src.label
+      table.insert(src.conflicted and left_out.unmarked or left_out.unchanged, src.label)
     else
       local ft = src.ft
       local lang = vim.treesitter.language.get_lang(ft) or ft
@@ -58,6 +70,7 @@ function M.build(sources, rev, context, diff_opts)
         index_buf = src.index_lines and hl.ghost_buffer(src.index_lines, ft, lang),
         lang = lang,
         row = offset,
+        conflicts = src.conflicted and #fhunks or nil,
       }
       file_rows[#file_rows + 1] = offset
       local index = #files
@@ -73,7 +86,7 @@ function M.build(sources, rev, context, diff_opts)
   end
 
   if #files == 0 then
-    return nil, unchanged
+    return nil, left_out
   end
   return {
     lines = lines,
@@ -82,7 +95,7 @@ function M.build(sources, rev, context, diff_opts)
     file_rows = file_rows,
     rev = rev,
     mixed = is_mixed or nil,
-  }, unchanged
+  }, left_out
 end
 
 --- Who wrote a commit and how long ago, short enough to share a line with the
@@ -220,17 +233,18 @@ function M.dispose(view)
 end
 
 --- The files a view leaves out, a line each, and why: the binary files, the
---- conflicted ones, and those with no textual difference. Dropping any silently
---- would hide a real change: a pure rename or a mode change produces no hunks,
---- and a binary file has no versions that can be diffed.
+--- unmerged ones with no conflict to show, and those with no textual
+--- difference. Dropping any silently would hide a real change: a pure rename or
+--- a mode change produces no hunks, a binary file has no versions that can be
+--- diffed, and an unmerged file is unresolved whatever its contents.
 ---
 --- The reasons line up in one column after the names, as the stat's bars do.
 --- @param skipped gitview.Skipped
---- @param unchanged string[] labels, from `build`
+--- @param left_out gitview.LeftOut from `build`
 --- @param unchanged_reason string what to call a change with nothing to show:
 ---        with whitespace ignored, "no textual change" would be a lie
 --- @return gitview.Line[]
-local function skipped_lines(skipped, unchanged, unchanged_reason)
+local function skipped_lines(skipped, left_out, unchanged_reason)
   local rows = {}
   local function add(labels, reason)
     for _, label in ipairs(labels) do
@@ -238,8 +252,8 @@ local function skipped_lines(skipped, unchanged, unchanged_reason)
     end
   end
   add(skipped.binary, '(binary file)')
-  add(skipped.conflicted, '(unresolved conflict)')
-  add(unchanged, unchanged_reason)
+  add(left_out.unmarked, '(unresolved conflict with no markers)')
+  add(left_out.unchanged, unchanged_reason)
 
   local width = 0
   for _, r in ipairs(rows) do
@@ -262,11 +276,11 @@ end
 --- @param view gitview.View? from `build`
 --- @param rev string
 --- @param skipped gitview.Skipped
---- @param unchanged string[] labels, from `build`
+--- @param left_out gitview.LeftOut from `build`
 --- @param unchanged_reason string see `skipped_lines`
 --- @return gitview.View? view nil when there is neither a file nor a skipped one
-function M.list_skipped(view, rev, skipped, unchanged, unchanged_reason)
-  local lines = skipped_lines(skipped, unchanged, unchanged_reason)
+function M.list_skipped(view, rev, skipped, left_out, unchanged_reason)
+  local lines = skipped_lines(skipped, left_out, unchanged_reason)
   if #lines == 0 then
     return view
   end

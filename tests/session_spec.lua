@@ -974,20 +974,15 @@ local function mid_merge(repo)
   repo.git('checkout', '-q', '-')
   repo.write('fight.txt', { 'ours' })
   repo.commit('ours')
-  -- The merge is meant to fail, so its exit code is not checked.
-  vim.system({ 'git', 'merge', 'other' }, { cwd = repo.root, text = true }):wait()
+  -- The merge is meant to fail, so its exit code is not checked. The style is
+  -- fixed so that a `diff3` in the user's config adds no base to the markers.
+  vim
+    .system(
+      { 'git', '-c', 'merge.conflictStyle=merge', 'merge', 'other' },
+      { cwd = repo.root, text = true }
+    )
+    :wait()
 end
-
-test('session: a conflicted file says so instead of showing a diff', function()
-  with_session(mid_merge, function(s)
-    eq({ 'fight.txt' }, rows(s))
-    eq(true, s.entries[1].conflicted)
-    local text = table.concat(diff_rows(s), '\n')
-    assert(text:find('unresolved conflict', 1, true), text)
-    -- Nothing was drawn, so nothing can be staged from it by row.
-    eq(nil, s.index_lines)
-  end)
-end)
 
 -- Writing a stage-0 entry over a conflict's merge stages discards them and git
 -- reports no error, so the row-level keys have to refuse outright.
@@ -3045,5 +3040,69 @@ test('session: a tree lists the files in the order the working-tree diff does', 
     goto_worktree(s)
     session.show_selected(s)
     eq(listed, view_files(s))
+  end)
+end)
+
+local CONFLICT = { '<<<<<<< HEAD', 'ours', '=======', 'theirs', '>>>>>>> other' }
+
+test('session: a conflicted file is shown as its working tree has it', function()
+  with_session(mid_merge, function(s)
+    eq({ 'fight.txt' }, rows(s))
+    eq(true, s.entries[1].conflicted)
+    eq(vim.list_extend({ 'fight.txt' }, CONFLICT), diff_rows(s))
+    -- the header counts conflicts where it would count lines
+    local header = diff_gutter(s, 1)
+    assert(header:find('%#GitViewFileHeaderConflictCount#!1 ', 1, true), header)
+    -- only the working tree's line numbers, markers included
+    eq('     %#GitViewNewLnum#   1   ', diff_gutter(s, 2))
+    eq('     %#GitViewNewLnum#   4   ', diff_gutter(s, 5))
+    -- The index has no stage 0 to stage rows into.
+    eq(nil, s.index_lines)
+  end)
+end)
+
+test('session: `gf` in a conflict opens the file at that line', function()
+  with_session(mid_merge, function(s)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'theirs', 'conflict'), 0 })
+    eq({ 'fight.txt', 4 }, { press_gf(s, s.diff_win) })
+  end)
+end)
+
+--- Leave the repository mid-merge with a file one side deleted and the other
+--- changed, which leaves the changed side in the working tree with no markers.
+--- @param repo gitview.TestRepo
+local function mid_merge_deleted(repo)
+  repo.write('gone.txt', { 'base' })
+  repo.commit('init')
+  repo.git('checkout', '-q', '-b', 'other')
+  repo.git('rm', '-q', 'gone.txt')
+  repo.commit('deleted')
+  repo.git('checkout', '-q', '-')
+  repo.write('gone.txt', { 'ours' })
+  repo.commit('ours')
+  vim.system({ 'git', 'merge', 'other' }, { cwd = repo.root, text = true }):wait()
+end
+
+test('session: a conflict with no markers says how to resolve it', function()
+  with_session(mid_merge_deleted, function(s)
+    eq(true, s.entries[1].conflicted)
+    eq({ 'gone.txt   (unresolved conflict with no markers; s marks it resolved)' }, diff_rows(s))
+  end)
+end)
+
+test('session: a directory shows its conflicted files among the others', function()
+  with_tree_session(function(repo)
+    repo.write('calm.txt', { 'one' })
+    mid_merge(repo)
+    repo.write('calm.txt', { 'two' })
+  end, function(s)
+    files_cursor(s, 1)
+    wait_files(s, { 'calm.txt', 'fight.txt' })
+    local view = assert(require('gitview.diff.render').view_of(s.diff_buf))
+    eq(1, view.files[2].conflicts)
+    local rows_ = diff_rows(s)
+    eq(CONFLICT, vim.list_slice(rows_, #rows_ - 4))
+    -- `]c` stops at the conflict as at a hunk
+    eq(view.files[2].row + 1, view.hunk_rows[#view.hunk_rows])
   end)
 end)
