@@ -171,8 +171,8 @@ notice that would hide which files they were.
 
 Three keys in the diff act on the session rather than on the buffer: `q` gives
 up the whole session, `gf` opens the file as described below, and `]f` moves
-the list's cursor — except in a commit's or the working tree's diff, which holds
-every file and scrolls to the next one's header instead. `diff/keymap` takes
+the list's cursor — except in the diff of a commit, the working tree or a
+directory, which holds many files and scrolls to the next one's header instead. `diff/keymap` takes
 those as callbacks so that it does not depend on the session.
 
 #### Opening a file
@@ -431,9 +431,9 @@ the buffer stands for it and every row remains a file.
   pane, since the row already names what is being shown.
 
 `]f` and `[f` mean what the view is shaped like rather than where they are
-pressed. A whole commit is many files in one buffer, so they scroll within it; a
-single file — uncommitted or from a commit — is one of many rows, so they move
-the list's cursor.
+pressed. A whole commit or a directory is many files in one buffer, so they
+scroll within it; a single file — uncommitted or from a commit — is one of many
+rows, so they move the list's cursor.
 
 ### Ignoring whitespace
 

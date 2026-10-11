@@ -2866,16 +2866,21 @@ test('session: `]f` and `[f` pass over directory rows', function()
   end)
 end)
 
--- A directory's row stands just above its first file, so that is the file
--- below and the one before it is the file above.
-test('session: `]f` and `[f` from a directory go to the files either side', function()
+-- A directory's diff is many files in one buffer, as a commit's is, so the keys
+-- move between them there rather than moving the list.
+test('session: `]f` and `[f` in a directory\'s diff move between its files', function()
   with_tree_session(nested, function(s)
     files_cursor(s, 3)
+    wait_files(s, { 'src/a.lua', 'src/b.lua' })
+    local files = diff_view(s).files
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.api.nvim_win_set_cursor(s.diff_win, { files[1].row, 0 })
     press_diff(s, ']f')
-    eq({ kind = 'file', index = 2 }, s.selected)
-    files_cursor(s, 3)
+    eq(files[2].row, vim.api.nvim_win_get_cursor(s.diff_win)[1])
     press_diff(s, '[f')
-    eq({ kind = 'file', index = 1 }, s.selected)
+    eq(files[1].row, vim.api.nvim_win_get_cursor(s.diff_win)[1])
+    eq({ kind = 'dir', index = 2, path = 'src' }, s.selected)
+    eq(3, vim.api.nvim_win_get_cursor(s.files_win)[1])
   end)
 end)
 

@@ -1813,22 +1813,17 @@ local function set_diff_keymaps(s)
     end,
     goto_file = function(dir)
       local t = s.selected
-      -- A whole commit's diff is every file it touched, in one buffer, so
-      -- moving between files there means scrolling within it rather than moving
-      -- the list's cursor. Every other view holds one file.
-      if t and (t.kind == 'commit' or t.kind == 'worktree') then
+      -- A commit's or a directory's diff is many files in one buffer, so moving
+      -- between files there means scrolling within it rather than moving the
+      -- list's cursor. Every other view holds one file.
+      if shows_many(t) then
         keymap.jump_files(dir)
         return
       end
       -- The focus stays in the diff: the key was pressed while reading it, and
       -- the next file is read there too.
-      local in_scope = t and (t.kind == 'commit_file' or t.kind == 'commit_dir')
-      local kind = in_scope and 'commit_file' or 'file'
-      -- A directory's index is the next file below it, which `]f` goes to
-      -- rather than past.
-      local is_dir = t and (t.kind == 'dir' or t.kind == 'commit_dir')
-      local step = (is_dir and dir > 0) and 0 or dir
-      select_nth(s, kind, (t and t.index or 1) + step)
+      local kind = (t and t.kind == 'commit_file') and 'commit_file' or 'file'
+      select_nth(s, kind, (t and t.index or 1) + dir)
     end,
     open_file = function(path, lnum)
       M.open_file(s, path, lnum)
