@@ -925,12 +925,6 @@ function M.select(s, index)
   select_nth(s, 'file', index)
 end
 
---- What the selection names, in terms that survive a redraw.
----
---- Neither the row nor the index into a list can be used to find the same thing
---- again: the file section changes length, which moves every commit row below
---- it, and a file removed from the list shifts the indices of the rest.
----
 --- The files in a directory, with their indices, in list order.
 --- @generic T: {path:string}
 --- @param files T[]
@@ -949,6 +943,12 @@ local function files_in(files, dir)
   return found, indices
 end
 
+--- What the selection names, in terms that survive a redraw.
+---
+--- Neither the row nor the index into a list can be used to find the same thing
+--- again: the file section changes length, which moves every commit row below
+--- it, and a file removed from the list shifts the indices of the rest.
+---
 --- The reverse of `selection_id` against the lists as they now are.
 --- @param s gitview.Session
 --- @param id gitview.SelectionId?
