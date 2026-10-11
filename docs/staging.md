@@ -273,21 +273,20 @@ MM f.txt                       # no longer UU: the conflict is "resolved"
 `git restore --staged` does the same thing by another route — it succeeds and
 leaves ` M`, with the conflict neither resolved nor still recorded.
 
-So an unmerged path is recognised and nothing writes to its index entry. It is
-also not drawn, which is a separate matter: the view a conflict deserves does not
-exist yet, and
-[architecture.md](architecture.md#a-merge-conflict-has-no-view) records what it
-would take. The notice is a placeholder, not a judgement that there is nothing to
-show.
+So an unmerged path is recognised and nothing writes to its index entry. Its
+view is the working tree with its conflict markers, described in
+[architecture.md](architecture.md#conflict-view), and none of its rows is a
+change that could be staged.
 
 What holds today:
 
 - `status.entries` sets `conflicted` from the `U` status letter, which
   `git diff --diff-filter` documents as "unmerged". Both listings report it, and
   `status.in_index` is false because there is no stage 0.
-- The diff pane draws a notice instead of a view, which also means no rows exist
-  to stage from. `apply_to_rows` checks the flag as well, as a backstop for when
-  a merge view does make such a file renderable.
+- The row-level keys refuse it and say why. The view has no `index_lines` to
+  write rows into, so `apply_to_rows` checks the flag before anything else,
+  where it would otherwise end without a word. `S` and `U` check it too, since
+  no row of the view is a change for them to find.
 - Whole-file `u` is refused, because `git restore --staged` would discard the
   merge.
 - **Whole-file `s` is allowed.** `git add` on an unmerged path marks the conflict
@@ -296,8 +295,8 @@ What holds today:
 
 git tells seven pairs apart — `UU`, `AA`, `DU`, `UD`, `AU`, `UA`, `DD` — by which
 of the three stages the index holds. Only the fact that the path is unmerged is
-recorded, so all of them are listed as `UU`. Reading the stages is what a merge
-view will need anyway, so both are one piece of work.
+recorded, so all of them are listed as `UU`; see
+[architecture.md](architecture.md#the-exact-status-pair).
 
 ### Ignoring whitespace and the rows disagree
 

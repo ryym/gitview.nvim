@@ -48,9 +48,10 @@ its own language.
 - The working tree is read from disk, as git sees it. Unsaved edits in a buffer
   are not part of the diff until they are written.
 - Added, deleted and renamed files are all handled.
-- Binary files, and changes with no textual difference such as a pure rename,
-  have no lines to show. They are listed by name at the top of the diff, below
-  a commit's header, rather than dropped silently.
+- Binary files, changes with no textual difference such as a pure rename, and
+  conflicted files with no conflict markers have no lines to show. They are
+  listed by name at the top of the diff, below a commit's header, rather than
+  dropped silently.
 
 ### Staged and unstaged in one view
 
@@ -94,6 +95,33 @@ because the index differs from both:
 
 How the three versions are merged is described in
 [docs/architecture.md](docs/architecture.md#mixed-view).
+
+### Merge conflicts
+
+A file with an unresolved conflict is shown as the working tree has it, conflict
+markers included, rather than as a diff. It is read-only like any other diff.
+
+- **Only the lines around each conflict are open**, and the rest is folded as
+  unchanged lines are. `]c` and `[c` move between the conflicts.
+- **Each part of a conflict has a background of its own**: ours, theirs, the base
+  that `diff3` and `zdiff3` add, and a stronger one for the markers. Ours and
+  theirs are not drawn as an addition and a deletion, since neither replaces
+  the other.
+- **The gutter has the working tree's line numbers only**, so `gf` opens the file
+  on the line under the cursor, to edit it there.
+- **The file's header counts conflicts** where it would count lines, as `!2`.
+- **Syntax comes from the working tree, markers and all.** The markers themselves
+  are left uncolored. Code inside or just after a conflict can be colored wrongly,
+  since the file with its markers is not valid code.
+
+A conflict is resolved by editing the file and pressing `s` on it in the list,
+which is `git add`. Its lines cannot be staged from the diff, since the index has
+no single version of the file to stage them into. A conflicted file with no
+markers left to show, such as one that one side deleted, says so in place of the
+view.
+
+How the markers are recognised is described in
+[docs/architecture.md](docs/architecture.md#conflict-view).
 
 ### The tab page
 
@@ -324,9 +352,13 @@ The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
 `GitViewStagedAddText`, `GitViewStagedDeleteText`, `GitViewStagedAddBar` and
 `GitViewStagedDeleteBar`.
 
+A conflicted file's lines use `GitViewConflictOurs`, `GitViewConflictTheirs`,
+`GitViewConflictBase` and `GitViewConflictMarker`.
+
 A file's header is painted across the window, gutter included, with
 `GitViewFileHeaderBg`, and its gutter counts with `GitViewFileHeaderStatAdd`
-and `GitViewFileHeaderStatDelete`. A commit's header uses
+and `GitViewFileHeaderStatDelete`, or with `GitViewFileHeaderConflictCount` for
+a conflicted file. A commit's header uses
 `GitViewCommitSubject`, `GitViewCommitAuthor`, `GitViewStatAdd` and
 `GitViewStatDelete`. The files a diff leaves out are listed in `GitViewSkipped`.
 
@@ -337,6 +369,7 @@ The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewCommitSha` colors the shas in the diff's winbar as well.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`,
+the conflict colors to fixed hues blended into the `Normal` background,
 `GitViewFileHeaderBg` to one derived from `CursorLine`, and the rest link to standard groups. All are defined the first time they are
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
@@ -353,12 +386,14 @@ carries configuration, and the colors do not depend on it.
   window is reported through `'winbar'`, so a configuration or plugin that sets
   it for every window hides it. Every file still has its own header line in the
   buffer.
-- **A merge conflict is listed but not shown.** The view it needs is not built
-  yet, so an unmerged file says `(unresolved conflict)` in place of a diff and is
-  listed as `UU` whichever pair git would print. `s` on the whole file resolves it
-  the way `git add` does; everything else is refused, because it would discard the
-  merge. See
-  [docs/architecture.md](docs/architecture.md#a-merge-conflict-has-no-view).
+- **A merge conflict can only be read, not merged.** There are no keys to take
+  one side or the other; the file is edited after `gf`, and marked resolved with
+  `s` on it in the list. It is listed as `UU` whichever pair git would print, and
+  its syntax colors can be off around a conflict. See
+  [docs/architecture.md](docs/architecture.md#a-conflict-is-shown-not-merged).
+- **A range ending at the working tree shows conflict markers as added lines.**
+  `git diff <commit>` reports an unmerged file as an ordinary change, and the
+  markers are in the working tree.
 - **A file with no trailing newline gains one** if part of it is staged. Nothing
   here can represent a missing final newline: a blob is read as a line array and
   written back as one.

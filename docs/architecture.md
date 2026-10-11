@@ -20,6 +20,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `diff/view.lua`      | Assembling sources into a view, and freeing it           |
 | `diff/lines.lua`     | `vim.diff` wrapper, unified line list, del/add pairing  |
 | `diff/mixed.lua`     | Merging HEAD, index and working tree into one line list |
+| `diff/conflict.lua`  | The lines of an unmerged file, by part of a conflict    |
 | `diff/highlight.lua` | Scratch buffers, and collecting highlight segments      |
 | `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
@@ -29,7 +30,8 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 
 The dependency direction is one-way: `init` only opens a session, `source` uses
 `status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
-`git`, `view` uses `lines`, `mixed` and `highlight`, `render` uses `highlight`,
+`git`, `view` uses `lines`, `mixed`, `conflict` and `highlight`, `conflict` uses
+`mixed`, `render` uses `highlight`,
 `worddiff` and `lines`, `git` and `render` use `perf`, and `config`, `util`,
 `tree` and `perf` depend on nothing but Neovim.
 
@@ -155,10 +157,13 @@ or sha — rather than the selection itself, because a refresh can move a file t
 another index while it goes on being the same file.
 
 Each file is read as three versions and shown through `diff/mixed`, so the
-choice between staged and unstaged never has to be made. Three things a view cannot express — a binary file, a change with no
-lines, and nothing selected at all — are drawn by `render.notice`, which drops
-the view along with the text so that the gutter and winbar describe nothing
-rather than what was there before.
+choice between staged and unstaged never has to be made. An unmerged file is
+the exception: it is read from the working tree alone and shown through
+`diff/conflict`; see [Conflict view](#conflict-view). Four things a view cannot
+express — a binary file, a change with no lines, an unmerged file with no
+conflict markers, and nothing selected at all — are drawn by `render.notice`,
+which drops the view along with the text so that the gutter and winbar describe
+nothing rather than what was there before.
 
 A view of many files, a commit's or the working tree's, has the same files to
 leave out, and lists them at its top instead: a line each, naming the file and
@@ -481,11 +486,12 @@ holes. The parts that constrain the rest of the design are:
 - **Whether the repository has a HEAD is a session-level flag**, re-read
   whenever the log is, because it decides which unstaging command is even
   available.
-- **An unmerged file is listed but not drawn.** It has no stage 0 to read a
+- **An unmerged file is never written to by row.** It has no stage 0 to read a
   version from, and writing one over a conflict's three entries reports no error
   and discards them. It is refused everywhere but whole-file `s`, which is
-  `git add` resolving it. The view it needs is a
-  [known gap](#a-merge-conflict-has-no-view).
+  `git add` resolving it. Its view has no `index_lines`, and the row-level keys
+  check for a conflict before anything else, so that they say why rather than
+  doing nothing.
 
 After a change everything is rebuilt from git rather than adjusted in place: the
 status letters, the file's three versions and which of its lines count as staged
@@ -660,7 +666,9 @@ out as a string: the fragment alone carries no such information.
 One row of the rendered buffer.
 
 - `text` — the source line, exactly as it appears in the buffer
-- `kind` — `context`, `add` or `del`
+- `kind` — `context`, `add`, `del` or `conflict`
+- `part` — which part of a conflict a `conflict` line is: `marker`, `ours`,
+  `base` or `theirs`
 - `old_lnum` / `new_lnum` — line numbers in each version; `nil` on the side
   where the line does not exist
 - `side` — which version `text` came from, `old` or `new`
@@ -700,15 +708,18 @@ one of the two versions:
 | kind                     | text                       | has line numbers |
 | ------------------------ | -------------------------- | ---------------- |
 | `context`, `add`, `del`  | source text                | yes              |
+| `conflict`               | source text                | yes              |
 | `file`                   | the file's label           | no               |
 | `blank`                  | empty, separates two files | no               |
 | `subject`, `author`      | a commit's header          | no               |
 | `body`, `stat`           | a commit's header          | no               |
 | `skipped`                | a file the view leaves out | no               |
 
-`dlib.source_kinds` is the test for the first group. Anything that looks a line
-up in a ghost buffer, prints a gutter, or opens the source has to check it
-first, because the other kinds carry no `side`, `row` or `file`.
+`dlib.source_kinds` is the test for the first two rows. Anything that looks a
+line up in a ghost buffer, prints a gutter, or opens the source has to check it
+first, because the other kinds carry no `side`, `row` or `file`. Highlight
+collection checks `dlib.has_syntax` instead, which also leaves out a conflict's
+markers.
 
 ### Folded unchanged lines
 
@@ -749,7 +760,7 @@ Everything drawn is an extmark, ordered by priority:
 
 | priority | layer                                        |
 | -------- | -------------------------------------------- |
-| 10       | Added/deleted line background, with `hl_eol` |
+| 10       | Line background, with `hl_eol`               |
 | 100      | Replayed syntax highlighting, the stat graph |
 | 200      | Word-level change highlights                 |
 
@@ -869,6 +880,71 @@ Binary files are excluded. git flags the tracked ones through
 `git diff --numstat`; it never diffs an untracked file, so those are recognised
 the way git itself does it, by a NUL byte in the first 8000 bytes.
 
+## Conflict view
+
+An unmerged file's view replaces step 2 of the pipeline with `conflict.build`,
+which reads one version: the working tree, as git left it after the merge. Its
+index holds merge stages 1 to 3 and no stage 0, so there is no middle for a
+mixed view, and the working tree is what is left to resolve. `Source.conflicted`
+is what tells `view.build` to take this path.
+
+### Recognising the markers
+
+`conflict.classify` gives every line a `kind`: `context` outside a conflict, and
+`conflict` inside one, `part` saying where.
+
+| `part`   | lines                                                   |
+| -------- | ------------------------------------------------------- |
+| `marker` | `<<<<<<<`, `\|\|\|\|\|\|\|`, `=======` and `>>>>>>>`     |
+| `ours`   | after `<<<<<<<`, up to the next marker                  |
+| `base`   | after `\|\|\|\|\|\|\|`, up to `=======` (`diff3`, `zdiff3`) |
+| `theirs` | after `=======`, up to `>>>>>>>`                        |
+
+All of them are one kind so that everything but the colors asks one question,
+whether a line is part of a conflict, and only the colors look at `part`.
+
+- **A separator counts only where it can come next.** `=======` is a marker only
+  in an open conflict, and `|||||||` only right after ours. A Markdown heading's
+  underline elsewhere stays `context`.
+- **A conflict that is never closed is left as `context`.** Markers partly
+  removed by hand leave nothing to tell what the conflict would span, and
+  guessing would run it on to the next one or to the end of the file.
+- **Only git's default of seven characters is recognised**, not a size set
+  with the `conflict-marker-size` attribute.
+
+Every line carries `new_lnum` and `side = 'new'` with its `row`, so the gutter,
+`gf` and highlight collection treat it as a line of the working tree. There is
+no `old_lnum`, so the gutter's first column is blank: HEAD says nothing about how
+the merge went.
+
+### Folding and jumping
+
+The lines go through `mixed.fold`, which folds whatever is `context` away from
+any other kind, so only the lines around each conflict are open. `hunk_rows` is
+the `<<<<<<<` row of each conflict, taken from `classify` rather than from
+`fold`: two conflicts with nothing between them are one run to `fold`, and `]c`
+would not stop at the second.
+
+A file with no conflict marked out has no view. It is listed as left out, or
+noticed in place of a view, like a change with no lines. That is the case for a
+file one side deleted, whose working tree holds the other side unmarked, and for
+one whose markers were all removed by hand but which has not been added.
+
+### Colors
+
+- **The background is by `part`.** Ours and theirs are not the add and delete
+  colors, which would read as one replacing the other; each is a fixed hue
+  blended into the `Normal` background about as faintly as a staged change. The
+  markers are blended more strongly, so that where each part ends stands out.
+- **Syntax is collected from the working tree, markers and all**, onto every row
+  but the markers, which `dlib.has_syntax` leaves out: they are no code in any
+  language and would be colored as errors. The rest is not valid code either,
+  so the parse can go wrong inside a conflict and just after one. Most rows still
+  get the right colors, which is better than none.
+- **The header counts conflicts**, as `!3` where an ordinary file's header shows
+  `+n -m`, so the counts line up in a directory's view. `File.conflicts` carries
+  the number.
+
 ## Invariants
 
 Each of these is guarded by a test. Breaking one is a regression even if
@@ -886,6 +962,8 @@ everything still looks right.
 | Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
 | Unstaging a rename leaves the index equal to HEAD                       | `stage_spec`                                     |
 | An unmerged path is never written to the index                           | `session_spec`                                   |
+| A separator outside an open conflict is not a marker                     | `conflict_spec`                                  |
+| A conflict's markers get no syntax                                       | `render_spec`                                    |
 | A merge is compared with its first parent only when shown alone           | `git_spec`, `session_spec`                        |
 | A range across a fork is compared, and said to be across one             | `git_spec`, `session_spec`                        |
 | A commit's view reads neither side from the working tree                | `session_spec`                                   |
@@ -920,14 +998,34 @@ re-attempted by accident:
 
 ## Known gaps
 
-### A merge conflict has no view
+### A conflict is shown, not merged
 
-An unmerged file is listed and then says `(unresolved conflict)` where its diff
-would be. That notice is a placeholder for a view that does not exist yet, not a
-decision that a conflict has nothing worth showing. Everything it needs is in the
-index already, as merge stages 1, 2 and 3.
+The [conflict view](#conflict-view) shows the working tree and leaves resolving
+it to editing the file. Everything else a conflict could use is in the index
+already, as merge stages 1, 2 and 3, and none of it is read yet.
 
-A mixed view is the wrong shape for it, for two independent reasons.
+#### Syntax from each stage
+
+The syntax collected from the working tree breaks around a conflict, since the
+file with its markers is not valid code. Each stage is: `:2:path` is ours,
+`:3:path` theirs and `:1:path` the base, and none has a marker. Their syntax
+would color each row correctly:
+
+- Diff the working tree with each stage, and map its rows with `mixed.align`.
+- An ours row takes the matching row of `:2`, a theirs row that of `:3`, and a
+  base row that of `:1`.
+- A row outside every conflict takes `:2` or `:3`, whichever has it: a line
+  merged in cleanly from theirs is only in `:3`.
+- A row in no stage, such as one edited since the merge, keeps the working
+  tree's syntax, as now. A marker gets none.
+
+It costs, per conflicted file, two or three more blobs read, two diffs and two
+or three more ghost buffers parsed.
+
+#### Keys that resolve
+
+There is no taking ours, theirs or both from the view. A mixed view is the wrong
+shape for such keys, for two independent reasons.
 
 - **There is no staged layer to show.** A path has either stage 0 or stages 1–3,
   never both: `git add` on an unmerged path is what collapses the stages into
@@ -940,10 +1038,6 @@ A mixed view is the wrong shape for it, for two independent reasons.
   unmerged path emits a combined diff, `@@@` with two marker columns, rather than
   an ordinary one.
 
-So the display, the gutter legend, the winbar and the keys all differ — take
-ours, take theirs, take both, rather than stage and unstage. It is a sibling of
-the mixed view, not a setting of it.
-
 What carries over and what does not:
 
 - `mixed.align` is reusable as it stands. It turns a hunk list into a line
@@ -952,11 +1046,19 @@ What carries over and what does not:
   the other, so it reads `staged.new_to_old` and `unstaged.old_to_new`. A merge
   pivots on base, which is the old side of **both** diffs. The assembly is the
   same shape written against different tables.
-- **Not all three stages exist.** Each can be missing, and the status pair names
-  which: `AA` has no base, `DU` no ours, `UD` no theirs. Treating a missing stage
-  as empty is what the pipeline already does for a version a file does not have.
 
-Reading `git ls-files -u` is what a merge view needs, and it also yields the
-exact status pair, so the present rounding of every conflict to `UU` is resolved
-by the same work.
+#### The exact status pair
+
+git tells seven pairs apart — `UU`, `AA`, `DU`, `UD`, `AU`, `UA`, `DD` — by which
+stages the index holds: `AA` has no base, `DU` no ours, `UD` no theirs. Only the
+fact that a path is unmerged is recorded, so every conflict is listed as `UU`.
+Reading `git ls-files -u` gives the pair, and the stages that syntax from each
+stage needs, so both are one piece of work.
+
+#### A range ending at the working tree
+
+`git diff <commit>` reports an unmerged file as an ordinary `M` or `A`, so a
+range ending at the working tree shows it as a diff, its markers as added lines.
+That is not wrong, since the markers are in the working tree, and it is left as
+it is.
 
