@@ -1607,6 +1607,25 @@ local function apply_to_selected(s, op)
   M.refresh(s)
 end
 
+--- Say why the rows of an unmerged file cannot be staged or unstaged, if
+--- `entry` is one.
+---
+--- Its view shows the working tree, conflict markers and all, and there is no
+--- stage 0 in the index to write rows into: writing one over the merge stages
+--- discards them, and git reports no error. Checked ahead of finding the rows:
+--- the view has no index contents to write them into, and its rows are no
+--- changes, so either would end the press without a word.
+--- @param entry gitview.StatusEntry
+--- @return boolean refused
+local function refuses_conflict(entry)
+  if not entry.conflicted then
+    return false
+  end
+  local why = '%s has an unresolved conflict; edit it with gf, or mark it resolved with s in the list'
+  util.warn(why:format(entry.path))
+  return true
+end
+
 --- Move some of the selected file's rows across the index, then redraw.
 ---
 --- The rows on display are the operation's whole input: each one says which
@@ -1631,17 +1650,11 @@ local function apply_to_rows(s, op, first, last)
     return
   end
   local entry = target and target.kind == 'file' and s.entries[target.index] or nil
-  local view = render.view_of(s.diff_buf)
-  if not entry or not view or not s.index_lines then
+  if entry and refuses_conflict(entry) then
     return
   end
-  -- A backstop, not the guard that fires today: `show_selected` draws a notice
-  -- for a conflicted entry, so no view and no index contents exist to get here
-  -- with. It stays because writing a stage-0 entry over a conflict's merge stages
-  -- discards them and git reports no error, so anything that later makes such a
-  -- file renderable would silently reopen that.
-  if entry.conflicted then
-    util.warn(('%s has an unresolved conflict; resolve it first'):format(entry.path))
+  local view = render.view_of(s.diff_buf)
+  if not entry or not view or not s.index_lines then
     return
   end
   -- Ignoring whitespace folds a line that differs only in whitespace into a
@@ -1699,6 +1712,11 @@ local function set_diff_stage_keymaps(s)
       end, ('%s the selected lines'):format(op), { mode })
     end
     map(lhs:upper(), function()
+      local target = s.selected
+      local entry = target and target.kind == 'file' and s.entries[target.index]
+      if entry and refuses_conflict(entry) then
+        return
+      end
       local view = render.view_of(s.diff_buf)
       local first, last = index.hunk_at(view and view.lines or {}, vim.fn.line('.'))
       if not first then

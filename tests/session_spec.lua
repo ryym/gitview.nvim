@@ -986,16 +986,30 @@ end
 
 -- Writing a stage-0 entry over a conflict's merge stages discards them and git
 -- reports no error, so the row-level keys have to refuse outright.
-test('session: `s` in the diff leaves a conflict alone', function()
+test('session: `s` in the diff leaves a conflict alone and says why', function()
   with_session(mid_merge, function(s, repo)
     local before = repo.git('ls-files', '-u')
     assert(before ~= '', 'the merge stages should be there to begin with')
-    vim.api.nvim_set_current_win(s.diff_win)
-    vim.cmd.normal('s')
-    vim.cmd.normal('u')
-    vim.cmd.normal('S')
+    local notify, messages = vim.notify, {}
+    vim.notify = function(msg)
+      messages[#messages + 1] = msg
+    end
+    local ok, err = pcall(function()
+      vim.api.nvim_set_current_win(s.diff_win)
+      -- on a row of the conflict, which the view now draws
+      vim.api.nvim_win_set_cursor(s.diff_win, { 3, 0 })
+      for _, key in ipairs({ 's', 'u', 'S', 'U' }) do
+        vim.cmd.normal(key)
+      end
+    end)
+    vim.notify = notify
+    assert(ok, err)
     eq(before, repo.git('ls-files', '-u'))
     eq('UU fight.txt\n', repo.git('status', '--short'))
+    eq(4, #messages)
+    for _, m in ipairs(messages) do
+      assert(m:find('fight.txt has an unresolved conflict', 1, true), m)
+    end
   end)
 end)
 
