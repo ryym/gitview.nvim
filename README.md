@@ -147,9 +147,11 @@ The order is git's, not a file manager's: directories are not put first, and
 `a.lua` comes before `a/`. It is the order `git diff` lists the files in, and the
 order `]f` and a multi-file diff go by.
 
-A directory row shows no diff. `s` and `u` on it take every file in it, and on the
-root every file listed. A directory holding an unresolved conflict is refused
-either way, since staging the conflicted file would mark it resolved unseen.
+A directory row shows the diff of every file in it, and the root that of every
+file listed, once the cursor has rested on it for a moment. Lines cannot be
+staged in it; `s` and `u` on the row take every file in the directory instead.
+A directory holding an unresolved conflict is refused either way, since staging
+the conflicted file would mark it resolved unseen.
 
 ```lua
 require('gitview').setup({ list_style = 'tree' }) -- 'flat' by default

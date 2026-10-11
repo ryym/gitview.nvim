@@ -95,8 +95,11 @@ of files is made.
 A directory row's target is the first file in it, which is also the next file
 below it, plus its path. The path tells it apart from that file and from an
 enclosing directory starting at the same file, and is what finds it again after
-a refresh. A directory is a selection like any other, but the diff only names
-it: reading all of its files on every pass of the cursor is a cost not taken.
+a refresh. A directory is a selection like any other, and its diff is every file
+in it, read as a commit's is; see below. Lines are not staged from it, since a
+partial stage reads the index contents of one file. Unlike the views of many
+files in the commits pane, it says so when asked: it sits among the files whose
+diffs do stage by row.
 
 What follows the cursor is painted apart from the rows, in namespaces of its own,
 since the cursor moves far more often than the list changes: the name of the
@@ -233,8 +236,22 @@ passed over. Instead:
   costly part of a large one. It is drawn on the next turn of the event loop
   with no placeholder, so a row passed over before then is never drawn.
 
-The working-tree row is read the same way. A file row costs a single file's
-view and is drawn at once, as is anything drawn by a refresh.
+The working-tree row is read the same way, and so is a directory row of either
+list, with two differences:
+
+- A directory waits for the cursor to rest on it before anything is read or
+  drawn. Moving from file to file in a tree passes over directory rows all the
+  time, and reading each would start a read that cannot be stopped and blink a
+  placeholder between two files' views. Meanwhile the pane keeps the view it
+  had; the selection has moved on, so nothing done in it reaches that file.
+- A directory of a commit looked into is taken out of the whole range's
+  contents. Looking in passed over the commit's row, so they are usually kept
+  already; when they are not, the directory reads and keeps the whole range.
+  Directories of the uncommitted files are read every time, since the working
+  tree can change under them.
+
+A file row costs a single file's view and is drawn at once, as is anything drawn
+by a refresh.
 
 #### The commit header
 
