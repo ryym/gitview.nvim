@@ -1623,10 +1623,17 @@ end
 --- @param first integer 1-based row of the diff buffer
 --- @param last integer inclusive
 local function apply_to_rows(s, op, first, last)
+  local target = s.selected
+  -- The rows of a file would do here, as they do in its own diff, but the index
+  -- contents to write them into are read for one file. Of the views of many
+  -- files, only a directory's sits among the files that can be staged by row.
+  if target and target.kind == 'dir' then
+    util.info("lines can be staged in a single file's diff; s and u on the directory row take all of its files")
+    return
+  end
   if wait_for_read(s) then
     return
   end
-  local target = s.selected
   local entry = target and target.kind == 'file' and s.entries[target.index] or nil
   local view = render.view_of(s.diff_buf)
   if not entry or not view or not s.index_lines then

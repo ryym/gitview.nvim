@@ -2982,6 +2982,31 @@ test('session: `s` and `u` on a directory row take all of its files', function()
   end)
 end)
 
+-- A directory's diff sits among the files, whose diffs take `s` and `u` by
+-- row, so it says why it does not rather than doing nothing.
+test('session: `s` in the diff of a directory stages nothing and says why', function()
+  with_tree_session(nested, function(s, repo)
+    files_cursor(s, 3)
+    wait_files(s, { 'src/a.lua', 'src/b.lua' })
+    local notify = vim.notify
+    local messages = {}
+    vim.notify = function(msg)
+      messages[#messages + 1] = msg
+    end
+    local ok, err = pcall(function()
+      vim.api.nvim_set_current_win(s.diff_win)
+      vim.api.nvim_win_set_cursor(s.diff_win, { changed_row(s, 'two'), 0 })
+      press_diff(s, 's')
+      press_diff(s, 'S')
+    end)
+    vim.notify = notify
+    assert(ok, err)
+    eq(' M README.md\n M src/a.lua\n M src/b.lua\n', repo.git('status', '--short'))
+    eq(2, #messages)
+    assert(messages[1]:find("single file's diff", 1, true), messages[1])
+  end)
+end)
+
 test('session: `s` on the root stages everything', function()
   with_tree_session(nested, function(s, repo)
     files_cursor(s, 1)
