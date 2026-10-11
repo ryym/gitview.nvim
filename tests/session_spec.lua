@@ -2906,6 +2906,70 @@ test('session: a commit looked into lists its files as a tree', function()
   end)
 end)
 
+local function committed_dir(repo)
+  repo.write('a.txt', { 'one' })
+  repo.commit('init')
+  repo.write('a.txt', { 'two' })
+  repo.write('lib/x.lua', { 'one' })
+  repo.write('lib/y.lua', { 'one' })
+  repo.commit('second')
+end
+
+--- Put the commits pane's cursor on a row and follow it, as moving there does.
+--- @param s gitview.Session
+--- @param row integer
+local function commits_cursor(s, row)
+  vim.api.nvim_set_current_win(s.commits_win)
+  vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  session.follow_cursor(s, s.commits_win)
+end
+
+-- Looking into a commit has passed over its row, which read the whole commit;
+-- a directory of it is taken out of that read rather than read again.
+test('session: a directory of a commit is drawn from the commit already read', function()
+  with_tree_session(committed_dir, function(s)
+    show_commit(s, 1)
+    session.enter(s)
+    eq({ './', 'a.txt', 'lib/', 'lib/x.lua', 'lib/y.lua' }, commit_rows(s))
+    counting_range_reads(function(reads)
+      commits_cursor(s, 3)
+      eq(nil, s.pending)
+      wait_files(s, { 'lib/x.lua', 'lib/y.lua' })
+      eq(s.scope.label, diff_view(s).rev)
+      commits_cursor(s, 1)
+      wait_files(s, { 'a.txt', 'lib/x.lua', 'lib/y.lua' })
+      eq(0, reads())
+    end)
+  end)
+end)
+
+-- The root of a commit is its files, as its directories are; the message is
+-- on the commit's own row.
+test('session: the root of a commit shows no commit header', function()
+  with_tree_session(committed_dir, function(s)
+    show_commit(s, 1)
+    session.enter(s)
+    commits_cursor(s, 1)
+    wait_files(s, { 'a.txt', 'lib/x.lua', 'lib/y.lua' })
+    eq(nil, diff_view(s).header_rows)
+  end)
+end)
+
+test('session: a directory of a commit not read yet reads the whole commit once', function()
+  with_tree_session(committed_dir, function(s)
+    show_commit(s, 1)
+    session.enter(s)
+    s.range_reads, s.range_order = {}, {}
+    counting_range_reads(function(reads)
+      commits_cursor(s, 3)
+      wait_files(s, { 'lib/x.lua', 'lib/y.lua' })
+      commits_cursor(s, 1)
+      wait_files(s, { 'a.txt', 'lib/x.lua', 'lib/y.lua' })
+      eq(1, reads())
+    end)
+  end)
+end)
+
 test('session: `s` and `u` on a directory row take all of its files', function()
   with_tree_session(nested, function(s, repo)
     files_cursor(s, 3)

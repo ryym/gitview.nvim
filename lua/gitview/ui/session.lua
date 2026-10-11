@@ -564,17 +564,78 @@ local function read_commit(s, target)
   end
 end
 
+--- The part of a range's contents under one directory.
+--- @param read gitview.RangeRead
+--- @param root string repository root
+--- @param dir string without a trailing slash; `''` for the root
+--- @return gitview.Source[] sources
+--- @return gitview.Skipped skipped
+local function range_read_in(read, root, dir)
+  if dir == '' then
+    return read.sources, read.skipped
+  end
+  -- Sources are named by absolute path, skipped files by repository path.
+  local abs, rel = vim.fs.joinpath(root, dir) .. '/', dir .. '/'
+  local sources = vim.tbl_filter(function(src)
+    return src.path:sub(1, #abs) == abs
+  end, read.sources)
+  local function under(path)
+    return path:sub(1, #rel) == rel
+  end
+  local skipped = {
+    binary = vim.tbl_filter(under, read.skipped.binary),
+    conflicted = vim.tbl_filter(under, read.skipped.conflicted),
+  }
+  return sources, skipped
+end
+
+--- Read a directory of the range being looked into. Returned as `read_entries`
+--- returns it.
+---
+--- The whole range is read and kept, and the directory taken out of it: the
+--- commit's own row and every other directory in it then share one read.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a directory of the scope
+--- @return fun() draw
+local function read_scope_dir(s, target)
+  local scope = s.scope
+  if not scope then
+    return function()
+      render.notice(s.diff_buf, list.EMPTY_NOTICE)
+    end
+  end
+  local read, err = read_range(s, scope.range)
+  if not read then
+    return function()
+      util.git_error(err)
+      render.notice(s.diff_buf, scope.label .. '   (could not be read)')
+    end
+  end
+  local sources, skipped = range_read_in(read, s.root, assert(target.path))
+  return function()
+    local view, unchanged =
+      perf.measure('build', vlib.build, sources, scope.label, config.values.context, diff_opts(s))
+    view = vlib.list_skipped(view, scope.label, skipped, unchanged, no_view_reason(s))
+    if not view then
+      render.notice(s.diff_buf, ('%s   %s'):format(scope.label, no_view_reason(s)))
+      return
+    end
+    view.note = note_of(s)
+    render.draw(s.diff_buf, view)
+  end
+end
+
 --- Whether a row stands for many files, which take long enough to read that a
 --- cursor passing over it should not wait for them.
 --- @param target gitview.ListTarget?
 --- @return boolean
 local function shows_many(target)
   local kind = target and target.kind
-  return kind == 'commit' or kind == 'worktree' or kind == 'dir'
+  return kind == 'commit' or kind == 'worktree' or kind == 'dir' or kind == 'commit_dir'
 end
 
 --- Read what a row standing for many files shows: a commit or the working tree
---- in the commits pane, or a directory in the files pane. Returned as
+--- in the commits pane, or a directory of either list. Returned as
 --- `read_entries` returns it.
 --- @param s gitview.Session
 --- @param target gitview.ListTarget a commit, the working tree or a directory
@@ -582,6 +643,9 @@ end
 local function read_many(s, target)
   if target.kind == 'dir' then
     return read_entries(s, (files_in(s.entries, assert(target.path))))
+  end
+  if target.kind == 'commit_dir' then
+    return read_scope_dir(s, target)
   end
   return read_commit(s, target)
 end
@@ -595,6 +659,10 @@ local LOADING = '(loading…)'
 --- @param target gitview.ListTarget a commit, the working tree or a directory
 --- @return boolean
 local function is_kept(s, target)
+  if target.kind == 'commit_dir' then
+    local key = s.scope and range_key(s.scope.range)
+    return key ~= nil and s.range_reads[key] ~= nil
+  end
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
   if not commit then
     return false
@@ -620,8 +688,9 @@ end
 --- @param s gitview.Session
 --- @param target gitview.ListTarget a commit, the working tree or a directory
 local function draw_loading(s, target)
-  if target.kind == 'dir' then
-    render.draw(s.diff_buf, vlib.placeholder(REV, LOADING))
+  if target.kind == 'dir' or target.kind == 'commit_dir' then
+    local label = target.kind == 'dir' and REV or (s.scope and s.scope.label or '')
+    render.draw(s.diff_buf, vlib.placeholder(label, LOADING))
     return
   end
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
@@ -686,8 +755,8 @@ local function is_wanted(s, generation)
     and vim.api.nvim_buf_is_valid(s.diff_buf)
 end
 
---- Draw a commit read before on the next turn of the event loop, if it is
---- still selected by then.
+--- Draw a commit, or a directory of one, read before on the next turn of the
+--- event loop, if it is still selected by then.
 ---
 --- There is nothing to read, but drawing is still the costly part of a large
 --- commit. Drawn from `CursorMoved` itself, every such row a sweep passes over
@@ -696,7 +765,7 @@ end
 --- the draw stale. No placeholder is drawn: the view takes a moment at most,
 --- and a placeholder would only blink before it.
 --- @param s gitview.Session
---- @param target gitview.ListTarget a commit
+--- @param target gitview.ListTarget a commit, or a directory of one
 --- @param span gitview.PerfSpan
 local function draw_kept(s, target, span)
   local generation = s.generation
@@ -870,11 +939,6 @@ function M.show_selected(s, keep_unchanged, span)
     show_commit_file(s, target.index)
     return
   end
-  if target.kind == 'commit_dir' then
-    render.notice(s.diff_buf, ('%s   (directory)'):format(list.dir_label(assert(target.path))))
-    return
-  end
-
   local entry = s.entries[target.index]
   if not entry then
     render.notice(s.diff_buf, list.EMPTY_NOTICE)
