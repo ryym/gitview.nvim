@@ -2787,24 +2787,57 @@ test('session: a tree opens on its first file rather than its root', function()
   end)
 end)
 
--- A directory is many files as a commit is, so it is read in the background
--- behind a placeholder.
+--- Wait for the diff pane to show a view of these files.
+--- @param s gitview.Session
+--- @param files string[] their labels
+local function wait_files(s, files)
+  local done = vim.wait(1000, function()
+    local view = require('gitview.diff.render').view_of(s.diff_buf)
+    return view ~= nil and vim.deep_equal(view_files(s), files)
+  end)
+  assert(done, table.concat(diff_rows(s), '\n'))
+end
+
+-- A directory is many files as a commit is, so it is read in the background.
+-- Until the cursor has rested on it, the pane keeps the file it showed.
 test('session: a directory row shows the files in it together', function()
   with_tree_session(nested, function(s)
     files_cursor(s, 3)
     eq({ kind = 'dir', index = 2, path = 'src' }, s.selected)
-    eq({ '(loading…)' }, diff_rows(s))
-    wait_read(s)
-    eq({ 'src/a.lua', 'src/b.lua' }, view_files(s))
+    eq({ 'README.md' }, view_files(s))
+    eq(nil, s.pending)
     eq(nil, s.index_lines)
+    wait_files(s, { 'src/a.lua', 'src/b.lua' })
   end)
 end)
 
 test('session: the root row shows every file', function()
   with_tree_session(nested, function(s)
     files_cursor(s, 1)
-    wait_read(s)
-    eq({ 'README.md', 'src/a.lua', 'src/b.lua' }, view_files(s))
+    wait_files(s, { 'README.md', 'src/a.lua', 'src/b.lua' })
+  end)
+end)
+
+-- Moving from file to file passes over directory rows, which are not read
+-- unless the cursor stays.
+test('session: a directory passed over is never read', function()
+  with_tree_session(nested, function(s)
+    local source = require('gitview.diff.source')
+    local for_entries = source.for_entries
+    local reads = 0
+    source.for_entries = function(...)
+      reads = reads + 1
+      return for_entries(...)
+    end
+    local ok, err = pcall(function()
+      files_cursor(s, 3)
+      files_cursor(s, 4)
+      vim.wait(300)
+      eq(0, reads)
+      eq({ 'src/a.lua' }, view_files(s))
+    end)
+    source.for_entries = for_entries
+    assert(ok, err)
   end)
 end)
 
@@ -2813,7 +2846,7 @@ end)
 test('session: a refresh redraws a directory at once', function()
   with_tree_session(nested, function(s, repo)
     files_cursor(s, 3)
-    wait_read(s)
+    wait_files(s, { 'src/a.lua', 'src/b.lua' })
     repo.write('src/c.lua', { 'new' })
     session.refresh(s)
     settle(s)

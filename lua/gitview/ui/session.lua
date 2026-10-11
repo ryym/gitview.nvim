@@ -675,6 +675,17 @@ local function read_pending(s)
   end)
 end
 
+--- Whether a draw asked for at `generation` is still wanted: nothing has been
+--- drawn since, and the session is still there to draw into.
+--- @param s gitview.Session
+--- @param generation integer
+--- @return boolean
+local function is_wanted(s, generation)
+  return s.generation == generation
+    and M.sessions[s.tab] == s
+    and vim.api.nvim_buf_is_valid(s.diff_buf)
+end
+
 --- Draw a commit read before on the next turn of the event loop, if it is
 --- still selected by then.
 ---
@@ -690,16 +701,52 @@ end
 local function draw_kept(s, target, span)
   local generation = s.generation
   vim.defer_fn(function()
-    local wanted = s.generation == generation
-      and M.sessions[s.tab] == s
-      and vim.api.nvim_buf_is_valid(s.diff_buf)
-    if not wanted then
+    if not is_wanted(s, generation) then
       span:finish({ kept = true, dropped = true })
       return
     end
     read_many(s, target)()
     span:finish({ kept = true })
   end, 0)
+end
+
+--- Read a view in the background behind a placeholder drawn at once.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit, the working tree or a directory
+--- @param span gitview.PerfSpan finished once the view is drawn or found stale
+local function read_behind_placeholder(s, target, span)
+  draw_loading(s, target)
+  if s.pending then
+    s.pending.span:finish({ dropped = true })
+  end
+  s.pending = { generation = s.generation, span = span }
+  read_pending(s)
+end
+
+--- How long the cursor has to rest on a directory before its files are read.
+--- Long enough to cover a held key's repeat, short enough not to be noticed once
+--- the cursor has stopped.
+local DIR_WAIT_MS = 100
+
+--- Read a directory in the background once the cursor has rested on it.
+---
+--- Moving from file to file in a tree passes over directory rows all the time.
+--- Reading each would start a read that cannot be stopped and blink a
+--- placeholder between two files' views. Until the wait is over the pane keeps
+--- the view it had, which the selection no longer names, so nothing done in it
+--- reaches the file it shows.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a directory
+--- @param span gitview.PerfSpan
+local function read_dir_later(s, target, span)
+  local generation = s.generation
+  vim.defer_fn(function()
+    if not is_wanted(s, generation) then
+      span:finish({ dropped = true })
+      return
+    end
+    read_behind_placeholder(s, target, span)
+  end, DIR_WAIT_MS)
 end
 
 --- Draw a commit, the working tree or a directory, many files each, either at
@@ -718,12 +765,11 @@ local function show_many(s, target, span)
     draw_kept(s, target, span)
     return
   end
-  draw_loading(s, target)
-  if s.pending then
-    s.pending.span:finish({ dropped = true })
+  if target.kind == 'dir' or target.kind == 'commit_dir' then
+    read_dir_later(s, target, span)
+    return
   end
-  s.pending = { generation = s.generation, span = span }
-  read_pending(s)
+  read_behind_placeholder(s, target, span)
 end
 
 --- Draw one file of the range being looked into.
