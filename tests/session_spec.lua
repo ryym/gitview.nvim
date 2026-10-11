@@ -2787,14 +2787,38 @@ test('session: a tree opens on its first file rather than its root', function()
   end)
 end)
 
-test('session: a directory row shows no diff', function()
+-- A directory is many files as a commit is, so it is read in the background
+-- behind a placeholder.
+test('session: a directory row shows the files in it together', function()
   with_tree_session(nested, function(s)
     files_cursor(s, 3)
     eq({ kind = 'dir', index = 2, path = 'src' }, s.selected)
-    eq({ 'src/   (directory)' }, diff_rows(s))
+    eq({ '(loading…)' }, diff_rows(s))
+    wait_read(s)
+    eq({ 'src/a.lua', 'src/b.lua' }, view_files(s))
     eq(nil, s.index_lines)
+  end)
+end)
+
+test('session: the root row shows every file', function()
+  with_tree_session(nested, function(s)
     files_cursor(s, 1)
-    eq({ './   (directory)' }, diff_rows(s))
+    wait_read(s)
+    eq({ 'README.md', 'src/a.lua', 'src/b.lua' }, view_files(s))
+  end)
+end)
+
+-- A refresh redraws what is already on screen, which a placeholder would only
+-- blink over.
+test('session: a refresh redraws a directory at once', function()
+  with_tree_session(nested, function(s, repo)
+    files_cursor(s, 3)
+    wait_read(s)
+    repo.write('src/c.lua', { 'new' })
+    session.refresh(s)
+    settle(s)
+    eq(nil, s.pending)
+    eq({ 'src/a.lua', 'src/b.lua', 'src/c.lua' }, view_files(s))
   end)
 end)
 

@@ -456,7 +456,25 @@ local function commit_detail(s, commit)
   return s.details[commit.sha]
 end
 
---- Read everything uncommitted for one view, as the files pane has it file by
+--- The files in a directory, with their indices, in list order.
+--- @generic T: {path:string}
+--- @param files T[]
+--- @param dir string without a trailing slash; `''` for the root
+--- @return T[] files
+--- @return integer[] indices
+local function files_in(files, dir)
+  local prefix = dir == '' and '' or dir .. '/'
+  local found, indices = {}, {}
+  for i, f in ipairs(files) do
+    if f.path:sub(1, #prefix) == prefix then
+      found[#found + 1] = f
+      indices[#indices + 1] = i
+    end
+  end
+  return found, indices
+end
+
+--- Read uncommitted files for one view, as the files pane has them file by
 --- file: HEAD, the index and the working tree at once.
 ---
 --- What is read is returned as the function that draws it, so that the reading
@@ -467,14 +485,15 @@ end
 --- Nothing is staged from here. It is many files, and the index contents a
 --- partial stage writes back are read for one.
 --- @param s gitview.Session
+--- @param entries gitview.StatusEntry[] some or all of `s.entries`
 --- @return fun() draw
-local function read_worktree(s)
-  if #s.entries == 0 then
+local function read_entries(s, entries)
+  if #entries == 0 then
     return function()
       render.notice(s.diff_buf, list.EMPTY_NOTICE)
     end
   end
-  local sources, skipped = perf.measure('source', source.for_entries, s.entries, s.root)
+  local sources, skipped = perf.measure('source', source.for_entries, entries, s.root)
   return function()
     local view, unchanged =
       perf.measure('build', vlib.build, sources, REV, config.values.context, diff_opts(s))
@@ -499,7 +518,7 @@ end
 
 --- Read what the commits pane's cursor compares: one commit against its first
 --- parent, the stretch between it and the mark, or on the working-tree row by
---- itself, everything uncommitted. Returned as `read_worktree` returns it.
+--- itself, everything uncommitted. Returned as `read_entries` returns it.
 ---
 --- A range is a two-version view: there is no index between the sides and so
 --- nothing to mark as staged, even when one side is the working tree.
@@ -515,7 +534,7 @@ local function read_commit(s, target)
   end
   local range, label = range_of(s, target)
   if not range then
-    return read_worktree(s)
+    return read_entries(s, s.entries)
   end
   local read, err = read_range(s, range)
   if not read then
@@ -545,13 +564,35 @@ local function read_commit(s, target)
   end
 end
 
+--- Whether a row stands for many files, which take long enough to read that a
+--- cursor passing over it should not wait for them.
+--- @param target gitview.ListTarget?
+--- @return boolean
+local function shows_many(target)
+  local kind = target and target.kind
+  return kind == 'commit' or kind == 'worktree' or kind == 'dir'
+end
+
+--- Read what a row standing for many files shows: a commit or the working tree
+--- in the commits pane, or a directory in the files pane. Returned as
+--- `read_entries` returns it.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit, the working tree or a directory
+--- @return fun() draw
+local function read_many(s, target)
+  if target.kind == 'dir' then
+    return read_entries(s, (files_in(s.entries, assert(target.path))))
+  end
+  return read_commit(s, target)
+end
+
 --- What the diff pane says while a view is being read.
 local LOADING = '(loading…)'
 
 --- Whether everything the view of `target` is built from has been read before,
 --- so that it can be drawn without running git.
 --- @param s gitview.Session
---- @param target gitview.ListTarget a commit or the working tree
+--- @param target gitview.ListTarget a commit, the working tree or a directory
 --- @return boolean
 local function is_kept(s, target)
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
@@ -571,13 +612,18 @@ local function is_kept(s, target)
   return older == nil or read.diverged[older.sha] ~= nil
 end
 
---- Stand in for the view of a commit or the working tree until it is read.
+--- Stand in for the view of a commit, the working tree or a directory until it
+--- is read.
 ---
 --- A commit on its own gets its header straight away: in full when its message
 --- has been read before, and otherwise as much of it as the log already gave.
 --- @param s gitview.Session
---- @param target gitview.ListTarget a commit or the working tree
+--- @param target gitview.ListTarget a commit, the working tree or a directory
 local function draw_loading(s, target)
+  if target.kind == 'dir' then
+    render.draw(s.diff_buf, vlib.placeholder(REV, LOADING))
+    return
+  end
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
   local range, label = range_of(s, target)
   local header
@@ -612,7 +658,7 @@ local function read_pending(s)
   local target = assert(s.selected)
   s.loading = true
   git.async(function()
-    return read_commit(s, target)
+    return read_many(s, target)
   end, function(draw)
     s.loading = nil
     if M.sessions[s.tab] ~= s or not vim.api.nvim_buf_is_valid(s.diff_buf) then
@@ -651,21 +697,21 @@ local function draw_kept(s, target, span)
       span:finish({ kept = true, dropped = true })
       return
     end
-    read_commit(s, target)()
+    read_many(s, target)()
     span:finish({ kept = true })
   end, 0)
 end
 
---- Draw a commit or the working tree, many files each, either at once or in
---- the background: read behind a placeholder, or for one read before, just
---- drawn a moment later.
+--- Draw a commit, the working tree or a directory, many files each, either at
+--- once or in the background: read behind a placeholder, or for one read
+--- before, just drawn a moment later.
 --- @param s gitview.Session
---- @param target gitview.ListTarget a commit or the working tree
+--- @param target gitview.ListTarget a commit, the working tree or a directory
 --- @param span gitview.PerfSpan? given, the view is drawn in the background,
 ---        and the span is finished once it is drawn or found to be stale
-local function show_commit(s, target, span)
+local function show_many(s, target, span)
   if not span then
-    read_commit(s, target)()
+    read_many(s, target)()
     return
   end
   if is_kept(s, target) then
@@ -682,7 +728,7 @@ end
 
 --- Draw one file of the range being looked into.
 ---
---- This is the same two-version view `show_commit` draws, narrowed to one file:
+--- This is the same two-version view `show_many` draws, narrowed to one file:
 --- one entry of the change list the scope already holds, so nothing has to be
 --- listed again.
 --- @param s gitview.Session
@@ -738,9 +784,9 @@ end
 --- @param keep_unchanged boolean? leave the pane as it is when it already shows
 ---        what the selection names. Only for a caller that knows the contents
 ---        cannot have changed; see `refresh`.
---- @param span gitview.PerfSpan? given, a commit or the working tree is read in
----        the background and the span finished once it is drawn; see
----        `show_commit`. Anything else ignores it.
+--- @param span gitview.PerfSpan? given, a commit, the working tree or a
+---        directory is read in the background and the span finished once it is
+---        drawn; see `show_many`. Anything else ignores it.
 function M.show_selected(s, keep_unchanged, span)
   -- The comparison is by what is shown rather than by the target, because a
   -- refresh can move a file to another index while it goes on being the same
@@ -770,17 +816,15 @@ function M.show_selected(s, keep_unchanged, span)
     render.notice(s.diff_buf, s.files_notice or list.EMPTY_NOTICE)
     return
   end
-  if target.kind == 'commit' or target.kind == 'worktree' then
-    show_commit(s, target, span)
+  if shows_many(target) then
+    show_many(s, target, span)
     return
   end
   if target.kind == 'commit_file' then
     show_commit_file(s, target.index)
     return
   end
-  -- A directory's files could be shown together as a commit's are, but reading
-  -- them all on every pass of the cursor over the row is a cost not taken yet.
-  if target.kind == 'dir' or target.kind == 'commit_dir' then
+  if target.kind == 'commit_dir' then
     render.notice(s.diff_buf, ('%s   (directory)'):format(list.dir_label(assert(target.path))))
     return
   end
@@ -884,8 +928,9 @@ local function sync_selection(s, win, force, keep_unchanged)
 
   -- A refresh is an explicit act rather than a cursor sweep, and it redraws
   -- what is already on screen, which a placeholder would only blink over. The
-  -- working-tree row is many files as a commit is, and is read as one is.
-  if force or not target or (target.kind ~= 'commit' and target.kind ~= 'worktree') then
+  -- working-tree row and a directory are many files as a commit is, and are
+  -- read as one is.
+  if force or not shows_many(target) then
     M.show_selected(s, keep_unchanged)
     span:finish()
     return
@@ -923,24 +968,6 @@ end
 --- @param index integer
 function M.select(s, index)
   select_nth(s, 'file', index)
-end
-
---- The files in a directory, with their indices, in list order.
---- @generic T: {path:string}
---- @param files T[]
---- @param dir string without a trailing slash; `''` for the root
---- @return T[] files
---- @return integer[] indices
-local function files_in(files, dir)
-  local prefix = dir == '' and '' or dir .. '/'
-  local found, indices = {}, {}
-  for i, f in ipairs(files) do
-    if f.path:sub(1, #prefix) == prefix then
-      found[#found + 1] = f
-      indices[#indices + 1] = i
-    end
-  end
-  return found, indices
 end
 
 --- What the selection names, in terms that survive a redraw.
