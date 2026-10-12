@@ -1842,6 +1842,7 @@ local function set_diff_keymaps(s)
     open_file = function(path, lnum)
       M.open_file(s, path, lnum)
     end,
+    root = s.root,
   })
 end
 

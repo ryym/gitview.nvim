@@ -1359,6 +1359,114 @@ test('session: `gf` on a commit row opens nothing', function()
   end)
 end)
 
+--- Press `gy` in the diff over the rows from `first` to `last`, or on `first`
+--- alone, and say what it copied into the `a` register.
+--- @param s gitview.Session
+--- @param first integer
+--- @param last integer?
+--- @return string
+local function press_gy(s, first, last)
+  vim.api.nvim_set_current_win(s.diff_win)
+  vim.fn.setreg('a', '')
+  vim.api.nvim_win_set_cursor(s.diff_win, { first, 0 })
+  if last then
+    vim.cmd.normal(('V%dG"agy'):format(last))
+  else
+    vim.cmd.normal('"agy')
+  end
+  return vim.fn.getreg('a')
+end
+
+test('session: `gy` copies the file and line under the cursor', function()
+  with_session(edited, function(s)
+    eq('f.txt:4', press_gy(s, row_of_text(s, 'e', 'add')))
+    eq('f.txt:3', press_gy(s, row_of_text(s, 'd', 'context')))
+    -- a header stands for the whole file
+    eq('f.txt', press_gy(s, row_of_text(s, 'f.txt', 'file')))
+  end)
+end)
+
+test('session: `gy` copies the range of the lines selected', function()
+  with_session(edited, function(s)
+    eq('f.txt:1-4', press_gy(s, row_of_text(s, 'f.txt', 'file'), row_of_text(s, 'e', 'add')))
+    eq('f.txt:3-4', press_gy(s, row_of_text(s, 'd', 'context'), row_of_text(s, 'e', 'add')))
+  end)
+end)
+
+-- The deleted line counts as the one now in its place, so the range takes in
+-- where it was rather than leaving it out.
+test('session: `gy` over a deleted line and others copies the range they now have', function()
+  with_session(edited, function(s)
+    eq('f.txt:1-2', press_gy(s, row_of_text(s, 'a', 'context'), row_of_text(s, 'b', 'del')))
+    eq('f.txt:2', press_gy(s, row_of_text(s, 'b', 'del'), row_of_text(s, 'c', 'context')))
+  end)
+end)
+
+test('session: `gy` over a deletion at the end stays inside the file', function()
+  with_session(function(repo)
+    repo.write('f.txt', { 'a', 'b', 'c' })
+    repo.commit('init')
+    repo.write('f.txt', { 'a', 'X' })
+  end, function(s)
+    eq('f.txt:2', press_gy(s, row_of_text(s, 'X', 'add'), row_of_text(s, 'c', 'del')))
+  end)
+end)
+
+test('session: `gy` over deleted lines alone copies where they were', function()
+  with_session(function(repo)
+    repo.write('f.txt', { 'a', 'b', 'c', 'd' })
+    repo.commit('init')
+    repo.write('f.txt', { 'a', 'd' })
+  end, function(s)
+    eq(
+      'f.txt:2-3 (deleted from HEAD)',
+      press_gy(s, row_of_text(s, 'b', 'del'), row_of_text(s, 'c', 'del'))
+    )
+  end)
+end)
+
+-- Staged, then removed from the working tree: HEAD never had the line, so its
+-- place is the index's.
+test('session: `gy` on a line only the index had copies its place there', function()
+  with_session(function(repo)
+    repo.write('f.txt', { 'a', 'b' })
+    repo.commit('init')
+    repo.write('f.txt', { 'a', 'x', 'b' })
+    repo.git('add', 'f.txt')
+    repo.write('f.txt', { 'a', 'b' })
+  end, function(s)
+    eq('f.txt:2 (deleted from the index)', press_gy(s, row_of_text(s, 'x', 'del')))
+  end)
+end)
+
+test('session: `gy` in a commit names the commit', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    local commit = s.commits[1]
+    eq(
+      ('added.lua:1 (at %s)'):format(commit.sha),
+      press_gy(s, row_of_text(s, 'return 9', 'add'))
+    )
+    eq(
+      ('a.lua:1 (deleted from %s)'):format(commit.parents[1]),
+      press_gy(s, row_of_text(s, 'return 1', 'del'))
+    )
+  end)
+end)
+
+test('session: `gy` over several files copies a line for each', function()
+  with_session(history, function(s)
+    show_commit(s, 1)
+    local sha = s.commits[1].sha
+    -- the commit's header above the first file belongs to none
+    eq(
+      ('a.lua:1 (at %s)\nadded.lua:1 (at %s)'):format(sha, sha),
+      press_gy(s, 1, vim.api.nvim_buf_line_count(s.diff_buf))
+    )
+    eq('', press_gy(s, 1))
+  end)
+end)
+
 test('session: backing out returns to the commit that was looked into', function()
   with_session(history, function(s)
     show_commit(s, 1)
