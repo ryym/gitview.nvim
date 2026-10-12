@@ -104,8 +104,9 @@ markers included, rather than as a diff. It is read-only like any other diff.
 - **Only the lines around each conflict are open**, and the rest is folded as
   unchanged lines are. `]c` and `[c` move between the conflicts.
 - **Each part of a conflict has a background of its own**: ours, theirs, the base
-  that `diff3` and `zdiff3` add, and a stronger one for the markers. Ours and
-  theirs are not drawn as an addition and a deletion, since neither replaces
+  that `diff3` and `zdiff3` add. Each marker has a stronger one: those opening
+  a part and `>>>>>>>` in that part's hue, and `=======` in one of its own. Ours
+  and theirs are not drawn as an addition and a deletion, since neither replaces
   the other.
 - **The gutter has the working tree's line numbers only**, so `gf` opens the file
   on the line under the cursor, to edit it there.
@@ -352,8 +353,10 @@ The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
 `GitViewStagedAddText`, `GitViewStagedDeleteText`, `GitViewStagedAddBar` and
 `GitViewStagedDeleteBar`.
 
-A conflicted file's lines use `GitViewConflictOurs`, `GitViewConflictTheirs`,
-`GitViewConflictBase` and `GitViewConflictMarker`.
+A conflicted file's lines use `GitViewConflictOurs`, `GitViewConflictTheirs` and
+`GitViewConflictBase`, and its markers `GitViewConflictOursMarker` (`<<<<<<<`),
+`GitViewConflictBaseMarker` (`|||||||`), `GitViewConflictSeparator` (`=======`)
+and `GitViewConflictTheirsMarker` (`>>>>>>>`).
 
 A file's header is painted across the window, gutter included, with
 `GitViewFileHeaderBg`, and its gutter counts with `GitViewFileHeaderStatAdd`

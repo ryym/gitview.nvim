@@ -112,8 +112,10 @@ local highlights = util.highlights('gitview.highlights', function(set)
   -- delete color, which would read as one side replacing the other. Each has a
   -- hue of its own mixed into the background, about as faint as a staged
   -- change; their syntax is replayed over it, and the background is what tells
-  -- them from the code around them. The markers are stronger, so that where
-  -- each side ends stands out.
+  -- them from the code around them. Each marker is stronger, so that where each
+  -- part starts stands out: the one that opens ours, the base or theirs in the
+  -- same hue as that part, and `>>>>>>>` closing theirs in its hue too.
+  -- `=======` parts the two sides, of which it belongs to neither.
   local dark = vim.o.background ~= 'light'
   --- @param rgb integer
   --- @param factor number
@@ -124,7 +126,10 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewConflictOurs', tint(0x4c8bf5, 0.2, { 17, 189 }))
   set('GitViewConflictTheirs', tint(0xb35ee8, 0.2, { 53, 225 }))
   set('GitViewConflictBase', tint(0x9a9a9a, 0.2, { 236, 254 }))
-  set('GitViewConflictMarker', tint(0xe0a020, 0.35, { 58, 229 }))
+  set('GitViewConflictOursMarker', tint(0x4c8bf5, 0.35, { 18, 153 }))
+  set('GitViewConflictBaseMarker', tint(0x9a9a9a, 0.35, { 239, 251 }))
+  set('GitViewConflictSeparator', tint(0xe0a020, 0.35, { 58, 229 }))
+  set('GitViewConflictTheirsMarker', tint(0xb35ee8, 0.35, { 54, 219 }))
   set('GitViewConflictCount', { link = 'DiagnosticWarn' })
   set('GitViewOldLnum', { link = 'LineNr' })
   set('GitViewNewLnum', { link = 'LineNr' })
@@ -180,17 +185,23 @@ local STAT_HL = { ['%++'] = 'GitViewStatAdd', ['%-+'] = 'GitViewStatDelete' }
 local STAGED_LINE_HL = { add = 'GitViewStagedAdd', del = 'GitViewStagedDelete' }
 local STAGED_TEXT_HL = { add = 'GitViewStagedAddText', del = 'GitViewStagedDeleteText' }
 local CONFLICT_HL = {
-  marker = 'GitViewConflictMarker',
   ours = 'GitViewConflictOurs',
   base = 'GitViewConflictBase',
   theirs = 'GitViewConflictTheirs',
+}
+local MARKER_HL = {
+  ['<'] = 'GitViewConflictOursMarker',
+  ['|'] = 'GitViewConflictBaseMarker',
+  ['='] = 'GitViewConflictSeparator',
+  ['>'] = 'GitViewConflictTheirsMarker',
 }
 
 --- @param l gitview.Line
 --- @return string?
 local function line_hl_of(l)
   if l.kind == 'conflict' then
-    return CONFLICT_HL[l.part]
+    -- a marker is told by its first character, which is all `conflict` matched
+    return l.part == 'marker' and MARKER_HL[l.text:sub(1, 1)] or CONFLICT_HL[l.part]
   end
   return l.stage == 'staged' and STAGED_LINE_HL[l.kind] or LINE_HL[l.kind]
 end

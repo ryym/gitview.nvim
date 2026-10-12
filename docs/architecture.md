@@ -934,8 +934,11 @@ one whose markers were all removed by hand but which has not been added.
 
 - **The background is by `part`.** Ours and theirs are not the add and delete
   colors, which would read as one replacing the other; each is a fixed hue
-  blended into the `Normal` background about as faintly as a staged change. The
-  markers are blended more strongly, so that where each part ends stands out.
+  blended into the `Normal` background about as faintly as a staged change.
+- **Each marker has a group of its own**, told apart by its first character.
+  `<<<<<<<`, `|||||||` and `>>>>>>>` take the hue of the part they open or close
+  blended more strongly, so that where each part starts and ends stands out.
+  `=======` belongs to neither side and has a hue of its own.
 - **Syntax is collected from the working tree, markers and all**, onto every row
   but the markers, which `dlib.has_syntax` leaves out: they are no code in any
   language and would be colored as errors. The rest is not valid code either,

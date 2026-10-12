@@ -678,11 +678,11 @@ test('a conflict colors its code but not its markers', function()
     end
   end
   eq({
-    'GitViewConflictMarker',
+    'GitViewConflictOursMarker',
     'GitViewConflictOurs',
-    'GitViewConflictMarker',
+    'GitViewConflictSeparator',
     'GitViewConflictTheirs',
-    'GitViewConflictMarker',
+    'GitViewConflictTheirsMarker',
   }, groups)
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
