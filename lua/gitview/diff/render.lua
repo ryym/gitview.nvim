@@ -108,28 +108,26 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewStagedDeleteText', scale(del, 0.9))
   set('GitViewStagedAddBar', { link = 'Added' })
   set('GitViewStagedDeleteBar', { link = 'Removed' })
-  -- The two sides of a conflict are equals, so neither takes the add or the
-  -- delete color, which would read as one side replacing the other. Each has a
-  -- hue of its own mixed into the background, about as faint as a staged
-  -- change; their syntax is replayed over it, and the background is what tells
-  -- them from the code around them. Each marker is stronger, so that where each
-  -- part starts stands out: the one that opens ours, the base or theirs in the
-  -- same hue as that part, and `>>>>>>>` closing theirs in its hue too.
-  -- `=======` parts the two sides, of which it belongs to neither.
-  local dark = vim.o.background ~= 'light'
-  --- @param rgb integer
-  --- @param factor number
-  --- @param cterm integer[] for a dark and a light background
-  local function tint(rgb, factor, cterm)
-    return scale({ bg = rgb, ctermbg = cterm[dark and 1 or 2] }, factor)
-  end
-  set('GitViewConflictOurs', tint(0x4c8bf5, 0.2, { 17, 189 }))
-  set('GitViewConflictTheirs', tint(0xb35ee8, 0.2, { 53, 225 }))
-  set('GitViewConflictBase', tint(0x9a9a9a, 0.2, { 236, 254 }))
-  set('GitViewConflictOursMarker', tint(0x4c8bf5, 0.35, { 18, 153 }))
-  set('GitViewConflictBaseMarker', tint(0x9a9a9a, 0.35, { 239, 251 }))
-  set('GitViewConflictSeparator', tint(0xe0a020, 0.35, { 58, 229 }))
-  set('GitViewConflictTheirsMarker', tint(0xb35ee8, 0.35, { 54, 219 }))
+  -- A conflict's parts take the diff colors other tools give them: ours the add
+  -- color, theirs the change color, and the base, which both sides moved away
+  -- from, the delete color. They are faded further than a staged change, so
+  -- that a conflict among ordinary diffs is not read as one. Their syntax is
+  -- replayed over them, and the background is what tells them from the code
+  -- around them.
+  --
+  -- The markers that open ours and close theirs are their side's color, less
+  -- faded, so that where a conflict starts and ends stands out. The two between
+  -- belong to neither side and are a neutral gray.
+  local change = bg_only('DiffChange', '#1f2a3a')
+  set('GitViewConflictOurs', scale(add, 0.5))
+  set('GitViewConflictTheirs', scale(change, 0.5))
+  set('GitViewConflictBase', scale(del, 0.5))
+  local gray = { bg = 0xd0d0d0, ctermbg = vim.o.background == 'light' and 251 or 239 }
+  local between = scale(gray, 0.3)
+  set('GitViewConflictOursMarker', scale(add, 0.8))
+  set('GitViewConflictBaseMarker', between)
+  set('GitViewConflictSeparator', between)
+  set('GitViewConflictTheirsMarker', scale(change, 0.8))
   set('GitViewConflictCount', { link = 'DiagnosticWarn' })
   set('GitViewOldLnum', { link = 'LineNr' })
   set('GitViewNewLnum', { link = 'LineNr' })

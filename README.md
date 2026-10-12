@@ -103,11 +103,11 @@ markers included, rather than as a diff. It is read-only like any other diff.
 
 - **Only the lines around each conflict are open**, and the rest is folded as
   unchanged lines are. `]c` and `[c` move between the conflicts.
-- **Each part of a conflict has a background of its own**: ours, theirs, the base
-  that `diff3` and `zdiff3` add. Each marker has a stronger one: those opening
-  a part and `>>>>>>>` in that part's hue, and `=======` in one of its own. Ours
-  and theirs are not drawn as an addition and a deletion, since neither replaces
-  the other.
+- **Each part of a conflict has a background of its own**: ours green, theirs
+  blue, and the base that `diff3` and `zdiff3` add red. They are fainter than
+  an ordinary diff's, so a conflict is not taken for one. `<<<<<<<` and
+  `>>>>>>>` are stronger in their side's color, and the markers between them
+  gray.
 - **The gutter has the working tree's line numbers only**, so `gf` opens the file
   on the line under the cursor, to edit it there.
 - **The file's header counts conflicts** where it would count lines, as `!2`.
@@ -372,7 +372,8 @@ The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewCommitSha` colors the shas in the diff's winbar as well.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`,
-the conflict colors to fixed hues blended into the `Normal` background,
+the conflict colors to faded backgrounds derived from `DiffAdd`, `DiffChange`
+and `DiffDelete` with gray between the sides,
 `GitViewFileHeaderBg` to one derived from `CursorLine`, and the rest link to standard groups. All are defined the first time they are
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only

@@ -932,13 +932,14 @@ one whose markers were all removed by hand but which has not been added.
 
 ### Colors
 
-- **The background is by `part`.** Ours and theirs are not the add and delete
-  colors, which would read as one replacing the other; each is a fixed hue
-  blended into the `Normal` background about as faintly as a staged change.
+- **The background is by `part`**, in the colors other tools give them: ours
+  the add color, theirs the change color, and the base, which both sides moved
+  away from, the delete color. They are faded further than a staged change, so
+  that a conflict among ordinary diffs is not read as one.
 - **Each marker has a group of its own**, told apart by its first character.
-  `<<<<<<<`, `|||||||` and `>>>>>>>` take the hue of the part they open or close
-  blended more strongly, so that where each part starts and ends stands out.
-  `=======` belongs to neither side and has a hue of its own.
+  `<<<<<<<` and `>>>>>>>` take their side's color, less faded, so that where a
+  conflict starts and ends stands out. `|||||||` and `=======` belong to neither
+  side and are a neutral gray.
 - **Syntax is collected from the working tree, markers and all**, onto every row
   but the markers, which `dlib.has_syntax` leaves out: they are no code in any
   language and would be colored as errors. The rest is not valid code either,
