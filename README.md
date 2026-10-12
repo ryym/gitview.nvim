@@ -374,7 +374,8 @@ The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`,
 the conflict colors to faded backgrounds derived from `DiffAdd`, `DiffChange`
 and `DiffDelete` with gray between the sides,
-`GitViewFileHeaderBg` to one derived from `CursorLine`, and the rest link to standard groups. All are defined the first time they are
+`GitViewFileHeaderBg` to one derived from `CursorLine`, `GitViewFileHeader` to
+bold text in the surrounding color, and the rest link to standard groups. All are defined the first time they are
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
 carries configuration, and the colors do not depend on it.

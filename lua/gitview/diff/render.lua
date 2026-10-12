@@ -135,7 +135,10 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewDeleteLnum', { link = 'Removed' })
   set('GitViewSeparator', { link = 'Folded' })
   set('GitViewFoldBar', { link = 'FoldColumn' })
-  set('GitViewFileHeader', { link = 'Title' })
+  -- The band already marks where a file starts, so its name needs no color of
+  -- its own. Leaving the foreground out lets it take the text color of where it
+  -- is drawn, the buffer's or the winbar's.
+  set('GitViewFileHeader', { bold = true })
   -- A file's header is a band across the window, gutter included, so where one
   -- file starts stands out. It is the cursor line's color pushed further from
   -- the background: of a kind with it, yet not to be taken for it.
