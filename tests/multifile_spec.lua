@@ -171,6 +171,33 @@ test('the winbar names the file the top of the window is in', function()
   vim.api.nvim_win_close(win, true)
 end)
 
+-- The winbar is bold by default, so the text around the file is drawn in a group
+-- that does not combine with it, and the file alone is left bold. A `%*` would
+-- go back to the winbar's bold.
+test('the winbar leaves only the file bold', function()
+  local buf, view = build({ LUA, PERL })
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = 'editor',
+    width = 60,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  render.configure_window(win, buf)
+  vim.g.statusline_winid = win
+  vim.api.nvim_win_call(win, function()
+    vim.wo.foldenable = false
+    vim.fn.winrestview({ topline = view.files[1].row + 1, lnum = view.files[1].row + 1 })
+  end)
+
+  local bar = render.winbar()
+  local head = '%#GitViewWinBarText# %#GitViewFileHeader#a.lua%#GitViewWinBarText# @ '
+  eq(head, bar:sub(1, #head))
+  assert(not bar:find('%*', 1, true), bar)
+
+  vim.api.nvim_win_close(win, true)
+end)
+
 --- What the gutter shows on `row` of `buf`, as 'statuscolumn' draws it.
 --- @param buf integer
 --- @param row integer

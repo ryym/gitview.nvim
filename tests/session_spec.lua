@@ -1715,7 +1715,7 @@ test('session: the diff winbar colors the shas it names', function()
     vim.g.statusline_winid = s.diff_win
     local bar = require('gitview.diff.render').winbar()
     local function sha(c)
-      return '%#GitViewCommitSha#' .. c.sha .. '%*'
+      return '%#GitViewCommitSha#' .. c.sha .. '%#GitViewWinBarText#'
     end
     assert(bar:find(sha(s.commits[2]), 1, true), bar)
     eq(1, select(2, bar:gsub('GitViewCommitSha', '')))

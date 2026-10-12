@@ -148,6 +148,9 @@ local highlights = util.highlights('gitview.highlights', function(set)
   set('GitViewCommitSha', { link = 'Identifier' })
   set('GitViewCommitSubject', { link = 'Title' })
   set('GitViewCommitAuthor', { link = 'Comment' })
+  -- Not combining keeps the winbar's colors, which a group leaves unset, but
+  -- drops its attributes, the bold among them.
+  set('GitViewWinBarText', { nocombine = true })
   set('GitViewSkipped', { link = 'Comment' })
   set('GitViewStatAdd', { link = 'Added' })
   set('GitViewStatDelete', { link = 'Removed' })
@@ -883,8 +886,13 @@ function M.statuscolumn()
   )
 end
 
+--- The winbar's text outside the file and the shas. The winbar is bold by
+--- default, which leaves a bold file name nothing to stand out from, and a
+--- group cannot take an attribute away from it but by not combining with it.
+local WINBAR_TEXT = '%#GitViewWinBarText#'
+
 --- What a view compares, for the winbar, with its shas colored as the commits
---- pane colors them and the rest in the winbar's own color.
+--- pane colors them and the rest in `WINBAR_TEXT`.
 ---
 --- The shas are found in the first word, which is where every label puts them:
 --- `<sha> <subject>`, `<sha>^..<sha>`, `<sha>^..working tree`. A subject is
@@ -897,7 +905,7 @@ local function rev_statusline(rev)
   for from, hex, to in word:gmatch('()%f[%w](%x+)%f[%W]()') do
     if #hex >= 4 then
       out[#out + 1] = util.escape_statusline(word:sub(at, from - 1))
-      out[#out + 1] = '%#GitViewCommitSha#' .. hex .. '%*'
+      out[#out + 1] = '%#GitViewCommitSha#' .. hex .. WINBAR_TEXT
       at = to
     end
   end
@@ -959,11 +967,12 @@ function M.winbar()
   end
 
   -- Only the file and the shas are colored; the rest is in the winbar's own
-  -- color, as any other window's winbar is.
-  local head, head_text = ' ', ' '
+  -- color, as any other window's winbar is, though not in its bold.
+  local head, head_text = WINBAR_TEXT .. ' ', ' '
   if file then
     head_text = (' %s @ '):format(file.label)
-    head = (' %%#GitViewFileHeader#%s%%* @ '):format(util.escape_statusline(file.label))
+    head = WINBAR_TEXT
+      .. (' %%#GitViewFileHeader#%s%s @ '):format(util.escape_statusline(file.label), WINBAR_TEXT)
   end
   local tail = ''
   if #view.files > 1 then

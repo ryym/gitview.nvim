@@ -369,13 +369,15 @@ The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,
 `GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
 `GitViewIndent`.
-`GitViewCommitSha` colors the shas in the diff's winbar as well.
+`GitViewCommitSha` colors the shas in the diff's winbar as well. The rest of
+that winbar, other than the file, is in `GitViewWinBarText`.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`,
 the conflict colors to faded backgrounds derived from `DiffAdd`, `DiffChange`
 and `DiffDelete` with gray between the sides,
 `GitViewFileHeaderBg` to one derived from `CursorLine`, `GitViewFileHeader` to
-bold text in the surrounding color, and the rest link to standard groups. All are defined the first time they are
+bold text in the surrounding color, `GitViewWinBarText` to the winbar's
+colors without its bold, and the rest link to standard groups. All are defined the first time they are
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
 carries configuration, and the colors do not depend on it.
