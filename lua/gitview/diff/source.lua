@@ -20,6 +20,11 @@ local M = {}
 --- @field index_lines string[]? given only for a mixed view; see gitview.diff.mixed
 --- @field conflicted true? an unmerged file, shown as `new_lines` has it rather
 ---       than as a diff; see gitview.diff.conflict
+--- @field old_rev string? the revision `old_lines` was read from, as git names
+---       it: `HEAD` or a commit. nil when there is none to name: a root commit
+---       has no old side, and a conflicted file only the working tree's.
+--- @field new_rev string? the commit `new_lines` was read from; nil for the
+---       working tree
 
 --- The working tree's version of a file: the file on disk, never a buffer.
 ---
@@ -144,6 +149,8 @@ local function range_sources(range, changes, root)
       ft = M.filetype_of(path),
       old_lines = old_spec[i] and blobs[old_spec[i]] or {},
       new_lines = new_lines,
+      old_rev = range.old,
+      new_rev = range.new,
     }
   end
   return sources
@@ -221,6 +228,7 @@ local function sources_of(entries, root)
       old_lines = head_spec[i] and blobs[head_spec[i]] or {},
       index_lines = index_lines,
       new_lines = work_lines,
+      old_rev = 'HEAD',
     }
   end
   return sources

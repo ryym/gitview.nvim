@@ -34,6 +34,8 @@ end
 --- @field row integer 1-based row of this file's header line
 --- @field conflicts integer? how many conflicts an unmerged file has, which its
 ---       header shows in place of what it adds and deletes
+--- @field old_rev string? see gitview.Source
+--- @field new_rev string? see gitview.Source
 
 --- @class gitview.View
 --- @field lines gitview.Line[]
