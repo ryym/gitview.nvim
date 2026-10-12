@@ -2760,6 +2760,24 @@ test('session: a commit with nothing to show lists its files under its header', 
   end)
 end)
 
+-- An empty commit, such as one amended for its message alone, still has a
+-- message to read.
+test('session: a commit that changed nothing keeps its header', function()
+  with_session(function(repo)
+    repo.write('a.lua', { 'return 1' })
+    repo.commit('first')
+    repo.git('commit', '-q', '--allow-empty', '-m', 'second', '-m', 'Why it is empty.')
+  end, function(s)
+    show_commit(s, 1)
+    local view = diff_view(s)
+    local n = assert(view.header_rows)
+    eq('second', diff_rows(s)[1])
+    assert(vim.tbl_contains(diff_rows(s), 'Why it is empty.'), 'the body is shown')
+    eq('(no change)', diff_rows(s)[n + 2])
+    eq({}, view.files)
+  end)
+end)
+
 -- With whitespace ignored, a file whose only change is whitespace has nothing to
 -- show either, and calling that "no textual change" would be a lie.
 test('session: a file left out for its whitespace says so', function()

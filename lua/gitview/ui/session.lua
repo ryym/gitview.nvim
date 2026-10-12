@@ -161,6 +161,10 @@ local function no_view_reason(s)
   return '(no textual change)'
 end
 
+--- What to call a commit that changed no file at all. Whitespace has no say in
+--- it, and "no textual change" would suggest files whose change is elsewhere.
+local NO_CHANGE = '(no change)'
+
 --- Which pane a kind of target lives in. The sidebar holds two lists, and a
 --- selection belongs to exactly one of them.
 --- @param s gitview.Session
@@ -552,6 +556,14 @@ local function read_commit(s, target)
     local view, left_out =
       perf.measure('build', vlib.build, read.sources, label, config.values.context, diff_opts(s))
     view = vlib.list_skipped(view, label, read.skipped, left_out, no_view_reason(s))
+    if not view and detail then
+      -- Nothing at all changed, as in an empty commit: there is no file left out
+      -- to call unchanged, but the message is still worth reading.
+      view = vlib.placeholder(label, NO_CHANGE, vlib.commit_header(detail, assert(commit)))
+      view.note = note_of(s, note)
+      render.draw(s.diff_buf, view)
+      return
+    end
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
       return
