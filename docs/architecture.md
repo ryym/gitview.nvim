@@ -179,6 +179,8 @@ up the whole session, `gf` opens the file as described below, and `]f` moves
 the list's cursor — except in the diff of a commit, the working tree or a
 directory, which holds many files and scrolls to the next one's header instead. `diff/keymap` takes
 those as callbacks so that it does not depend on the session.
+`gy` needs only the repository root, to name files relative to it, and is given
+that alone.
 
 #### Opening a file
 
@@ -203,6 +205,33 @@ for a look at the whole file while reading its diff, so the session stays open.
   line is clamped to the file as it is now. A file the working tree no longer
   has is refused rather than opened as a new, empty buffer.
 - **A commit row opens nothing**: it stands for every file the commit touched.
+
+#### Copying where lines are
+
+`gy` in the diff copies where the rows under the cursor or the selection are, as
+`path:12-18` with the path relative to the repository. It is for pointing at
+lines from outside the editor, such as in a message to an agent that wrote the
+change, so it says where they are rather than what they hold: the reader can
+open the file.
+
+`keymap.references` turns rows into those lines, one per file:
+
+- **The range is in the new version.** A deleted row counts as the line
+  `gf` would open for it, the one now in its place, so a selection across a
+  change widens the range rather than losing its deleted half. One at the end of
+  the file is clamped to the file's last line, where `gf` relies on `edit_at`.
+- **Only rows that are all deleted are given in the old version**, with the
+  version named: `(deleted from HEAD)`, or from a commit. A row only the index
+  had, in a mixed view, is numbered in the index and says so. It counts only
+  when no row from HEAD is among them, since the two number lines differently.
+- **A commit's file names the commit**, `(at <sha>)`, as its line numbers may no
+  longer be the working tree's. A range ending at the working tree needs none.
+- **A file's header alone names the file without lines**, as `gf` opens it at
+  the top. A commit's header and the blank rows between files are passed over.
+
+Which version each side is comes from the sources: `Source.old_rev` and
+`Source.new_rev`, carried onto `gitview.File`. Only the source knows it: a view
+of the working tree compares against `HEAD`, a range against its ends.
 
 ### The commit list
 

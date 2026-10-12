@@ -267,6 +267,7 @@ then follows the edits as they are made.
 | `]f` / `[f` |                     |                      | next / previous file          |
 | `]c` / `[c` |                     |                      | next / previous hunk          |
 | `gf`        | open the file       | open the file        | open the file at this line    |
+| `gy`        |                     |                      | copy the file and line(s)     |
 | `R`         | re-read             | re-read              |                               |
 | `q`         | close               | close                | close                         |
 
@@ -274,6 +275,19 @@ then follows the edits as they are made.
 session open to come back to. From the diff it lands on the line under the
 cursor; a deleted line lands on the line now in its place. A commit's line
 numbers are the commit's, so there it lands near the line rather than on it.
+
+`gy` copies where the line under the cursor, or the selection, is in the file,
+such as `lua/gitview/init.lua:12-18`, to point someone at it: a reviewer, or an
+agent that wrote the change. It goes into the register given, so `"+gy` copies
+to the clipboard.
+
+- **Lines are numbered as the file now has them.** A deleted line among others
+  counts as the line now in its place.
+- **Deleted lines alone are numbered where they were**, and say so:
+  `f.lua:3-5 (deleted from HEAD)`.
+- **In a commit the commit is named**, as `f.lua:12 (at 1a2b3c4)`, since its
+  line numbers are the commit's.
+- **A selection over several files** copies a line for each.
 
 There is one key per direction rather than one key toggling: a file changed in
 the index and in the working tree both has no obvious sense in which it is
