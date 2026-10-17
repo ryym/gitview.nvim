@@ -558,8 +558,9 @@ function M.configure_window(win)
     cursorline = true,
     -- What a span conceals stays hidden on the cursor line too, or the row under
     -- the cursor would be the one whose subject is out of line with the rest.
+    -- `c` covers the line 'incsearch' moves the cursor to while a search is typed.
     conceallevel = 2,
-    concealcursor = 'nv',
+    concealcursor = 'nvc',
     -- The session sets the width itself, so a window opened or closed beside
     -- it leaves the width to the diff.
     winfixwidth = true,
