@@ -107,77 +107,84 @@ test('list: the sha of a commit row is colored', function()
   end
 end)
 
--- What is pushed is faded, once there is an upstream to tell it by.
-test('list: the sha of a commit row says whether it is pushed', function()
-  local a, b = commit('abc1234', 'new'), commit('def5678', 'old')
-  local rows = list.content({ pane = 'commits', commits = { a, b }, unpushed = { [a.full_sha] = true } })
-  eq('GitViewCommitSha', rows[1].spans[#rows[1].spans].group)
-  eq('GitViewCommitShaPushed', rows[2].spans[#rows[2].spans].group)
-end)
-
--- The rule says where the upstream is, which is not always below the last
--- unpushed row: a merge from it can leave pushed commits between unpushed ones.
-test('list: the upstream is ruled above the commit it points at', function()
-  local a, b, c = commit('abc1234', 'merge'), commit('bcd2345', 'theirs'), commit('cde3456', 'mine')
-  local rows = list.content({
-    pane = 'commits',
-    commits = { a, b, c },
-    upstream = { sha = b.full_sha, name = 'origin/main' },
-    unpushed = { [a.full_sha] = true, [c.full_sha] = true },
-  })
-  eq({ nil, 'origin/main', nil }, { rows[1].rule, rows[2].rule, rows[3].rule })
-end)
-
-test('list: an upstream the list does not reach is not ruled', function()
-  local rows = list.content({
-    pane = 'commits',
-    commits = { commit('abc1234', 'x') },
-    upstream = { sha = 'elsewhere', name = 'origin/main' },
-    unpushed = {},
-  })
-  eq(nil, rows[1].rule)
-end)
-
---- The virtual lines drawn below each row, by 0-based row.
+--- What `paint_upstream` drew: the rows whose sha it faded, and the virtual
+--- lines it hung below rows, all 0-based.
 --- @param buf integer
---- @return table<integer, string>
-local function virt_lines(buf)
-  local ns = vim.api.nvim_create_namespace('gitview.ui.list')
-  local out = {}
+--- @return {pushed:integer[], lines:table<integer, string>}
+local function upstream_paint(buf)
+  local ns = vim.api.nvim_create_namespace('gitview.ui.list.upstream')
+  local out = { pushed = {}, lines = {} }
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    if m[4].hl_group == 'GitViewCommitShaPushed' then
+      out.pushed[#out.pushed + 1] = m[2]
+    end
     if m[4].virt_lines then
       assert(not m[4].virt_lines_above, 'a line above the first row is not shown')
-      out[m[2]] = m[4].virt_lines[1][1][1]
+      out.lines[m[2]] = m[4].virt_lines[1][1][1]
     end
   end
   return out
 end
 
--- Hung below the row above, since a line above the first row of a buffer is
--- not shown until the window is scrolled onto it.
-test('list: the upstream rule hangs below the row above', function()
+--- A commits pane drawn with `commits` and painted for `upstream`.
+--- @param commits gitview.Commit[]
+--- @param upstream gitview.Upstream?
+--- @param unpushed table<string, true>?
+--- @param worktree boolean?
+--- @return integer buf
+local function painted(commits, upstream, unpushed, worktree)
   local buf = list.create_buffer()
-  local a = commit('abc1234', 'x')
-  list.draw(buf, {
-    pane = 'commits',
-    root = '/tmp/repo',
-    worktree = true,
-    commits = { a },
-    upstream = { sha = a.full_sha, name = 'origin/main' },
-    unpushed = {},
-  })
-  local lines = virt_lines(buf)
-  assert(vim.startswith(lines[0], '── origin/main ─'), lines[0])
+  list.draw(buf, { pane = 'commits', root = '/tmp/repo', worktree = worktree, commits = commits })
+  list.paint_upstream(buf, upstream, unpushed)
+  return buf
+end
 
-  -- Without the working-tree row there is no row above.
-  list.draw(buf, {
-    pane = 'commits',
-    root = '/tmp/repo',
-    commits = { a },
-    upstream = { sha = a.full_sha, name = 'origin/main' },
-    unpushed = {},
-  })
-  eq({}, virt_lines(buf))
+-- What is pushed is faded, once there is an upstream to tell it by.
+test('list: a pushed sha is faded', function()
+  local a, b = commit('abc1234', 'new'), commit('def5678', 'old')
+  local buf = painted({ a, b }, { sha = b.full_sha, name = 'origin/main' }, { [a.full_sha] = true })
+  eq({ 1 }, upstream_paint(buf).pushed)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+test('list: without an upstream no sha is faded', function()
+  local buf = painted({ commit('abc1234', 'x') }, nil, nil)
+  eq({ pushed = {}, lines = {} }, upstream_paint(buf))
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+-- The line says where the upstream is, which is not always below the last
+-- unpushed row: a merge from it can leave pushed commits between unpushed ones.
+-- It hangs below the row above, since a line above the first row of a buffer
+-- is not shown until the window is scrolled onto it.
+test('list: the upstream is named above the commit it points at', function()
+  local a, b, c = commit('abc1234', 'merge'), commit('bcd2345', 'theirs'), commit('cde3456', 'mine')
+  local buf = painted(
+    { a, b, c },
+    { sha = b.full_sha, name = 'origin/main' },
+    { [a.full_sha] = true, [c.full_sha] = true }
+  )
+  local lines = upstream_paint(buf).lines
+  eq({ 0 }, vim.tbl_keys(lines))
+  assert(vim.startswith(lines[0], '── origin/main ─'), lines[0])
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+test('list: an upstream the list does not reach is not named', function()
+  local buf = painted({ commit('abc1234', 'x') }, { sha = 'elsewhere', name = 'origin/main' }, {})
+  eq({}, upstream_paint(buf).lines)
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
+-- HEAD's row is the first without the working-tree row, and has no row above.
+test('list: the upstream is named only below a row', function()
+  local a = commit('abc1234', 'x')
+  local upstream = { sha = a.full_sha, name = 'origin/main' }
+  local buf = painted({ a }, upstream, {}, true)
+  eq({ 0 }, vim.tbl_keys(upstream_paint(buf).lines))
+  vim.api.nvim_buf_delete(buf, { force = true })
+  buf = painted({ a }, upstream, {})
+  eq({}, upstream_paint(buf).lines)
   vim.api.nvim_buf_delete(buf, { force = true })
 end)
 

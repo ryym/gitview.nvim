@@ -27,9 +27,6 @@ local M = {}
 --- @field commits gitview.Commit[]? the commits pane
 --- @field worktree boolean? the commits pane, with a row for the working tree
 ---        above the commits
---- @field upstream gitview.Upstream? the commits pane, what the branch tracks
---- @field unpushed table<string, true>? the commits pane, the full shas of the
----        commits the upstream does not have; nil when there is no upstream
 --- @field scope gitview.ListScope? the commits pane, looking into a range
 --- @field stale boolean? the commits pane, holding a list `git log` no longer
 ---        agrees with; see `ui.session`
@@ -66,8 +63,6 @@ local M = {}
 --- @field lead [string, string?][]? drawn after the indent, in front of the
 ---        name, as `virt_text` chunks: a directory's mark, or in a tree a file's
 ---        status letters
---- @field rule string? drawn as a line of its own above the row, which is not
----        a line of the buffer: the name of the upstream the row's commit is
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
@@ -276,21 +271,6 @@ local function sha_spans(sha)
   return { { from = SHA_SHOWN, to = #sha, conceal = true } }
 end
 
---- What a commit's sha is colored with: faded once it is known to be pushed.
----
---- Without an upstream nothing is known to be pushed, so every sha keeps the
---- color it has everywhere else, as an unpushed one does. A branch that tracks
---- nothing has been pushed nowhere anyway.
---- @param c gitview.Commit
---- @param unpushed table<string, true>? see `ListModel.unpushed`
---- @return string
-local function sha_group(c, unpushed)
-  if unpushed and not unpushed[c.full_sha] then
-    return 'GitViewCommitShaPushed'
-  end
-  return 'GitViewCommitSha'
-end
-
 --- @param model gitview.ListModel
 --- @return gitview.ListRow[]
 function M.content(model)
@@ -345,13 +325,9 @@ function M.content(model)
       text = ('%s %s'):format(c.sha, c.subject),
       target = { kind = 'commit', index = i },
       spans = vim.list_extend(sha_spans(c.sha), {
-        { from = 0, to = #c.sha, group = sha_group(c, model.unpushed) },
+        { from = 0, to = #c.sha, group = 'GitViewCommitSha' },
       }),
       subject = #c.sha + 1,
-      -- Where the upstream is rather than below the last unpushed row: a merge
-      -- from it can leave pushed commits between unpushed ones. An upstream the
-      -- list does not reach, being older or diverged, is not shown at all.
-      rule = model.upstream and model.upstream.sha == c.full_sha and model.upstream.name or nil,
     }
   end
   return rows
@@ -464,6 +440,7 @@ end
 local ns = vim.api.nvim_create_namespace('gitview.ui.list')
 local cursor_ns = vim.api.nvim_create_namespace('gitview.ui.list.cursor')
 local range_ns = vim.api.nvim_create_namespace('gitview.ui.list.range')
+local upstream_ns = vim.api.nvim_create_namespace('gitview.ui.list.upstream')
 
 --- Above the spans a row is drawn with, so the row the diff shows stands out
 --- even where the whole row is already colored, as the working-tree row is.
@@ -505,18 +482,6 @@ function M.draw(buf, model)
         conceal = span.conceal and '' or nil,
         hl_group = span.group,
         priority = vim.hl.priorities.user,
-      })
-    end
-    -- Hung below the row above rather than above this one: lines above the
-    -- first line of a buffer are only shown once the window is scrolled up
-    -- onto them. The first row has none above it, and the rule is left out
-    -- until a working-tree row is drawn there.
-    if r.rule and i > 1 then
-      local label = ('── %s '):format(r.rule)
-      -- As wide as any window could be, since the line is cut off at its edge.
-      local fill = math.max(vim.o.columns - vim.fn.strdisplaywidth(label), 0)
-      vim.api.nvim_buf_set_extmark(buf, ns, i - 2, 0, {
-        virt_lines = { { { label .. ('─'):rep(fill), 'GitViewUpstream' } } },
       })
     end
   end
@@ -584,6 +549,55 @@ function M.paint_range(buf, first, last)
     hl_eol = true,
     priority = vim.hl.priorities.user - 1,
   })
+end
+
+--- Show which commits are pushed and where the upstream is, or nothing.
+---
+--- A pushed sha is faded over the color `draw` gave it. Without an upstream
+--- nothing is known to be pushed, so every sha keeps the color it has everywhere
+--- else, as an unpushed one does; a branch that tracks nothing has been pushed
+--- nowhere anyway.
+---
+--- Kept apart from `draw`, since the upstream moves on a fetch or a push, which
+--- changes nothing else the list shows.
+--- @param buf integer
+--- @param upstream gitview.Upstream? nil clears
+--- @param unpushed table<string, true>? the full shas of the commits `upstream`
+---        does not have
+function M.paint_upstream(buf, upstream, unpushed)
+  vim.api.nvim_buf_clear_namespace(buf, upstream_ns, 0, -1)
+  local state = states[buf]
+  if not upstream or not unpushed or not state then
+    return
+  end
+  for i, r in ipairs(state.rows) do
+    local c = r.target and r.target.kind == 'commit' and state.commits[r.target.index]
+    if c then
+      if not unpushed[c.full_sha] then
+        vim.api.nvim_buf_set_extmark(buf, upstream_ns, i - 1, 0, {
+          end_col = #c.sha,
+          hl_group = 'GitViewCommitShaPushed',
+          priority = vim.hl.priorities.user + 1,
+        })
+      end
+      -- Where the upstream is rather than below the last unpushed row: a merge
+      -- from it can leave pushed commits between unpushed ones. An upstream the
+      -- list does not reach, being older or diverged, is not shown at all.
+      --
+      -- Hung below the row above rather than above this one: lines above the
+      -- first line of a buffer are only shown once the window is scrolled up
+      -- onto them. The first row has none above it, and the line is left out
+      -- until a working-tree row is drawn there.
+      if c.full_sha == upstream.sha and i > 1 then
+        local label = ('── %s '):format(upstream.name)
+        -- As wide as any window could be, since the line is cut off at its edge.
+        local fill = math.max(vim.o.columns - vim.fn.strdisplaywidth(label), 0)
+        vim.api.nvim_buf_set_extmark(buf, upstream_ns, i - 2, 0, {
+          virt_lines = { { { label .. ('─'):rep(fill), 'GitViewUpstream' } } },
+        })
+      end
+    end
+  end
 end
 
 --- @param win integer

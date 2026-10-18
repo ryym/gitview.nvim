@@ -1180,12 +1180,11 @@ local function redraw_list(s, target, keep_unchanged)
     root = s.root,
     commits = s.commits,
     worktree = has_worktree_row(s),
-    upstream = s.upstream,
-    unpushed = s.unpushed,
     scope = s.scope,
     stale = s.commits_stale,
     tree = as_tree,
   })
+  list.paint_upstream(s.commits_buf, s.upstream, s.unpushed)
   clamp_cursor(s.files_win)
   clamp_cursor(s.commits_win)
 
