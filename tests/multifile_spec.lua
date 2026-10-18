@@ -225,6 +225,20 @@ test("each header's gutter carries its background", function()
   eq((' '):rep(12), gutter_at(buf, view.files[2].row - 1), 'the blank line in front is left blank')
 end)
 
+test('buffer_lnum puts the rows own numbers before the gutter', function()
+  local config = require('gitview.config')
+  local buf, view = build({ LUA, PERL })
+  local header = view.files[2].row
+  local plain_header, plain_blank = gutter_at(buf, header), gutter_at(buf, header - 1)
+  config.values.buffer_lnum = true
+  local ok, err = pcall(function()
+    eq('%#GitViewFileHeaderBg#%l ' .. plain_header, gutter_at(buf, header), 'the band runs through it')
+    eq('%l ' .. plain_blank, gutter_at(buf, header - 1))
+  end)
+  config.values.buffer_lnum = false
+  assert(ok, err)
+end)
+
 test("each header's gutter ends with how many lines its file adds and deletes", function()
   local only_add = {
     label = 'c.lua',

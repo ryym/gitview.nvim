@@ -14,6 +14,8 @@ local M = {}
 --- @field no_highlight string[] filetypes shown without syntax highlighting
 --- @field list_style 'flat'|'tree' whether the sidebar lists files by their
 ---        paths alone or as a tree of directories
+--- @field buffer_lnum boolean whether a diff also shows the numbers of its own
+---        rows, which `G` and `:N` go by, before the files' line numbers
 
 --- @type gitview.Config
 M.values = {
@@ -26,6 +28,7 @@ M.values = {
   commit_ratio = 0.4,
   no_highlight = {},
   list_style = 'flat',
+  buffer_lnum = false,
 }
 
 --- @param opts? gitview.Config

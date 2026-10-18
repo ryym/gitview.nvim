@@ -1,3 +1,4 @@
+local config = require('gitview.config')
 local hl = require('gitview.diff.highlight')
 local util = require('gitview.util')
 local worddiff = require('gitview.diff.worddiff')
@@ -832,17 +833,11 @@ local function header_gutters(view)
   return gutters
 end
 
---- Gutter is drawn through 'statuscolumn' rather than written into the buffer so
---- that the line numbers stay out of a yank.
+--- The gutter of the row `v:lnum` of `view` shown in `win`.
+--- @param win integer
+--- @param view gitview.View
 --- @return string
-function M.statuscolumn()
-  local win = vim.g.statusline_winid
-  local view = views[vim.api.nvim_win_get_buf(win)]
-  -- A window that inherited 'statuscolumn' from a diff window is showing another
-  -- buffer, which has no gutter: drawing blanks would leave it an empty column.
-  if not view then
-    return ''
-  end
+local function gutter(win, view)
   -- 'statuscolumn' is evaluated for every screen line, so a wrapped line must
   -- not repeat the numbers of the buffer line it continues.
   if vim.v.virtnum ~= 0 then
@@ -886,6 +881,29 @@ function M.statuscolumn()
     num(l.new_lnum, 'GitViewNewLnum'),
     l.folded and fold_bar(view, lnum) or staged_bar(l)
   )
+end
+
+--- Gutter is drawn through 'statuscolumn' rather than written into the buffer so
+--- that the line numbers stay out of a yank.
+---
+--- With `buffer_lnum`, the row's own number comes first, the one `G` and `:N`
+--- count in. A header's band runs through it too.
+--- @return string
+function M.statuscolumn()
+  local win = vim.g.statusline_winid
+  local view = views[vim.api.nvim_win_get_buf(win)]
+  -- A window that inherited 'statuscolumn' from a diff window is showing another
+  -- buffer, which has no gutter: drawing blanks would leave it an empty column.
+  if not view then
+    return ''
+  end
+  local g = gutter(win, view)
+  if not config.values.buffer_lnum then
+    return g
+  end
+  local l = view.lines[vim.v.lnum]
+  local band = l and l.kind == 'file' and '%#GitViewFileHeaderBg#' or ''
+  return band .. '%l ' .. g
 end
 
 --- The winbar's text outside the file and the shas. The winbar is bold by
@@ -1140,7 +1158,8 @@ function M.configure_window(win, buf)
   util.configure_window_options(win, {
     winbar = '%!v:lua.require("gitview.diff.render").winbar()',
     statuscolumn = '%!v:lua.require("gitview.diff.render").statuscolumn()',
-    number = false,
+    -- 'statuscolumn' draws the numbers, but its `%l` is left empty without this
+    number = config.values.buffer_lnum,
     relativenumber = false,
     signcolumn = 'no',
     wrap = false,

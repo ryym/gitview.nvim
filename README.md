@@ -356,6 +356,16 @@ require('gitview').setup({ linematch = 60 })
 Both sides of the trade-off are measured in
 [docs/neovim-notes.md](docs/neovim-notes.md#linematch-disagrees-with-git).
 
+### The diff's own line numbers
+
+The numbers in a diff's gutter are the files' lines, while `G` and `:N` go by
+the rows of the diff buffer. Its own numbers can be shown before the gutter too,
+at the cost of a third column of numbers:
+
+```lua
+require('gitview').setup({ buffer_lnum = true })
+```
+
 ### Highlight groups
 
 `GitViewAdd`, `GitViewDelete`, `GitViewAddText`, `GitViewDeleteText`,
