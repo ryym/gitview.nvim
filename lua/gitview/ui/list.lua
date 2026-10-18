@@ -27,6 +27,8 @@ local M = {}
 --- @field commits gitview.Commit[]? the commits pane
 --- @field worktree boolean? the commits pane, with a row for the working tree
 ---        above the commits
+--- @field unpushed table<string, true>? the commits pane, the full shas of the
+---        commits the upstream does not have; nil when there is no upstream
 --- @field scope gitview.ListScope? the commits pane, looking into a range
 --- @field stale boolean? the commits pane, holding a list `git log` no longer
 ---        agrees with; see `ui.session`
@@ -271,6 +273,21 @@ local function sha_spans(sha)
   return { { from = SHA_SHOWN, to = #sha, conceal = true } }
 end
 
+--- What a commit's sha is colored with: faded once it is known to be pushed.
+---
+--- Without an upstream nothing is known to be pushed, so every sha keeps the
+--- color it has everywhere else, as an unpushed one does. A branch that tracks
+--- nothing has been pushed nowhere anyway.
+--- @param c gitview.Commit
+--- @param unpushed table<string, true>? see `ListModel.unpushed`
+--- @return string
+local function sha_group(c, unpushed)
+  if unpushed and not unpushed[c.full_sha] then
+    return 'GitViewCommitShaPushed'
+  end
+  return 'GitViewCommitSha'
+end
+
 --- @param model gitview.ListModel
 --- @return gitview.ListRow[]
 function M.content(model)
@@ -325,7 +342,7 @@ function M.content(model)
       text = ('%s %s'):format(c.sha, c.subject),
       target = { kind = 'commit', index = i },
       spans = vim.list_extend(sha_spans(c.sha), {
-        { from = 0, to = #c.sha, group = 'GitViewCommitSha' },
+        { from = 0, to = #c.sha, group = sha_group(c, model.unpushed) },
       }),
       subject = #c.sha + 1,
     }
@@ -347,6 +364,9 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- As Neovim's own git syntax colors a hash, so a sha reads the same here as
   -- in `git show` or a rebase todo.
   set('GitViewCommitSha', { link = 'Identifier' })
+  -- What is pushed has settled. What is not yet stands out against it without a
+  -- color of its own, which would make an ordinary state look like a warning.
+  set('GitViewCommitShaPushed', { link = 'Comment' })
   set('GitViewListCursor', { link = 'Title' })
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.

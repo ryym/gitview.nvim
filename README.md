@@ -133,14 +133,18 @@ between the two panes switches which list the diff follows. The row the diff is
 showing has its name colored, and only in the pane it follows, so which one that
 is can be read even while the focus is in the diff.
 
+Where the branch tracks an upstream, a commit's sha says whether it is pushed:
+what the upstream already has is faded.
+
 The tab keeps up with the repository on its own. Anything that writes the index
 — `git add` in another terminal, a commit from a tmux pane, a branch switch from
 a script — is noticed within a second and redrawn, and coming back to the tab page
 re-reads it as well.
 
 `R` re-reads it on demand, for what those two miss while you stay on the tab page:
-a file written by something that never touched git, and the few commands that move
-HEAD without writing the index, such as `git reset --soft`.
+a file written by something that never touched git, the few commands that move
+HEAD without writing the index, such as `git reset --soft`, and a push or a fetch,
+which changes which commits count as pushed.
 
 There is one tab page per repository. Running `:GitView` again in the same
 repository goes back to the one already open rather than opening another.
@@ -395,7 +399,8 @@ a conflicted file. A commit's header uses
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,
 `GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
-`GitViewIndent`.
+`GitViewIndent`. Where the branch has an upstream, a pushed sha is in
+`GitViewCommitShaPushed` instead of `GitViewCommitSha`.
 `GitViewCommitSha` colors the shas in the diff's winbar as well. The rest of
 that winbar, other than the file, is in `GitViewWinBarText`.
 

@@ -29,7 +29,7 @@ end
 --- @param subject string
 --- @return gitview.Commit
 local function commit(sha, subject)
-  return { sha = sha, parents = { 'p' }, subject = subject, author = 'a', when = 'now' }
+  return { sha = sha, full_sha = sha .. 'ffff', parents = { 'p' }, subject = subject, author = 'a', when = 'now' }
 end
 
 -- The buffer holds paths and nothing else, so that yanking a row gives
@@ -105,6 +105,14 @@ test('list: the sha of a commit row is colored', function()
   for _, span in ipairs(rows[1].spans) do
     assert(span.group ~= 'GitViewCommitSha', 'the zeros are no sha')
   end
+end)
+
+-- What is pushed is faded, once there is an upstream to tell it by.
+test('list: the sha of a commit row says whether it is pushed', function()
+  local a, b = commit('abc1234', 'new'), commit('def5678', 'old')
+  local rows = list.content({ pane = 'commits', commits = { a, b }, unpushed = { [a.full_sha] = true } })
+  eq('GitViewCommitSha', rows[1].spans[#rows[1].spans].group)
+  eq('GitViewCommitShaPushed', rows[2].spans[#rows[2].spans].group)
 end)
 
 test('list: the working-tree row is faded as a whole', function()

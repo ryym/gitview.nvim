@@ -287,6 +287,23 @@ list, with two differences:
 A file row costs a single file's view and is drawn at once, as is anything drawn
 by a refresh.
 
+#### Pushed and unpushed commits
+
+A commit's sha is faded once the branch's upstream has it. What is not pushed
+yet keeps the color a sha has everywhere else, and stands out against the faded
+ones without a color of its own: a warning color would make an ordinary state of
+work look like a problem.
+
+- `git rev-list HEAD --not @{upstream}` names the unpushed commits, alongside
+  every read of the log and capped at the same count. It prints full shas, so
+  the log gives each commit's full sha as well as the abbreviated one shown.
+- Without an upstream — a branch that tracks nothing, a detached HEAD — every
+  sha keeps the one color it has otherwise. That is an ordinary state, so the
+  failing command is not reported.
+- A merge from the upstream can leave pushed commits between unpushed ones,
+  since the log is in date order. Each sha is colored for itself, so that needs
+  no handling.
+
 #### The commit header
 
 A commit shown on its own starts with what `git show --stat` prints before the
@@ -542,7 +559,7 @@ and on its own from two triggers:
   current, including the writes the poll passed over because nobody was looking
   at the session.
 
-Two kinds of change fall between them, and are what `R` is left for:
+Three kinds of change fall between them, and are what `R` is left for:
 
 - **A file written by something that never went through git**, by an external
   editor or a script. Neither the index nor HEAD moves. Watching the working tree
@@ -553,8 +570,10 @@ Two kinds of change fall between them, and are what `R` is left for:
   would not settle this, since on a branch it is `refs/heads/<name>` that moves
   while `HEAD` holds still. In practice such a command is nearly always followed
   by one that does write the index, which is the next line redrawn.
+- **A push or a fetch**, which moves the upstream and so which commits count as
+  [pushed](#pushed-and-unpushed-commits), but writes no index.
 
-Both are only a gap while the tab page stays current; entering it re-reads
+All three are only a gap while the tab page stays current; entering it re-reads
 regardless.
 
 `FocusGained` would be the obvious third, and is deliberately not used. It needs

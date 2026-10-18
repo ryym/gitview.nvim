@@ -1092,6 +1092,24 @@ test('session: entering a pane selects from that pane', function()
   end)
 end)
 
+-- A push writes no index, so it is seen on the next refresh, as `R` gives.
+test('session: knows which commits are pushed, and learns of a push on refresh', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.git('branch', 'base')
+    repo.git('branch', '--set-upstream-to=base')
+    repo.write('a.txt', { 'two' })
+    repo.commit('second')
+  end, function(s, repo)
+    eq({ [s.commits[1].full_sha] = true }, s.unpushed)
+    repo.git('branch', '-f', 'base', 'HEAD')
+    session.refresh(s)
+    settle(s)
+    eq({}, s.unpushed)
+  end)
+end)
+
 -- A repository with no commit has no log to read, and `git log` fails there
 -- rather than printing nothing.
 test('session: a repository with no HEAD lists no commits', function()

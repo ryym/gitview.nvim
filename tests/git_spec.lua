@@ -171,20 +171,21 @@ test('parses a commit log', function()
   eq({
     {
       sha = 'abc1234',
+      full_sha = 'abc1234ffff',
       parents = { 'def5678' },
       subject = 'do a thing',
       author = 'Ada',
       when = '2 days ago',
     },
-  }, git.parse_log(log_z(rec('abc1234', 'def5678', 'do a thing', 'Ada', '2 days ago'))))
+  }, git.parse_log(log_z(rec('abc1234', 'abc1234ffff', 'def5678', 'do a thing', 'Ada', '2 days ago'))))
 end)
 
 -- The root commit has no parent, and a merge has more than one. Which it is
 -- decides what the commit can be compared against.
 test('parses the parent list of a root commit and of a merge', function()
   local commits = git.parse_log(log_z(
-    rec('m000000', 'p111111 p222222', 'merge', 'Ada', 'now'),
-    rec('r000000', '', 'root', 'Ada', 'now')
+    rec('m000000', 'm000000ffff', 'p111111 p222222', 'merge', 'Ada', 'now'),
+    rec('r000000', 'r000000ffff', '', 'root', 'Ada', 'now')
   ))
   eq({ 'p111111', 'p222222' }, commits[1].parents)
   eq({}, commits[2].parents)
@@ -193,7 +194,7 @@ end)
 -- A subject may hold anything but a newline, which is why the fields are
 -- separated by a unit separator rather than by anything more plausible.
 test('keeps a subject containing separators intact', function()
-  local commits = git.parse_log(log_z(rec('abc1234', 'p', 'fix a | b, and "c"', 'Ada', 'now')))
+  local commits = git.parse_log(log_z(rec('abc1234', 'abc1234ffff', 'p', 'fix a | b, and "c"', 'Ada', 'now')))
   eq('fix a | b, and "c"', commits[1].subject)
 end)
 
@@ -214,6 +215,44 @@ test('lists the log of a real repository, newest first', function()
     eq('first', commits[2].subject)
     eq({}, commits[2].parents)
     eq(commits[2].sha, commits[1].parents[1])
+    eq(commits[1].sha, commits[1].full_sha:sub(1, #commits[1].sha))
+  end)
+end)
+
+-- A local branch serves as the upstream as well as a remote one would: what is
+-- asked is only which commits one has and the other does not.
+test('lists the commits the upstream does not have', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.git('branch', 'base')
+    repo.git('branch', '--set-upstream-to=base')
+    repo.write('a.txt', { 'two' })
+    repo.commit('second')
+
+    local commits = assert(git.log(10, repo.root))
+    eq({ [commits[1].full_sha] = true }, git.unpushed(10, repo.root))
+  end)
+end)
+
+test('lists no unpushed commits when everything is pushed', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.git('branch', 'base')
+    repo.git('branch', '--set-upstream-to=base')
+
+    eq({}, git.unpushed(10, repo.root))
+  end)
+end)
+
+-- Nothing to compare with is not the same as nothing unpushed.
+test('cannot tell what is unpushed without an upstream', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+
+    eq(nil, git.unpushed(10, repo.root))
   end)
 end)
 

@@ -395,6 +395,7 @@ end
 
 --- @class gitview.Commit
 --- @field sha string abbreviated
+--- @field full_sha string unabbreviated, as other commands than `log` print it
 --- @field parents string[] abbreviated; empty for the root commit
 --- @field subject string
 --- @field author string
@@ -403,7 +404,7 @@ end
 --- `-z` already spends NUL on separating the records, so the fields within one
 --- are separated by a unit separator: a subject can hold anything but a
 --- newline, and that includes every other plausible delimiter.
-local LOG_FORMAT = '%h%x1f%p%x1f%s%x1f%an%x1f%ar'
+local LOG_FORMAT = '%h%x1f%H%x1f%p%x1f%s%x1f%an%x1f%ar'
 
 --- Parse the stream `git log -z --format=LOG_FORMAT` writes.
 ---
@@ -419,10 +420,11 @@ function M.parse_log(out)
     local f = vim.split(rec, '\31', { plain = true })
     commits[#commits + 1] = {
       sha = f[1],
-      parents = (f[2] and f[2] ~= '') and vim.split(f[2], ' ', { plain = true }) or {},
-      subject = f[3] or '',
-      author = f[4] or '',
-      when = f[5] or '',
+      full_sha = f[2] or '',
+      parents = (f[3] and f[3] ~= '') and vim.split(f[3], ' ', { plain = true }) or {},
+      subject = f[4] or '',
+      author = f[5] or '',
+      when = f[6] or '',
     }
   end
   return commits
@@ -444,6 +446,30 @@ function M.log(count, cwd)
     return nil, res.stderr
   end
   return M.parse_log(res.stdout)
+end
+
+--- The commits HEAD has and its upstream does not, as a set of full shas.
+---
+--- Nil when there is no upstream to compare with: a branch that tracks nothing,
+--- a detached HEAD, an upstream that has been deleted. Those are ordinary states
+--- rather than failures, so the caller has nothing to report.
+---
+--- Capped like the log, and listed in the same order, so whichever of the first
+--- `count` commits of the log are unpushed are among the first `count` here.
+---
+--- @param count integer
+--- @param cwd string
+--- @return table<string, true>?
+function M.unpushed(count, cwd)
+  local res = M.run({ 'git', 'rev-list', '-n', tostring(count), 'HEAD', '--not', '@{upstream}' }, cwd)
+  if not res.ok then
+    return nil
+  end
+  local set = {}
+  for _, sha in ipairs(vim.split(res.stdout, '\n', { plain = true, trimempty = true })) do
+    set[sha] = true
+  end
+  return set
 end
 
 --- @class gitview.Range the two revisions a view compares
