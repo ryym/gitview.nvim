@@ -115,6 +115,72 @@ test('list: the sha of a commit row says whether it is pushed', function()
   eq('GitViewCommitShaPushed', rows[2].spans[#rows[2].spans].group)
 end)
 
+-- The rule says where the upstream is, which is not always below the last
+-- unpushed row: a merge from it can leave pushed commits between unpushed ones.
+test('list: the upstream is ruled above the commit it points at', function()
+  local a, b, c = commit('abc1234', 'merge'), commit('bcd2345', 'theirs'), commit('cde3456', 'mine')
+  local rows = list.content({
+    pane = 'commits',
+    commits = { a, b, c },
+    upstream = { sha = b.full_sha, name = 'origin/main' },
+    unpushed = { [a.full_sha] = true, [c.full_sha] = true },
+  })
+  eq({ nil, 'origin/main', nil }, { rows[1].rule, rows[2].rule, rows[3].rule })
+end)
+
+test('list: an upstream the list does not reach is not ruled', function()
+  local rows = list.content({
+    pane = 'commits',
+    commits = { commit('abc1234', 'x') },
+    upstream = { sha = 'elsewhere', name = 'origin/main' },
+    unpushed = {},
+  })
+  eq(nil, rows[1].rule)
+end)
+
+--- The virtual lines drawn below each row, by 0-based row.
+--- @param buf integer
+--- @return table<integer, string>
+local function virt_lines(buf)
+  local ns = vim.api.nvim_create_namespace('gitview.ui.list')
+  local out = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    if m[4].virt_lines then
+      assert(not m[4].virt_lines_above, 'a line above the first row is not shown')
+      out[m[2]] = m[4].virt_lines[1][1][1]
+    end
+  end
+  return out
+end
+
+-- Hung below the row above, since a line above the first row of a buffer is
+-- not shown until the window is scrolled onto it.
+test('list: the upstream rule hangs below the row above', function()
+  local buf = list.create_buffer()
+  local a = commit('abc1234', 'x')
+  list.draw(buf, {
+    pane = 'commits',
+    root = '/tmp/repo',
+    worktree = true,
+    commits = { a },
+    upstream = { sha = a.full_sha, name = 'origin/main' },
+    unpushed = {},
+  })
+  local lines = virt_lines(buf)
+  assert(vim.startswith(lines[0], '── origin/main ─'), lines[0])
+
+  -- Without the working-tree row there is no row above.
+  list.draw(buf, {
+    pane = 'commits',
+    root = '/tmp/repo',
+    commits = { a },
+    upstream = { sha = a.full_sha, name = 'origin/main' },
+    unpushed = {},
+  })
+  eq({}, virt_lines(buf))
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
 test('list: the working-tree row is faded as a whole', function()
   local rows = list.content({ pane = 'commits', worktree = true, commits = { commit('abc1234', 'x') } })
   eq({ from = 0, to = #rows[1].text, group = 'GitViewCommitWorktree' }, rows[1].spans[#rows[1].spans])

@@ -292,17 +292,29 @@ by a refresh.
 A commit's sha is faded once the branch's upstream has it. What is not pushed
 yet keeps the color a sha has everywhere else, and stands out against the faded
 ones without a color of its own: a warning color would make an ordinary state of
-work look like a problem.
+work look like a problem. Above the commit the upstream points at, a line of its
+own names it (`── origin/main ───`).
 
-- `git rev-list HEAD --not @{upstream}` names the unpushed commits, alongside
-  every read of the log and capped at the same count. It prints full shas, so
-  the log gives each commit's full sha as well as the abbreviated one shown.
+- Two commands run alongside every read of the log. `git rev-parse` resolves
+  the upstream to its sha and its name at once, and `git rev-list HEAD --not
+  <sha>` names the unpushed commits, capped at the log's count. Both print full
+  shas, so the log gives each commit's full sha as well as the abbreviated one
+  shown.
 - Without an upstream — a branch that tracks nothing, a detached HEAD — every
-  sha keeps the one color it has otherwise. That is an ordinary state, so the
-  failing command is not reported.
-- A merge from the upstream can leave pushed commits between unpushed ones,
-  since the log is in date order. Each sha is colored for itself, so that needs
-  no handling.
+  sha keeps the one color it has otherwise, and no line is drawn. That is an
+  ordinary state, so the failing command is not reported.
+
+The line marks where the upstream is rather than the last unpushed row. A merge
+from the upstream can leave pushed commits between unpushed ones, since the log
+is in date order, and below the last unpushed row would then be no boundary at
+all. It follows that an upstream the log does not reach, being diverged or older
+than the list, has no line; the colors still tell the commits apart.
+
+The line is a virtual line, so the rows stay one for one with the buffer's
+lines. It hangs below the row above rather than above its own: one above the
+first line of a buffer is only shown once the window is scrolled up onto it.
+So it is left out while there is no working-tree row above HEAD's, before the
+status is read.
 
 #### The commit header
 

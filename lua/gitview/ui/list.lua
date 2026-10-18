@@ -27,6 +27,7 @@ local M = {}
 --- @field commits gitview.Commit[]? the commits pane
 --- @field worktree boolean? the commits pane, with a row for the working tree
 ---        above the commits
+--- @field upstream gitview.Upstream? the commits pane, what the branch tracks
 --- @field unpushed table<string, true>? the commits pane, the full shas of the
 ---        commits the upstream does not have; nil when there is no upstream
 --- @field scope gitview.ListScope? the commits pane, looking into a range
@@ -65,6 +66,8 @@ local M = {}
 --- @field lead [string, string?][]? drawn after the indent, in front of the
 ---        name, as `virt_text` chunks: a directory's mark, or in a tree a file's
 ---        status letters
+--- @field rule string? drawn as a line of its own above the row, which is not
+---        a line of the buffer: the name of the upstream the row's commit is
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
@@ -345,6 +348,10 @@ function M.content(model)
         { from = 0, to = #c.sha, group = sha_group(c, model.unpushed) },
       }),
       subject = #c.sha + 1,
+      -- Where the upstream is rather than below the last unpushed row: a merge
+      -- from it can leave pushed commits between unpushed ones. An upstream the
+      -- list does not reach, being older or diverged, is not shown at all.
+      rule = model.upstream and model.upstream.sha == c.full_sha and model.upstream.name or nil,
     }
   end
   return rows
@@ -367,6 +374,7 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- What is pushed has settled. What is not yet stands out against it without a
   -- color of its own, which would make an ordinary state look like a warning.
   set('GitViewCommitShaPushed', { link = 'Comment' })
+  set('GitViewUpstream', { link = 'Comment' })
   set('GitViewListCursor', { link = 'Title' })
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.
@@ -497,6 +505,18 @@ function M.draw(buf, model)
         conceal = span.conceal and '' or nil,
         hl_group = span.group,
         priority = vim.hl.priorities.user,
+      })
+    end
+    -- Hung below the row above rather than above this one: lines above the
+    -- first line of a buffer are only shown once the window is scrolled up
+    -- onto them. The first row has none above it, and the rule is left out
+    -- until a working-tree row is drawn there.
+    if r.rule and i > 1 then
+      local label = ('── %s '):format(r.rule)
+      -- As wide as any window could be, since the line is cut off at its edge.
+      local fill = math.max(vim.o.columns - vim.fn.strdisplaywidth(label), 0)
+      vim.api.nvim_buf_set_extmark(buf, ns, i - 2, 0, {
+        virt_lines = { { { label .. ('─'):rep(fill), 'GitViewUpstream' } } },
       })
     end
   end

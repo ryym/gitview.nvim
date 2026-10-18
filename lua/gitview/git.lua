@@ -448,20 +448,42 @@ function M.log(count, cwd)
   return M.parse_log(res.stdout)
 end
 
---- The commits HEAD has and its upstream does not, as a set of full shas.
+--- @class gitview.Upstream the branch the current one tracks
+--- @field sha string full; the commit it points at
+--- @field name string short, as `origin/main`
+
+--- What the current branch tracks, if anything.
 ---
---- Nil when there is no upstream to compare with: a branch that tracks nothing,
---- a detached HEAD, an upstream that has been deleted. Those are ordinary states
---- rather than failures, so the caller has nothing to report.
+--- Nil when there is none: a branch that tracks nothing, a detached HEAD, an
+--- upstream that has been deleted. Those are ordinary states rather than
+--- failures, so the caller has nothing to report.
+---
+--- One `rev-parse` answers both, since each option applies to the arguments
+--- after it.
+---
+--- @param cwd string
+--- @return gitview.Upstream?
+function M.upstream(cwd)
+  local res = M.run({ 'git', 'rev-parse', '@{upstream}', '--abbrev-ref', '@{upstream}' }, cwd)
+  if not res.ok then
+    return nil
+  end
+  local lines = vim.split(vim.trim(res.stdout), '\n', { plain = true })
+  return { sha = lines[1], name = lines[2] }
+end
+
+--- The commits HEAD has and `upstream` does not, as a set of full shas.
 ---
 --- Capped like the log, and listed in the same order, so whichever of the first
 --- `count` commits of the log are unpushed are among the first `count` here.
 ---
 --- @param count integer
+--- @param upstream string the commit the upstream points at, resolved once with
+---        `M.upstream` so that both answers are about the same one
 --- @param cwd string
 --- @return table<string, true>?
-function M.unpushed(count, cwd)
-  local res = M.run({ 'git', 'rev-list', '-n', tostring(count), 'HEAD', '--not', '@{upstream}' }, cwd)
+function M.unpushed(count, upstream, cwd)
+  local res = M.run({ 'git', 'rev-list', '-n', tostring(count), 'HEAD', '--not', upstream }, cwd)
   if not res.ok then
     return nil
   end

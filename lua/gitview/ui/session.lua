@@ -40,6 +40,7 @@ local M = {}
 ---        panes were drawn. Staging from them then would write back the state
 ---        they show, undoing the change, so it waits for the read to catch up
 --- @field commits gitview.Commit[] the tail of the history, newest first
+--- @field upstream gitview.Upstream? what the branch tracks; nil when nothing
 --- @field unpushed table<string, true>? which of `commits` the upstream does not
 ---        have, by full sha; nil when there is no upstream
 --- @field ignore_whitespace boolean whether lines differing only in whitespace
@@ -211,14 +212,20 @@ local function read_commits(s)
   return commits
 end
 
---- Which commits the upstream does not have yet, or nil when there is none.
+--- What the branch tracks and which commits it does not have yet, or nothing
+--- when it tracks nothing.
 --- @param s gitview.Session
---- @return table<string, true>?
-local function read_unpushed(s)
+--- @return gitview.Upstream? upstream
+--- @return table<string, true>? unpushed
+local function read_upstream(s)
   if not s.has_head then
-    return nil
+    return nil, nil
   end
-  return git.unpushed(config.values.commit_count, s.root)
+  local upstream = git.upstream(s.root)
+  if not upstream then
+    return nil, nil
+  end
+  return upstream, git.unpushed(config.values.commit_count, upstream.sha, s.root)
 end
 
 --- The commit with this sha, and where it sits in the list.
@@ -1173,6 +1180,7 @@ local function redraw_list(s, target, keep_unchanged)
     root = s.root,
     commits = s.commits,
     worktree = has_worktree_row(s),
+    upstream = s.upstream,
     unpushed = s.unpushed,
     scope = s.scope,
     stale = s.commits_stale,
@@ -1239,7 +1247,7 @@ local function read_log(s, id)
     end
   end
   s.commits = commits
-  s.unpushed = read_unpushed(s)
+  s.upstream, s.unpushed = read_upstream(s)
   s.commits_stale = nil
   drop_lost_mark(s)
 end
@@ -2084,7 +2092,7 @@ function M.open()
     has_head = git.has_head(root),
   }
   s.commits = read_commits(s)
-  s.unpushed = read_unpushed(s)
+  s.upstream, s.unpushed = read_upstream(s)
   name_buffers(s)
   vim.api.nvim_win_set_buf(s.files_win, s.files_buf)
   -- Explicit sides, rather than `:vsplit` and `:split`, which follow

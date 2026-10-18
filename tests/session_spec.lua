@@ -1103,10 +1103,12 @@ test('session: knows which commits are pushed, and learns of a push on refresh',
     repo.commit('second')
   end, function(s, repo)
     eq({ [s.commits[1].full_sha] = true }, s.unpushed)
+    eq(s.commits[2].full_sha, s.upstream.sha)
     repo.git('branch', '-f', 'base', 'HEAD')
     session.refresh(s)
     settle(s)
     eq({}, s.unpushed)
+    eq(s.commits[1].full_sha, s.upstream.sha)
   end)
 end)
 

@@ -231,7 +231,9 @@ test('lists the commits the upstream does not have', function()
     repo.commit('second')
 
     local commits = assert(git.log(10, repo.root))
-    eq({ [commits[1].full_sha] = true }, git.unpushed(10, repo.root))
+    local upstream = assert(git.upstream(repo.root))
+    eq({ sha = commits[2].full_sha, name = 'base' }, upstream)
+    eq({ [commits[1].full_sha] = true }, git.unpushed(10, upstream.sha, repo.root))
   end)
 end)
 
@@ -242,17 +244,17 @@ test('lists no unpushed commits when everything is pushed', function()
     repo.git('branch', 'base')
     repo.git('branch', '--set-upstream-to=base')
 
-    eq({}, git.unpushed(10, repo.root))
+    eq({}, git.unpushed(10, assert(git.upstream(repo.root)).sha, repo.root))
   end)
 end)
 
 -- Nothing to compare with is not the same as nothing unpushed.
-test('cannot tell what is unpushed without an upstream', function()
+test('finds no upstream on a branch that tracks nothing', function()
   helpers.with_repo(function(repo)
     repo.write('a.txt', { 'one' })
     repo.commit('first')
 
-    eq(nil, git.unpushed(10, repo.root))
+    eq(nil, git.upstream(repo.root))
   end)
 end)
 

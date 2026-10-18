@@ -134,7 +134,8 @@ showing has its name colored, and only in the pane it follows, so which one that
 is can be read even while the focus is in the diff.
 
 Where the branch tracks an upstream, a commit's sha says whether it is pushed:
-what the upstream already has is faded.
+what the upstream already has is faded. A line such as `── origin/main ───` sits
+above the commit the upstream points at.
 
 The tab keeps up with the repository on its own. Anything that writes the index
 — `git add` in another terminal, a commit from a tmux pane, a branch switch from
@@ -400,7 +401,8 @@ The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,
 `GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
 `GitViewIndent`. Where the branch has an upstream, a pushed sha is in
-`GitViewCommitShaPushed` instead of `GitViewCommitSha`.
+`GitViewCommitShaPushed` instead of `GitViewCommitSha`, and the line naming
+the upstream is in `GitViewUpstream`.
 `GitViewCommitSha` colors the shas in the diff's winbar as well. The rest of
 that winbar, other than the file, is in `GitViewWinBarText`.
 
