@@ -1,8 +1,8 @@
 --- What the keys do inside a diff buffer.
 ---
---- Three of them depend on the session the buffer is a pane of: closing gives
---- up the whole session, and moving between files may mean moving the list's
---- cursor. What they call is passed in, so that this module does not depend on
+--- Four of them depend on the session the buffer is a pane of: closing gives
+--- up the whole session, and moving between files or commits may mean moving
+--- the list's cursor. What they call is passed in, so that this module does not depend on
 --- the session, as is the repository `gy` names files relative to.
 local dlib = require('gitview.diff.lines')
 local render = require('gitview.diff.render')
@@ -13,6 +13,7 @@ local M = {}
 --- @class gitview.DiffKeys
 --- @field close fun() what `q` does
 --- @field goto_file fun(dir: 1|-1) what `]f` and `[f` do
+--- @field goto_commit fun(dir: 1|-1) what `]r` and `[r` do
 --- @field open_file fun(path: string, lnum: integer) what `gf` does with the
 ---        file the cursor is in and the line it stands for
 --- @field root string the repository `gy` names files relative to
@@ -287,6 +288,12 @@ function M.set(buf, keys)
   map('[f', function()
     keys.goto_file(-1)
   end, 'previous file')
+  map(']r', function()
+    keys.goto_commit(1)
+  end, 'next commit, the older one')
+  map('[r', function()
+    keys.goto_commit(-1)
+  end, 'previous commit, the newer one')
   map('q', function()
     keys.close()
   end, 'close')

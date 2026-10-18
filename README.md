@@ -221,6 +221,16 @@ uncommitted changes above stay in view. `<BS>` comes back out, onto the commit y
 were looking at. `R` in there re-reads the uncommitted state; the commit itself
 cannot change.
 
+`]r` and `[r` in the diff move to the next and previous commit without leaving
+it, as `j` and `k` would in the commits pane. Next is the row below, the older
+commit, since the list is newest first.
+
+- **With a mark set**, only the cursor's end moves, so the range grows or
+  shrinks.
+- **Looking into a commit**, the adjacent commit is looked into instead, from
+  its first file, so a series can be read a commit at a time. Looking into a
+  range, there is no commit next to it, and the keys say so.
+
 #### Comparing two commits
 
 `m` marks the commit under the cursor. While a mark is set, moving the cursor
@@ -269,6 +279,7 @@ then follows the edits as they are made.
 | `u`         | unstage file / dir  |                      | unstage the line or selection |
 | `S` / `U`   |                     |                      | stage / unstage this hunk     |
 | `]f` / `[f` |                     |                      | next / previous file          |
+| `]r` / `[r` |                     |                      | next / previous commit        |
 | `]c` / `[c` |                     |                      | next / previous hunk          |
 | `gf`        | open the file       | open the file        | open the file at this line    |
 | `gy`        |                     |                      | copy the file and line(s)     |

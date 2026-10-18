@@ -1898,6 +1898,131 @@ test('session: marking in the other direction gives the same range', function()
   end)
 end)
 
+--- Run `fn` and return what it said through `vim.notify`.
+--- @param fn fun()
+--- @return string[]
+local function notified(fn)
+  local notify = vim.notify
+  local messages = {}
+  vim.notify = function(msg)
+    messages[#messages + 1] = msg
+  end
+  local ok, err = pcall(fn)
+  vim.notify = notify
+  assert(ok, err)
+  return messages
+end
+
+-- `]r` is `j` in the commits pane pressed from the diff, so it passes through
+-- the working-tree row as `j` would, and stops at either end of the list.
+test('session: `]r` in the diff moves the commits pane and leaves the focus in the diff', function()
+  with_session(forked_history, function(s)
+    vim.api.nvim_set_current_win(s.commits_win)
+    eq('worktree', s.selected.kind)
+    press_diff(s, ']r')
+    eq({ kind = 'commit', index = 1 }, s.selected)
+    eq(list.row_of(s.commits_buf, s.selected), vim.api.nvim_win_get_cursor(s.commits_win)[1])
+    eq(s.diff_win, vim.api.nvim_get_current_win())
+    press_diff(s, ']r]r]r')
+    eq({ kind = 'commit', index = 4 }, s.selected)
+    local messages = notified(function()
+      press_diff(s, ']r')
+    end)
+    eq({ kind = 'commit', index = 4 }, s.selected)
+    assert(messages[1]:find('no older commit', 1, true), messages[1])
+    for _ = 1, 4 do
+      press_diff(s, '[r')
+    end
+    eq('worktree', s.selected.kind)
+    messages = notified(function()
+      press_diff(s, '[r')
+    end)
+    eq('worktree', s.selected.kind)
+    assert(messages[1]:find('no newer commit', 1, true), messages[1])
+  end)
+end)
+
+test('session: `]r` with a mark moves the cursor end of the range', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 1)
+    session.set_mark(s)
+    press_diff(s, ']r]r')
+    eq(s.commits[1].sha, s.mark)
+    eq({ kind = 'commit', index = 3 }, s.selected)
+    local label = ('%s^..%s'):format(s.commits[3].sha, s.commits[1].sha)
+    assert(diff_winbar(s):find(label, 1, true), diff_winbar(s))
+  end)
+end)
+
+test('session: `]r` looking into a commit looks into the next one', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 2)
+    session.enter(s)
+    put_cursor(s, 1)
+    press_diff(s, ']r')
+    eq(s.commits[3].sha .. ' on side', s.scope.label)
+    eq({ kind = 'commit_file', index = 1 }, s.selected)
+    eq({ 'side.txt' }, vim.tbl_map(function(c)
+      return c.path
+    end, s.scope.changes))
+    eq(s.diff_win, vim.api.nvim_get_current_win())
+    press_diff(s, '[r[r')
+    eq(s.commits[1].sha .. ' merge side', s.scope.label)
+    -- the working tree on its own is not looked into
+    local messages = notified(function()
+      press_diff(s, '[r')
+    end)
+    eq(s.commits[1].sha .. ' merge side', s.scope.label)
+    assert(messages[1]:find('no newer commit', 1, true), messages[1])
+    -- backing out lands on the commit stepped to, not the one first looked into
+    session.leave(s)
+    eq({ kind = 'commit', index = 1 }, s.selected)
+  end)
+end)
+
+test('session: `]r` looking into a range is refused', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 3)
+    session.set_mark(s)
+    goto_commit(s, 1)
+    session.enter(s)
+    local label = s.scope.label
+    local messages = notified(function()
+      press_diff(s, ']r')
+    end)
+    eq(label, s.scope.label)
+    assert(messages[1]:find('range', 1, true), messages[1])
+  end)
+end)
+
+-- The mark is what made it a range when it was looked into, and clearing it
+-- afterwards does not make the files on screen one commit's.
+test('session: `]r` looking into a range is refused even after the mark is cleared', function()
+  with_session(forked_history, function(s)
+    goto_commit(s, 3)
+    session.set_mark(s)
+    goto_commit(s, 1)
+    session.enter(s)
+    session.clear_mark(s)
+    local label = s.scope.label
+    notified(function()
+      press_diff(s, ']r')
+    end)
+    eq(label, s.scope.label)
+  end)
+end)
+
+test('session: `]r` on an uncommitted file is refused', function()
+  with_session(forked_history, function(s)
+    session.select(s, 1)
+    local messages = notified(function()
+      press_diff(s, ']r')
+    end)
+    eq({ kind = 'file', index = 1 }, s.selected)
+    assert(messages[1]:find('no commit', 1, true), messages[1])
+  end)
+end)
+
 -- The cursor on the mark itself is not a range of nothing; it is the one commit.
 test('session: the cursor on the mark shows that commit alone', function()
   with_session(forked_history, function(s)

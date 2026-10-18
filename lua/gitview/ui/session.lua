@@ -1636,6 +1636,74 @@ function M.leave(s)
   redraw_list(s, target_of_id(s, id))
 end
 
+--- Where the commit being looked into sits in the list, or nothing when the
+--- scope is a range of several, which has no one place to step from.
+---
+--- Whether it is a range is read from what the scope compares rather than from
+--- the mark, which `<Esc>` can clear while the scope stands.
+--- @param s gitview.Session
+--- @param scope gitview.ListScope
+--- @return integer?
+local function scope_place(s, scope)
+  local commit, at = commit_by_sha(s, scope.at)
+  if commit and scope.range.new == commit.sha and scope.range.old == commit.parents[1] then
+    return at
+  end
+  return nil
+end
+
+--- Show the row above or below the selected one in the commits list, as `j` and
+--- `k` would there, without leaving the diff. `dir` follows the list, which is
+--- newest first, so 1 is the older side.
+---
+--- With a mark set only the cursor's end moves, so the range grows or shrinks
+--- as it does under `j` and `k`.
+---
+--- Looking into a commit, the adjacent commit is looked into instead, from its
+--- first file: reading a series one commit at a time would otherwise take
+--- backing out, moving and going in again at every step. The working tree on its
+--- own is not looked into, so there the list ends at the newest commit.
+--- @param s gitview.Session
+--- @param dir 1|-1
+function M.step_commit(s, dir)
+  local scope = s.scope
+  local place, first
+  if scope then
+    place = scope_place(s, scope)
+    if not place then
+      util.info('a range has no commit next to it')
+      return
+    end
+    first = 1
+  else
+    local t = s.selected
+    if not t or (t.kind ~= 'commit' and t.kind ~= 'worktree') then
+      util.info('no commit is shown')
+      return
+    end
+    place = t.kind == 'worktree' and 0 or t.index
+    first = has_worktree_row(s) and 0 or 1
+  end
+
+  local to = place + dir
+  if to < first or to > #s.commits then
+    util.info(dir > 0 and 'no older commit in the list' or 'no newer commit in the list')
+    return
+  end
+
+  if scope then
+    local commit = s.commits[to]
+    look_into(s, git.commit_range(commit), ('%s %s'):format(commit.sha, commit.subject), commit.sha)
+    return
+  end
+  local target = to == 0 and { kind = 'worktree', index = 1 } or { kind = 'commit', index = to }
+  local row = list.row_of(s.commits_buf, target)
+  if row then
+    vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  end
+  M.follow_cursor(s, s.commits_win)
+end
+
 --- @param s gitview.Session
 function M.close(s)
   if not vim.api.nvim_tabpage_is_valid(s.tab) then
@@ -2016,6 +2084,9 @@ local function set_diff_keymaps(s)
       -- the next file is read there too.
       local kind = (t and t.kind == 'commit_file') and 'commit_file' or 'file'
       select_nth(s, kind, (t and t.index or 1) + dir)
+    end,
+    goto_commit = function(dir)
+      M.step_commit(s, dir)
     end,
     open_file = function(path, lnum)
       M.open_file(s, path, lnum)

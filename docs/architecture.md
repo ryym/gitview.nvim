@@ -174,10 +174,12 @@ does not show is worth seeing without opening anything. A view with nothing but
 such files is that list, under the header when there is one, rather than a
 notice that would hide which files they were.
 
-Three keys in the diff act on the session rather than on the buffer: `q` gives
-up the whole session, `gf` opens the file as described below, and `]f` moves
+Four keys in the diff act on the session rather than on the buffer: `q` gives
+up the whole session, `gf` opens the file as described below, `]f` moves
 the list's cursor — except in the diff of a commit, the working tree or a
-directory, which holds many files and scrolls to the next one's header instead. `diff/keymap` takes
+directory, which holds many files and scrolls to the next one's header instead —
+and `]r` moves the commits pane's cursor, or looks into the adjacent commit
+while one is being looked into. `diff/keymap` takes
 those as callbacks so that it does not depend on the session.
 `gy` needs only the repository root, to name files relative to it, and is given
 that alone.
@@ -497,6 +499,14 @@ the buffer stands for it and every row remains a file.
 pressed. A whole commit or a directory is many files in one buffer, so they
 scroll within it; a single file — uncommitted or from a commit — is one of many
 rows, so they move the list's cursor.
+
+`]r` and `[r` are `j` and `k` in the commits pane, pressed from the diff, and
+step through the working-tree row as those would. Inside a commit they look
+into the adjacent commit instead, since stepping through history one commit at
+a time is what backing out, moving and going in again would otherwise be for.
+Inside a range they refuse: a range has no commit next to it. Whether the scope
+is one commit is read from what it compares, not from the mark, which `<Esc>`
+can clear while the scope stands.
 
 ### Ignoring whitespace
 
