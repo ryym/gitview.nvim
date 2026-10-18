@@ -67,6 +67,10 @@ local M = {}
 ---        milliseconds, so that automatic refreshes can be throttled
 --- @field watcher uv.uv_fs_poll_t? watches the index for writes; nil when the
 ---        git directory could not be resolved
+--- @field common_dir string? the directory the worktrees share, once resolved
+--- @field upstream_watchers uv.uv_fs_poll_t[]? watch where the upstream's ref is
+---        kept; nil when there is no upstream
+--- @field watched_ref string? the full name of the ref they watch
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 --- @field details table<string, gitview.CommitDetail> commits' messages and
@@ -226,6 +230,88 @@ local function read_upstream(s)
     return nil, nil
   end
   return upstream, git.unpushed(config.values.commit_count, upstream.sha, s.root)
+end
+
+--- How often the upstream's ref is looked at to see whether it has moved.
+local UPSTREAM_POLL_MS = 1000
+
+--- Give up watching the upstream's ref.
+--- @param s gitview.Session
+local function unwatch_upstream(s)
+  for _, w in ipairs(s.upstream_watchers or {}) do
+    w:stop()
+    w:close()
+  end
+  s.upstream_watchers = nil
+  s.watched_ref = nil
+end
+
+local reread_upstream
+
+--- Repaint which commits are pushed whenever the upstream's ref moves, which a
+--- fetch or a push does without writing the index.
+---
+--- Polled for the same reason as the index: git writes a ref to a lock file and
+--- renames it over. A ref is kept in one of two places, and both are watched:
+--- its own file, or `packed-refs`, where `git pack-refs` and `git gc` move it.
+--- Both are under the directory the worktrees share rather than a worktree's
+--- own. Nothing is watched in a repository whose refs are a reftable, which no
+--- file stands for; `R` is left for that.
+---
+--- Only the upstream is read again, not the status or the diff: an editor that
+--- fetches by itself in the background would otherwise re-read everything every
+--- few minutes for nothing. Painting rather than drawing leaves the buffer, and
+--- so a Visual selection in it, alone.
+---
+--- The ref to watch changes with the branch, and a branch is switched by a
+--- command that writes the index, so every read of the upstream comes back here
+--- to check the watchers are still on the right ref.
+--- @param s gitview.Session
+local function watch_upstream(s)
+  local ref = s.upstream and s.upstream.ref
+  if ref == s.watched_ref then
+    return
+  end
+  unwatch_upstream(s)
+  if not ref then
+    return
+  end
+  s.common_dir = s.common_dir or git.common_dir(s.root)
+  if not s.common_dir then
+    return
+  end
+  local watchers = {}
+  for _, path in ipairs({ ref, 'packed-refs' }) do
+    local w = vim.uv.new_fs_poll()
+    if w then
+      -- A file that is not there is reported as an error, and then as a change
+      -- once it appears; either is a reason to look again. A ref only in
+      -- `packed-refs` has no file of its own until it next moves.
+      w:start(
+        vim.fs.joinpath(s.common_dir, path),
+        UPSTREAM_POLL_MS,
+        vim.schedule_wrap(function()
+          -- A list held open for history the log dropped is not the one HEAD
+          -- has, so what is pushed would be told of the wrong commits.
+          if M.current() ~= s or s.commits_stale then
+            return
+          end
+          reread_upstream(s)
+          list.paint_upstream(s.commits_buf, s.upstream, s.unpushed)
+        end)
+      )
+      watchers[#watchers + 1] = w
+    end
+  end
+  s.upstream_watchers = watchers
+  s.watched_ref = ref
+end
+
+--- Read what the branch tracks again, and follow it with the watchers.
+--- @param s gitview.Session
+function reread_upstream(s)
+  s.upstream, s.unpushed = read_upstream(s)
+  watch_upstream(s)
 end
 
 --- The commit with this sha, and where it sits in the list.
@@ -1246,7 +1332,7 @@ local function read_log(s, id)
     end
   end
   s.commits = commits
-  s.upstream, s.unpushed = read_upstream(s)
+  reread_upstream(s)
   s.commits_stale = nil
   drop_lost_mark(s)
 end
@@ -1997,6 +2083,7 @@ end
 local function teardown(s)
   M.sessions[s.tab] = nil
   unwatch_index(s)
+  unwatch_upstream(s)
   pcall(vim.api.nvim_del_augroup_by_name, augroup_name(s))
   for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
     -- A window that survives is no longer a pane, so it must not stay pinned
@@ -2091,7 +2178,7 @@ function M.open()
     has_head = git.has_head(root),
   }
   s.commits = read_commits(s)
-  s.upstream, s.unpushed = read_upstream(s)
+  reread_upstream(s)
   name_buffers(s)
   vim.api.nvim_win_set_buf(s.files_win, s.files_buf)
   -- Explicit sides, rather than `:vsplit` and `:split`, which follow

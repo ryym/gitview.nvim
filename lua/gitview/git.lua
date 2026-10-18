@@ -110,6 +110,16 @@ function M.dir(cwd)
   return res.ok and vim.trim(res.stdout) or nil
 end
 
+--- @param cwd string
+--- @return string? dir absolute path of the directory every worktree of the
+---         repository shares, which holds the refs and the config
+function M.common_dir(cwd)
+  -- The same as `M.dir` but in a linked worktree, whose own directory holds
+  -- only its HEAD and its index.
+  local res = M.run({ 'git', 'rev-parse', '--path-format=absolute', '--git-common-dir' }, cwd)
+  return res.ok and vim.trim(res.stdout) or nil
+end
+
 --- Whether the repository has a commit yet.
 ---
 --- Before the first commit there is no HEAD to restore from, so the commands
@@ -450,6 +460,7 @@ end
 
 --- @class gitview.Upstream the branch the current one tracks
 --- @field sha string full; the commit it points at
+--- @field ref string full, as `refs/remotes/origin/main`
 --- @field name string short, as `origin/main`
 
 --- What the current branch tracks, if anything.
@@ -458,18 +469,27 @@ end
 --- upstream that has been deleted. Those are ordinary states rather than
 --- failures, so the caller has nothing to report.
 ---
---- One `rev-parse` answers both, since each option applies to the arguments
---- after it.
+--- One `rev-parse` answers all three, since each option applies to the
+--- arguments after it. `--abbrev-ref` comes last: once given, it is not undone
+--- by `--symbolic-full-name`.
 ---
 --- @param cwd string
 --- @return gitview.Upstream?
 function M.upstream(cwd)
-  local res = M.run({ 'git', 'rev-parse', '@{upstream}', '--abbrev-ref', '@{upstream}' }, cwd)
+  local res = M.run({
+    'git',
+    'rev-parse',
+    '@{upstream}',
+    '--symbolic-full-name',
+    '@{upstream}',
+    '--abbrev-ref',
+    '@{upstream}',
+  }, cwd)
   if not res.ok then
     return nil
   end
   local lines = vim.split(vim.trim(res.stdout), '\n', { plain = true })
-  return { sha = lines[1], name = lines[2] }
+  return { sha = lines[1], ref = lines[2], name = lines[3] }
 end
 
 --- The commits HEAD has and `upstream` does not, as a set of full shas.

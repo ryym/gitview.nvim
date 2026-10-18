@@ -140,12 +140,12 @@ above the commit the upstream points at.
 The tab keeps up with the repository on its own. Anything that writes the index
 — `git add` in another terminal, a commit from a tmux pane, a branch switch from
 a script — is noticed within a second and redrawn, and coming back to the tab page
-re-reads it as well.
+re-reads it as well. So is a push or a fetch, which moves what counts as pushed.
 
 `R` re-reads it on demand, for what those two miss while you stay on the tab page:
 a file written by something that never touched git, the few commands that move
-HEAD without writing the index, such as `git reset --soft`, and a push or a fetch,
-which changes which commits count as pushed.
+HEAD without writing the index, such as `git reset --soft`, and setting a branch
+to track something else, as `git push -u` does.
 
 There is one tab page per repository. Running `:GitView` again in the same
 repository goes back to the one already open rather than opening another.

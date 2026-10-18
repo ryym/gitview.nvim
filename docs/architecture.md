@@ -582,8 +582,9 @@ Three kinds of change fall between them, and are what `R` is left for:
   would not settle this, since on a branch it is `refs/heads/<name>` that moves
   while `HEAD` holds still. In practice such a command is nearly always followed
   by one that does write the index, which is the next line redrawn.
-- **A push or a fetch**, which moves the upstream and so which commits count as
-  [pushed](#pushed-and-unpushed-commits), but writes no index.
+- **A branch set to track something else**, by `git push -u` or `git branch
+  -u`, which writes the config and leaves the upstream unwatched until the next
+  re-read.
 
 All three are only a gap while the tab page stays current; entering it re-reads
 regardless.
@@ -604,8 +605,9 @@ and in a submodule.
 `TabEnter` is global rather than a buffer event, so it is created once for the
 module instead of once per session, and it acts on whichever session is current.
 A session's own `tabnew` fires it before the session is registered, and so does
-nothing. The watcher is the other way round — one per session, started with the
-tab page and closed with it, since a poll handle is owned by nothing else.
+nothing. The watchers are the other way round — one set per session, started
+with the tab page and closed with it, since a poll handle is owned by nothing
+else.
 
 Being triggered rather than asked for changes what a refresh may do:
 
@@ -632,6 +634,29 @@ break in what the user is doing:
 
 The line none of it may cross is changing what the diff pane shows. Nothing the
 user did would account for it.
+
+#### The upstream is watched on its own
+
+A push or a fetch moves the upstream, and so which commits count as
+[pushed](#pushed-and-unpushed-commits), without writing the index. Another pair
+of polls watches the upstream's ref instead:
+
+- **Its own file and `packed-refs`.** A ref is kept in one or the other:
+  `git pack-refs` and `git gc` move it into `packed-refs`, and it has a file of
+  its own again the next time it moves. Both are polled for the same reason as
+  the index, since a ref is written to a lock file and renamed over.
+- **Under the directory the worktrees share**, which `--git-common-dir` names.
+  A linked worktree's own directory holds only its HEAD and its index.
+- **Re-pointed with the branch.** Every read of the upstream checks the ref it
+  names against the one watched, and restarts the polls when they differ.
+  Switching branch writes the index, so the index poll leads there.
+- **Only the upstream is read again**: one `rev-parse` and one `rev-list`, after
+  which the sha colors and the line are painted over the list rather than drawn
+  with it. An editor that fetches in the background would otherwise re-read the
+  status and the diff every few minutes for nothing. Painting leaves the buffer
+  alone, so unlike the index poll it need not wait for normal mode.
+
+A repository whose refs are a reftable has no file to watch, and is left to `R`.
 
 #### A commit the log has dropped holds the list back
 

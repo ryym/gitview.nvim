@@ -1092,24 +1092,79 @@ test('session: entering a pane selects from that pane', function()
   end)
 end)
 
--- A push writes no index, so it is seen on the next refresh, as `R` gives.
-test('session: knows which commits are pushed, and learns of a push on refresh', function()
-  with_session(function(repo)
-    repo.write('a.txt', { 'one' })
-    repo.commit('first')
-    repo.git('branch', 'base')
-    repo.git('branch', '--set-upstream-to=base')
-    repo.write('a.txt', { 'two' })
-    repo.commit('second')
-  end, function(s, repo)
+--- A repository whose branch tracks `base`, one commit ahead of it.
+--- @param repo gitview.TestRepo
+local function ahead(repo)
+  repo.write('a.txt', { 'one' })
+  repo.commit('first')
+  repo.git('branch', 'base')
+  repo.git('branch', '--set-upstream-to=base')
+  repo.write('a.txt', { 'two' })
+  repo.commit('second')
+end
+
+--- The rows of the commits pane whose sha is faded as pushed, 0-based.
+--- @param s gitview.Session
+--- @return integer[]
+local function pushed_rows(s)
+  local ns = vim.api.nvim_create_namespace('gitview.ui.list.upstream')
+  local out = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(s.commits_buf, ns, 0, -1, { details = true })) do
+    if m[4].hl_group == 'GitViewCommitShaPushed' then
+      out[#out + 1] = m[2]
+    end
+  end
+  return out
+end
+
+test('session: knows which commits are pushed', function()
+  with_session(ahead, function(s)
     eq({ [s.commits[1].full_sha] = true }, s.unpushed)
     eq(s.commits[2].full_sha, s.upstream.sha)
+    -- Below the working-tree row and the unpushed commit.
+    eq({ 2 }, pushed_rows(s))
+  end)
+end)
+
+-- A push writes no index, so it is the upstream's ref that has to be watched
+-- for one to be seen without `R`.
+test('session: a push is seen without a refresh', function()
+  with_session(ahead, function(s, repo)
     repo.git('branch', '-f', 'base', 'HEAD')
+    local seen = vim.wait(5000, function()
+      return s.unpushed and next(s.unpushed) == nil
+    end)
+    assert(seen, 'the push was never seen')
+    eq(s.commits[1].full_sha, s.upstream.sha)
+    eq({ 1, 2 }, pushed_rows(s))
+  end)
+end)
+
+-- The ref to watch is the upstream's, which another branch, or the same one
+-- set to track something else, has a different one of.
+test('session: the upstream watched follows the branch', function()
+  with_session(ahead, function(s, repo)
+    eq('refs/heads/base', s.watched_ref)
+    repo.git('branch', 'other', 'HEAD')
+    repo.git('branch', '--set-upstream-to=other')
     session.refresh(s)
     settle(s)
-    eq({}, s.unpushed)
-    eq(s.commits[1].full_sha, s.upstream.sha)
+    eq('refs/heads/other', s.watched_ref)
+    repo.git('branch', '--unset-upstream')
+    session.refresh(s)
+    settle(s)
+    eq(nil, s.watched_ref)
+    eq(nil, s.upstream_watchers)
   end)
+end)
+
+test('session: the upstream watchers are given up with the tab page', function()
+  local closed
+  with_session(ahead, function(s)
+    closed = s
+    eq(2, #s.upstream_watchers)
+  end)
+  eq(nil, closed.upstream_watchers)
 end)
 
 -- A repository with no commit has no log to read, and `git log` fails there

@@ -232,7 +232,7 @@ test('lists the commits the upstream does not have', function()
 
     local commits = assert(git.log(10, repo.root))
     local upstream = assert(git.upstream(repo.root))
-    eq({ sha = commits[2].full_sha, name = 'base' }, upstream)
+    eq({ sha = commits[2].full_sha, ref = 'refs/heads/base', name = 'base' }, upstream)
     eq({ [commits[1].full_sha] = true }, git.unpushed(10, upstream.sha, repo.root))
   end)
 end)
@@ -245,6 +245,22 @@ test('lists no unpushed commits when everything is pushed', function()
     repo.git('branch', '--set-upstream-to=base')
 
     eq({}, git.unpushed(10, assert(git.upstream(repo.root)).sha, repo.root))
+  end)
+end)
+
+-- A linked worktree keeps only its HEAD and index in a directory of its own,
+-- and shares the refs with every other worktree.
+test('finds the directory the worktrees share', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    local other = vim.fs.dirname(repo.root) .. '/other'
+    repo.git('worktree', 'add', '-q', other)
+
+    local common = repo.root .. '/.git'
+    eq(common, git.common_dir(repo.root))
+    eq(common, git.common_dir(other))
+    assert(git.dir(other) ~= common)
   end)
 end)
 
