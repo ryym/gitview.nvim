@@ -1152,15 +1152,31 @@ function M.foldtext()
   return { { text .. ' ', 'GitViewCommitAuthor' } }
 end
 
+--- 'number' and 'relativenumber' for a diff window. They decide what the `%l`
+--- of 'statuscolumn' shows, and it is left empty with both off. With
+--- `buffer_lnum` they are the user's own, relative numbers included, but for
+--- both being off, which would leave nothing to show. The global values are
+--- the ones set up for every window, where the window's may be those of
+--- whatever it was split from.
+--- @return {number: boolean, relativenumber: boolean}
+local function lnum_options()
+  if not config.values.buffer_lnum then
+    return { number = false, relativenumber = false }
+  end
+  local function global(name)
+    return vim.api.nvim_get_option_value(name, { scope = 'global' })
+  end
+  local number, relative = global('number'), global('relativenumber')
+  return { number = number or not relative, relativenumber = relative }
+end
+
 --- @param win integer
 --- @param buf integer
 function M.configure_window(win, buf)
+  util.configure_window_options(win, lnum_options())
   util.configure_window_options(win, {
     winbar = '%!v:lua.require("gitview.diff.render").winbar()',
     statuscolumn = '%!v:lua.require("gitview.diff.render").statuscolumn()',
-    -- 'statuscolumn' draws the numbers, but its `%l` is left empty without this
-    number = config.values.buffer_lnum,
-    relativenumber = false,
     signcolumn = 'no',
     wrap = false,
     cursorline = true,

@@ -366,6 +366,9 @@ at the cost of a third column of numbers:
 require('gitview').setup({ buffer_lnum = true })
 ```
 
+They are drawn as `'number'` and `'relativenumber'` say, so relative numbers
+are relative here too. With both off they are absolute.
+
 ### Highlight groups
 
 `GitViewAdd`, `GitViewDelete`, `GitViewAddText`, `GitViewDeleteText`,

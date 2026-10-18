@@ -239,6 +239,40 @@ test('buffer_lnum puts the rows own numbers before the gutter', function()
   assert(ok, err)
 end)
 
+test("buffer_lnum numbers rows as the user's 'number' and 'relativenumber' say", function()
+  local config = require('gitview.config')
+  local buf = build({ LUA })
+  --- @param number boolean
+  --- @param relative boolean
+  --- @return {number: boolean, relativenumber: boolean}
+  local function configured(number, relative)
+    vim.go.number, vim.go.relativenumber = number, relative
+    local win = vim.api.nvim_open_win(buf, false, {
+      relative = 'editor',
+      width = 60,
+      height = 10,
+      row = 1,
+      col = 1,
+    })
+    render.configure_window(win, buf)
+    local got = { number = vim.wo[win].number, relativenumber = vim.wo[win].relativenumber }
+    vim.api.nvim_win_close(win, true)
+    return got
+  end
+  local kept = { vim.go.number, vim.go.relativenumber }
+  config.values.buffer_lnum = true
+  local ok, err = pcall(function()
+    eq({ number = false, relativenumber = true }, configured(false, true))
+    eq({ number = true, relativenumber = true }, configured(true, true))
+    eq({ number = true, relativenumber = false }, configured(false, false), 'both off would show nothing')
+    config.values.buffer_lnum = false
+    eq({ number = false, relativenumber = false }, configured(true, true), 'off, they are not shown')
+  end)
+  config.values.buffer_lnum = false
+  vim.go.number, vim.go.relativenumber = kept[1], kept[2]
+  assert(ok, err)
+end)
+
 test("each header's gutter ends with how many lines its file adds and deletes", function()
   local only_add = {
     label = 'c.lua',
