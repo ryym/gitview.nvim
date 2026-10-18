@@ -1158,13 +1158,33 @@ test('session: the upstream watched follows the branch', function()
   end)
 end)
 
+-- `git push -u` sets what a branch tracks in the config, writing no index, and
+-- it is how a new branch usually gets its first upstream.
+test('session: an upstream set on the branch is seen without a refresh', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.git('branch', 'base')
+  end, function(s, repo)
+    eq(nil, s.upstream)
+    repo.git('branch', '--set-upstream-to=base')
+    local seen = vim.wait(5000, function()
+      return s.upstream ~= nil
+    end)
+    assert(seen, 'the upstream was never seen')
+    eq('refs/heads/base', s.watched_ref)
+  end)
+end)
+
 test('session: the upstream watchers are given up with the tab page', function()
   local closed
   with_session(ahead, function(s)
     closed = s
     eq(2, #s.upstream_watchers)
+    assert(s.config_watcher, 'no config watcher was started')
   end)
   eq(nil, closed.upstream_watchers)
+  eq(nil, closed.config_watcher)
 end)
 
 -- A repository with no commit has no log to read, and `git log` fails there

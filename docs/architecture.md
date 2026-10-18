@@ -571,7 +571,7 @@ and on its own from two triggers:
   current, including the writes the poll passed over because nobody was looking
   at the session.
 
-Three kinds of change fall between them, and are what `R` is left for:
+Two kinds of change fall between them, and are what `R` is left for:
 
 - **A file written by something that never went through git**, by an external
   editor or a script. Neither the index nor HEAD moves. Watching the working tree
@@ -582,11 +582,8 @@ Three kinds of change fall between them, and are what `R` is left for:
   would not settle this, since on a branch it is `refs/heads/<name>` that moves
   while `HEAD` holds still. In practice such a command is nearly always followed
   by one that does write the index, which is the next line redrawn.
-- **A branch set to track something else**, by `git push -u` or `git branch
-  -u`, which writes the config and leaves the upstream unwatched until the next
-  re-read.
 
-All three are only a gap while the tab page stays current; entering it re-reads
+Both are only a gap while the tab page stays current; entering it re-reads
 regardless.
 
 `FocusGained` would be the obvious third, and is deliberately not used. It needs
@@ -650,6 +647,11 @@ of polls watches the upstream's ref instead:
 - **Re-pointed with the branch.** Every read of the upstream checks the ref it
   names against the one watched, and restarts the polls when they differ.
   Switching branch writes the index, so the index poll leads there.
+- **Re-pointed with the config, too.** What a branch tracks is set in the config,
+  by `git push -u` on a branch's first push or by `git branch -u`, neither of
+  which writes the index. A third poll on the config reads the upstream again,
+  and is kept whether or not there is an upstream yet, since the commonest of
+  these is the one that sets the first.
 - **Only the upstream is read again**: one `rev-parse` and one `rev-list`, after
   which the sha colors and the line are painted over the list rather than drawn
   with it. An editor that fetches in the background would otherwise re-read the

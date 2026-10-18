@@ -71,6 +71,9 @@ local M = {}
 --- @field upstream_watchers uv.uv_fs_poll_t[]? watch where the upstream's ref is
 ---        kept; nil when there is no upstream
 --- @field watched_ref string? the full name of the ref they watch
+--- @field config_watcher uv.uv_fs_poll_t? watches the config, where what a
+---        branch tracks is set; nil when the shared directory could not be
+---        resolved
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 --- @field details table<string, gitview.CommitDetail> commits' messages and
@@ -246,7 +249,7 @@ local function unwatch_upstream(s)
   s.watched_ref = nil
 end
 
-local reread_upstream
+local on_upstream_poll
 
 --- Repaint which commits are pushed whenever the upstream's ref moves, which a
 --- fetch or a push does without writing the index.
@@ -291,13 +294,7 @@ local function watch_upstream(s)
         vim.fs.joinpath(s.common_dir, path),
         UPSTREAM_POLL_MS,
         vim.schedule_wrap(function()
-          -- A list held open for history the log dropped is not the one HEAD
-          -- has, so what is pushed would be told of the wrong commits.
-          if M.current() ~= s or s.commits_stale then
-            return
-          end
-          reread_upstream(s)
-          list.paint_upstream(s.commits_buf, s.upstream, s.unpushed)
+          on_upstream_poll(s)
         end)
       )
       watchers[#watchers + 1] = w
@@ -309,9 +306,61 @@ end
 
 --- Read what the branch tracks again, and follow it with the watchers.
 --- @param s gitview.Session
-function reread_upstream(s)
+local function reread_upstream(s)
   s.upstream, s.unpushed = read_upstream(s)
   watch_upstream(s)
+end
+
+--- Read the upstream again and repaint, once a poll says it may have moved.
+--- @param s gitview.Session
+function on_upstream_poll(s)
+  -- A list held open for history the log dropped is not the one HEAD has, so
+  -- what is pushed would be told of the wrong commits.
+  if M.current() ~= s or s.commits_stale then
+    return
+  end
+  reread_upstream(s)
+  list.paint_upstream(s.commits_buf, s.upstream, s.unpushed)
+end
+
+--- Read the upstream again whenever the config is written, which is where what
+--- a branch tracks is set: `git push -u` sets it on a branch's first push, and
+--- `git branch -u` and `--unset-upstream` change it, none of them writing the
+--- index. Watched whether or not there is an upstream yet, since the commonest
+--- of them is the one that sets the first.
+---
+--- The config is written for much else, each time costing a read of the
+--- upstream and nothing more.
+--- @param s gitview.Session
+local function watch_config(s)
+  s.common_dir = s.common_dir or git.common_dir(s.root)
+  if not s.common_dir then
+    return
+  end
+  local watcher = vim.uv.new_fs_poll()
+  if not watcher then
+    return
+  end
+  s.config_watcher = watcher
+  watcher:start(
+    vim.fs.joinpath(s.common_dir, 'config'),
+    UPSTREAM_POLL_MS,
+    vim.schedule_wrap(function(err)
+      if not err then
+        on_upstream_poll(s)
+      end
+    end)
+  )
+end
+
+--- Give up watching the config.
+--- @param s gitview.Session
+local function unwatch_config(s)
+  if s.config_watcher then
+    s.config_watcher:stop()
+    s.config_watcher:close()
+    s.config_watcher = nil
+  end
 end
 
 --- The commit with this sha, and where it sits in the list.
@@ -2084,6 +2133,7 @@ local function teardown(s)
   M.sessions[s.tab] = nil
   unwatch_index(s)
   unwatch_upstream(s)
+  unwatch_config(s)
   pcall(vim.api.nvim_del_augroup_by_name, augroup_name(s))
   for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
     -- A window that survives is no longer a pane, so it must not stay pinned
@@ -2227,6 +2277,7 @@ function M.open()
 
   M.sessions[s.tab] = s
   watch_index(s)
+  watch_config(s)
   local group = vim.api.nvim_create_augroup(augroup_name(s), { clear = true })
   vim.api.nvim_create_autocmd('TabClosed', {
     group = group,
