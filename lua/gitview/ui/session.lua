@@ -1579,6 +1579,22 @@ function M.clear_mark(s)
   return true
 end
 
+--- Replace the commits pane with the files a range changed, the cursor on the
+--- first of them.
+--- @param s gitview.Session
+--- @param range gitview.Range
+--- @param label string
+--- @param at string what backing out puts the cursor back on
+local function look_into(s, range, label, at)
+  local changes, err = git.changed_between(range, s.root, untracked_paths(s))
+  if not changes then
+    util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
+    return
+  end
+  s.scope = { range = range, label = label, at = at, changes = changes }
+  redraw_list(s, { kind = 'commit_file', index = 1 })
+end
+
 --- Look into the commit under the cursor: its files replace the list, and
 --- selecting one shows that file's diff by itself.
 ---
@@ -1599,13 +1615,7 @@ function M.enter(s)
     vim.api.nvim_set_current_win(s.files_win)
     return
   end
-  local changes, err = git.changed_between(range, s.root, untracked_paths(s))
-  if not changes then
-    util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
-    return
-  end
-  s.scope = { range = range, label = label, at = assert(at), changes = changes }
-  redraw_list(s, { kind = 'commit_file', index = 1 })
+  look_into(s, range, label, assert(at))
 end
 
 --- Go back to the uncommitted changes, with the cursor on the commit that was
