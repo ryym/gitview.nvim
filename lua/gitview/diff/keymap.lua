@@ -272,10 +272,60 @@ function M.edit_at(path, lnum)
   vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(lnum, last)), 0 })
 end
 
+--- Whether the fold over `first`..`last` is the run of unchanged lines a file
+--- starts with, followed by a change of the same file.
+--- @param view gitview.View
+--- @param first integer 1-based
+--- @param last integer 1-based
+--- @return boolean
+local function leads_file(view, first, last)
+  local l = view.lines[first]
+  if not (l and l.folded) then
+    return false
+  end
+  local function same_file(other)
+    return other ~= nil and dlib.source_kinds[other.kind] == true and other.file == l.file
+  end
+  return not same_file(view.lines[first - 1]) and same_file(view.lines[last + 1])
+end
+
+--- Open a fold with `key` as Neovim would, except for a file's first fold.
+---
+--- That one is opened to read what comes just above the first change, but
+--- Neovim leaves the cursor on the fold's first row, the top of the file. The
+--- cursor goes to its last row instead, kept on the screen row the closed fold
+--- was on, so that the change stays where it was and the lines open above it.
+--- @param buf integer
+--- @param key string
+local function open_fold(buf, key)
+  local count = vim.v.count > 0 and vim.v.count or ''
+  local row = vim.api.nvim_win_get_cursor(0)[1]
+  local first, last = vim.fn.foldclosed(row), vim.fn.foldclosedend(row)
+  local view = render.view_of(buf)
+  if first == -1 or not (view and leads_file(view, first, last)) then
+    vim.cmd.normal({ args = { count .. key }, bang = true })
+    return
+  end
+  local screen_row = vim.fn.winline()
+  local topline = vim.fn.line('w0')
+  vim.cmd.normal({ args = { count .. key }, bang = true })
+  -- Rows above the fold may be folded too, and only the fold's own rows are
+  -- known to take one screen row each.
+  if last - screen_row + 1 >= first then
+    topline = last - screen_row + 1
+  end
+  vim.fn.winrestview({ topline = topline, lnum = last, col = 0, curswant = 0 })
+end
+
 --- @param buf integer
 --- @param keys gitview.DiffKeys
 function M.set(buf, keys)
   local map = util.buf_mapper(buf)
+  for _, key in ipairs({ 'zo', 'zO', 'za', 'zA' }) do
+    map(key, function()
+      open_fold(buf, key)
+    end, ('%s, keeping the change in view on a file\'s first fold'):format(key))
+  end
   map(']c', function()
     M.jump(1, rows_of('hunk_rows'))
   end, 'next hunk')

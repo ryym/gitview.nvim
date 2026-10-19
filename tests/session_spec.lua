@@ -938,6 +938,47 @@ test('session: an opened run is closed again in another file', function()
   end)
 end)
 
+--- The rows of the closed fold over `row` in the diff pane.
+--- @param s gitview.Session
+--- @param row integer
+--- @return integer first
+--- @return integer last
+local function closed_fold_at(s, row)
+  local range = vim.api.nvim_win_call(s.diff_win, function()
+    return { vim.fn.foldclosed(row), vim.fn.foldclosedend(row) }
+  end)
+  return range[1], range[2]
+end
+
+-- Neovim leaves the cursor on a fold's first row once it is open, which for a
+-- file's first fold is the top of the file, far from the change below it.
+test("session: opening a file's first fold leaves the cursor above the change", function()
+  with_session(spread, function(s, repo)
+    repo.write('f.txt', spread_lines({ [2] = 'line 2' }))
+    session.refresh(s)
+    settle(s)
+    local first, last = closed_fold_at(s, folded_row(s, 'line 1'))
+    assert(last > first, 'expected the fixture to fold the top of the file')
+    put_cursor(s, first)
+    local screen_row = vim.api.nvim_win_call(s.diff_win, vim.fn.winline)
+    press_diff(s, 'zo')
+    eq(true, fold_open(s, 'line 1'))
+    eq(last, vim.api.nvim_win_get_cursor(s.diff_win)[1])
+    eq(screen_row, vim.api.nvim_win_call(s.diff_win, vim.fn.winline))
+  end)
+end)
+
+test('session: opening any other fold leaves the cursor where Neovim does', function()
+  with_session(spread, function(s)
+    local first, last = closed_fold_at(s, folded_row(s, 'line 10'))
+    assert(last > first, 'expected the fixture to fold between the changes')
+    put_cursor(s, first)
+    press_diff(s, 'zo')
+    eq(true, fold_open(s, 'line 10'))
+    eq(first, vim.api.nvim_win_get_cursor(s.diff_win)[1])
+  end)
+end)
+
 test('session: a row with nothing to stage leaves the index alone', function()
   with_session(partial, function(s, repo)
     -- `three` is unchanged in all three versions, so it is a context row.
