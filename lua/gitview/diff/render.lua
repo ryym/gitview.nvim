@@ -46,6 +46,9 @@ end
 --- @field rev string
 --- @field note string? extra text for the winbar, e.g. that whitespace is ignored
 --- @field mixed boolean? staged and unstaged changes in one view; see gitview.diff.mixed
+--- @field layer 'staged'|'unstaged'? the one change a mixed view shows alone, as
+---        the plain diff of the two versions it compares; nil for both. See
+---        `mixed.project`.
 --- @field header_rows integer? how many rows at the top introduce the view rather
 ---        than belong to a file: a commit's message and stat. All but the
 ---        subject fold as one, as does each run of `folded` lines.
@@ -203,20 +206,32 @@ local MARKER_HL = {
   ['>'] = 'GitViewConflictTheirsMarker',
 }
 
+--- Whether a row takes the colors of a staged change, blended into the
+--- background. They tell the two layers apart where both are shown; a layer
+--- shown alone is a plain diff, colored as one.
+--- @param view gitview.View
+--- @param l gitview.Line
+--- @return boolean
+local function blended(view, l)
+  return l.stage == 'staged' and not view.layer
+end
+
+--- @param view gitview.View
 --- @param l gitview.Line
 --- @return string?
-local function line_hl_of(l)
+local function line_hl_of(view, l)
   if l.kind == 'conflict' then
     -- a marker is told by its first character, which is all `conflict` matched
     return l.part == 'marker' and MARKER_HL[l.text:sub(1, 1)] or CONFLICT_HL[l.part]
   end
-  return l.stage == 'staged' and STAGED_LINE_HL[l.kind] or LINE_HL[l.kind]
+  return blended(view, l) and STAGED_LINE_HL[l.kind] or LINE_HL[l.kind]
 end
 
+--- @param view gitview.View
 --- @param l gitview.Line
 --- @return string
-local function text_hl_of(l)
-  return l.stage == 'staged' and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
+local function text_hl_of(view, l)
+  return blended(view, l) and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
 end
 
 --- How many lines each file adds and deletes, from HEAD to the working tree in
@@ -252,7 +267,7 @@ end
 local HEADER_FOLD_ROW = 2
 
 --- What names a fold across views: `header` for a commit's header, and what is
---- compared, the file and the new line number of its first row for a run of
+--- compared, the file and the line number of its first row for a run of
 --- unchanged lines.
 ---
 --- The header is the same fold in every commit, so whether it is open goes from
@@ -261,6 +276,10 @@ local HEADER_FOLD_ROW = 2
 --- changes, so a run keeps its name for as long as the same thing is being
 --- redrawn. Another commit, or a range with another end, names its runs anew
 --- even where a file starts its runs at the same lines.
+---
+--- The staged layer alone is the exception, numbered by HEAD: its unchanged
+--- rows are the ones HEAD and the index share, some of which the working tree
+--- does not have, and HEAD is what staging leaves alone there.
 --- @param view gitview.View
 --- @param row integer 1-based first row of the fold
 --- @return string
@@ -269,7 +288,8 @@ local function fold_key(view, row)
     return 'header'
   end
   local l = view.lines[row]
-  return ('%s:%s:%d'):format(view.rev, view.files[l.file].path, l.new_lnum)
+  local lnum = view.layer == 'staged' and l.old_lnum or l.new_lnum
+  return ('%s:%s:%d'):format(view.rev, view.files[l.file].path, lnum)
 end
 
 --- The first row of every fold `view` makes.
@@ -573,7 +593,7 @@ function M.draw(buf, view)
   --    through. A range mark ending on the next row with `hl_eol` fills the rest
   --    of the screen line just as well and does obey priorities.
   for row0, l in ipairs(view.lines) do
-    local line_hl = line_hl_of(l)
+    local line_hl = line_hl_of(view, l)
     if l.kind == 'file' then
       vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, 0, {
         end_row = row0,
@@ -605,7 +625,7 @@ function M.draw(buf, view)
       for _, r in ipairs(or_) do
         vim.api.nvim_buf_set_extmark(buf, ns_diff, del_row - 1, r.start_col, {
           end_col = r.end_col,
-          hl_group = text_hl_of(del_l),
+          hl_group = text_hl_of(view, del_l),
           hl_mode = 'combine',
           priority = 200,
         })
@@ -613,7 +633,7 @@ function M.draw(buf, view)
       for _, r in ipairs(nr_) do
         vim.api.nvim_buf_set_extmark(buf, ns_diff, add_row - 1, r.start_col, {
           end_col = r.end_col,
-          hl_group = text_hl_of(add_l),
+          hl_group = text_hl_of(view, add_l),
           hl_mode = 'combine',
           priority = 200,
         })
@@ -718,10 +738,16 @@ end
 --- on, in the color of what the index did to it: a staged change, and a line
 --- only the index has. The latter is a staged addition, and unstaged as a
 --- deletion as well, which its background shows.
+---
+--- A layer shown alone needs no such mark, every change in it being of the one
+--- layer.
+--- @param view gitview.View
 --- @param l gitview.Line
 --- @return string
-local function staged_bar(l)
-  if l.stage == 'index' or (l.stage == 'staged' and l.kind == 'add') then
+local function staged_bar(view, l)
+  if view.layer then
+    return ' '
+  elseif l.stage == 'index' or (l.stage == 'staged' and l.kind == 'add') then
     return '%#GitViewStagedAddBar#┃'
   elseif l.stage == 'staged' then
     return '%#GitViewStagedDeleteBar#┃'
@@ -863,6 +889,24 @@ local function header_gutters(view)
   return gutters
 end
 
+--- The line numbers a row has in the two versions a view compares. Those are
+--- HEAD and the working tree in a mixed view, whose rows carry both, but a layer
+--- shown alone compares the index with one of them: there the index's number is
+--- a row's own place in it, which only a row the index has can give.
+--- @param view gitview.View
+--- @param l gitview.Line
+--- @return integer? old
+--- @return integer? new
+local function lnums(view, l)
+  local index = l.side == 'index' and l.index_pos or nil
+  if view.layer == 'staged' then
+    return l.old_lnum, index
+  elseif view.layer == 'unstaged' then
+    return index, l.new_lnum
+  end
+  return l.old_lnum, l.new_lnum
+end
+
 --- The gutter of the row `v:lnum` of `view` shown in `win`.
 --- @param win integer
 --- @param view gitview.View
@@ -906,10 +950,11 @@ local function gutter(win, view)
   local function num(n, group)
     return n and ('%%#%s#%4d'):format(LNUM_HL[l.kind] or group, n) or '    '
   end
+  local old, new = lnums(view, l)
   return ('%s %s %s '):format(
-    num(l.old_lnum, 'GitViewOldLnum'),
-    num(l.new_lnum, 'GitViewNewLnum'),
-    l.folded and fold_bar(view, lnum) or staged_bar(l)
+    num(old, 'GitViewOldLnum'),
+    num(new, 'GitViewNewLnum'),
+    l.folded and fold_bar(view, lnum) or staged_bar(view, l)
   )
 end
 

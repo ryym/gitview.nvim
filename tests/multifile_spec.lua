@@ -361,3 +361,108 @@ test('a mixed view marks with a bar each row the index has changed', function()
     unstaged = '     %#GitViewAddLnum#   1   ',
   }, gutters)
 end)
+
+--- A view of one mixed source with only `layer` shown.
+--- @param head string[]
+--- @param index string[]
+--- @param work string[]
+--- @param layer gitview.Layer
+--- @param context integer?
+--- @return gitview.View
+local function layer_view(head, index, work, layer, context)
+  local view = require('gitview.diff.view').build({
+    {
+      label = 'm.txt',
+      path = '/tmp/m.txt',
+      ft = 'text',
+      old_lines = head,
+      index_lines = index,
+      new_lines = work,
+    },
+  }, 'HEAD, ' .. layer, context or 3, { algorithm = 'histogram', linematch = 0, layer = layer })
+  return assert(view)
+end
+
+--- The gutter of every source row, by its text.
+--- @param view gitview.View
+--- @return table<string, string>
+local function gutters_by_text(view)
+  local buf = render.render(view)
+  local out = {}
+  for row, l in ipairs(view.lines) do
+    if dlib.source_kinds[l.kind] then
+      out[l.text] = gutter_at(buf, row)
+    end
+  end
+  return out
+end
+
+-- The index line numbers differ from both HEAD's and the working tree's here,
+-- so each column shows which version it was taken from.
+test('a layer shown alone is numbered by the two versions it compares', function()
+  local head, index, work = { 'a' }, { 'n', 'a', 'b' }, { 'a', 'b', 'w' }
+  eq({
+    n = '     %#GitViewAddLnum#   1   ',
+    a = '%#GitViewOldLnum#   1 %#GitViewNewLnum#   2   ',
+    b = '     %#GitViewAddLnum#   3   ',
+  }, gutters_by_text(layer_view(head, index, work, 'staged')))
+  eq({
+    n = '%#GitViewDeleteLnum#   1        ',
+    a = '%#GitViewOldLnum#   2 %#GitViewNewLnum#   1   ',
+    b = '%#GitViewOldLnum#   3 %#GitViewNewLnum#   2   ',
+    -- placed in front of an index line past the end, which is no line of it
+    w = '     %#GitViewAddLnum#   3   ',
+  }, gutters_by_text(layer_view(head, index, work, 'unstaged')))
+end)
+
+test("a layer shown alone counts its own changes in the file's header", function()
+  local head, index, work = { 'a' }, { 'a', 'b', 'c' }, { 'a', 'b', 'c', 'd' }
+  for layer, count in pairs({ staged = '#+2 ', unstaged = '#+1 ' }) do
+    local view = layer_view(head, index, work, layer)
+    local header = gutter_at(render.render(view), view.files[1].row)
+    assert(header:find(count, 1, true), layer .. ': ' .. header)
+  end
+end)
+
+test('a layer shown alone has no bar and the colors of a plain diff', function()
+  local view = layer_view({ 'x' }, { 'X' }, { 'X' }, 'staged')
+  local buf = render.render(view)
+  local ns = vim.api.nvim_get_namespaces()['gitview.diff']
+  local groups = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
+    groups[view.lines[m[2] + 1].text] = m[4].hl_group
+  end
+  eq({ ['m.txt'] = 'GitViewFileHeader', x = 'GitViewDelete', X = 'GitViewAdd' }, groups)
+  eq('%#GitViewDeleteLnum#   1        ', gutter_at(buf, 2))
+  eq('     %#GitViewAddLnum#   1   ', gutter_at(buf, 3))
+end)
+
+-- Staged alone, the unchanged rows are those HEAD and the index share, and the
+-- working tree may have dropped them: a fold can start at a row with no
+-- working-tree number to be remembered by.
+test('a fold of the staged layer alone stays open across a redraw', function()
+  local head = { 'a', 'b', 'c', 'd', 'e', 'f', 'z' }
+  local index = { 'a', 'b', 'c', 'd', 'e', 'f', 'Z' }
+  local work = { 'f', 'Z' }
+  local view = layer_view(head, index, work, 'staged', 1)
+  local buf = render.render(view)
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = 'editor',
+    width = 60,
+    height = 20,
+    row = 1,
+    col = 1,
+  })
+  render.configure_window(win, buf)
+  eq(nil, view.lines[2].new_lnum)
+  assert(view.lines[2].folded, 'expected the run to fold from its first row')
+  vim.api.nvim_win_call(win, function()
+    vim.cmd('2foldopen')
+  end)
+  render.draw(buf, layer_view(head, index, work, 'staged', 1))
+  local open = vim.api.nvim_win_call(win, function()
+    return vim.fn.foldclosed(2) == -1
+  end)
+  vim.api.nvim_win_close(win, true)
+  eq(true, open)
+end)

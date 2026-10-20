@@ -25,7 +25,8 @@ local M = {}
 --- @param sources gitview.Source[]
 --- @param rev string
 --- @param context integer
---- @param diff_opts {algorithm:string, linematch:integer}
+--- @param diff_opts {algorithm:string, linematch:integer, layer?:gitview.Layer}
+---        `layer` is for a mixed source alone, and defaults to both
 --- @return gitview.View? view nil when nothing differs
 --- @return gitview.LeftOut left_out
 function M.build(sources, rev, context, diff_opts)
@@ -97,6 +98,7 @@ function M.build(sources, rev, context, diff_opts)
     file_rows = file_rows,
     rev = rev,
     mixed = is_mixed or nil,
+    layer = is_mixed and diff_opts.layer ~= 'both' and diff_opts.layer or nil,
   }, left_out
 end
 
