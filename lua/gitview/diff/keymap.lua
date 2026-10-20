@@ -152,6 +152,11 @@ end
 --- In a mixed view a row may be deleted from the index alone, which HEAD never
 --- had. Its number is the index's, and is used only when no row from HEAD is
 --- among them: the two count lines differently.
+---
+--- A layer shown alone numbers a row the index has by the index, in the gutter,
+--- and it is given by that number too. Staged alone, such a row is one the index
+--- has and the working tree dropped, whether it shows as added or unchanged;
+--- unstaged alone, it is deleted from the index as an older version.
 --- @param view gitview.View
 --- @param file integer
 --- @param rows integer[] rows of the file's lines, none of its header
@@ -163,7 +168,7 @@ local function lines_ref(view, file, rows)
     local l = view.lines[r]
     if l.new_lnum then
       new[#new + 1] = l.new_lnum
-    elseif l.old_lnum then
+    elseif l.old_lnum and not (view.layer and l.side == 'index') then
       old[#old + 1] = l.old_lnum
     else
       index[#index + 1] = l.index_pos
@@ -181,6 +186,9 @@ local function lines_ref(view, file, rows)
   end
   if #old > 0 then
     return (':%s (deleted from %s)'):format(span_of(old), f.old_rev or 'the old version')
+  end
+  if view.layer == 'staged' then
+    return (':%s (in the index)'):format(span_of(index))
   end
   return (':%s (deleted from the index)'):format(span_of(index))
 end
