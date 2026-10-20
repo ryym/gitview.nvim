@@ -57,7 +57,8 @@ its own language.
 
 Uncommitted changes are shown as one diff from HEAD to the working tree, with
 each changed line marked by whether it is staged. Staging from this view is
-described under [The tab page](#the-tab-page).
+described under [The tab page](#the-tab-page), and so is showing either layer
+alone, as `git diff --cached` or `git diff` would.
 
 Untracked files are included, every line of them an unstaged addition. Binary
 ones are left out, as they are elsewhere; since git never diffs an untracked
@@ -258,8 +259,8 @@ history.
 #### Comparing with the working tree
 
 The list is headed by a faded row of zeros standing for the working tree. On its
-own it shows every uncommitted file in one view, staged and unstaged at once, and
-`<CR>` there moves to the files pane.
+own it shows every uncommitted file in one view, staged and unstaged at once or
+the one layer the files pane shows, and `<CR>` there moves to the files pane.
 
 It is also an end a range can have, and the newest one. `m` on `HEAD~3` with the
 cursor on the zeros reads that commit and everything since, committed or not, the
@@ -275,6 +276,7 @@ then follows the edits as they are made.
 | `m`         |                     | mark, for a range    |                               |
 | `<Esc>`     |                     | clear the mark       |                               |
 | `gw`        | ignore whitespace   | ignore whitespace    | ignore whitespace             |
+| `gs`        | staged / unstaged   | staged / unstaged    | staged / unstaged             |
 | `s`         | stage file / dir    |                      | stage the line or selection   |
 | `u`         | unstage file / dir  |                      | unstage the line or selection |
 | `S` / `U`   |                     |                      | stage / unstage this hunk     |
@@ -300,6 +302,9 @@ to the clipboard.
   counts as the line now in its place.
 - **Deleted lines alone are numbered where they were**, and say so:
   `f.lua:3-5 (deleted from HEAD)`.
+- **Lines the working tree lacks are numbered as the gutter has them** with
+  one layer alone: a line only the index has is `f.lua:7 (in the index)` staged
+  and `f.lua:7 (deleted from the index)` unstaged.
 - **In a commit the commit is named**, as `f.lua:12 (at 1a2b3c4)`, since its
   line numbers are the commit's.
 - **A selection over several files** copies a line for each.
@@ -321,6 +326,42 @@ rows that are.
 Binary files and changes with no lines to them, such as a pure rename, are
 listed and say as much in place of a diff. Discarding changes and committing are
 not implemented.
+
+#### Staged or unstaged alone
+
+`gs`, from any of the three windows, shows the staged changes alone, then the
+unstaged ones alone, then both again.
+
+- **The files pane lists the files with a change of that layer**, still with
+  both status letters, and its winbar counts them as `5 staged` or
+  `5 unstaged`. An untracked file is unstaged, and so is an unresolved
+  conflict, which has nothing a commit would take.
+- **The diff is the plain diff of the two versions that layer compares**, as
+  `git diff --cached` and `git diff` print it, colored as an ordinary diff with
+  no bar. Its winbar names them, `HEAD, staged` or `index, unstaged`, and the
+  gutter numbers them: the index takes the right column staged and the left
+  unstaged.
+- **The diff's cursor stays on its line** when switching, and when the index
+  changes under it.
+
+Staging works as it does with both shown, with three differences.
+
+- **`s` and `u` in the diff refuse to move rows into the layer shown**, where
+  there is nothing to move, and say so.
+- **A file left with nothing in the layer drops out of the list**, and the next
+  file takes its place, shown from its header. A mistaken `u` is undone from the
+  list after `gs` back to both.
+- **After staging from the diff, the cursor goes on through the changes**: to
+  what is left of the change, else to the file's next change, else it stays.
+  Pressing `s` again goes on working down the file and never reaches into
+  another file unseen.
+
+A directory's row stages the files it lists, not those the layer hides. A range
+ending at the working tree ignores the layer, having no index between its ends.
+
+```lua
+require('gitview').setup({ layer = 'both' }) -- or 'staged' or 'unstaged'
+```
 
 #### Ignoring whitespace
 

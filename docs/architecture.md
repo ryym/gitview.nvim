@@ -25,6 +25,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 | `diff/keymap.lua`    | What the keys do inside a diff buffer                   |
+| `diff/place.lua`     | Finding a row again in a view drawn after it            |
 | `ui/list.lua`        | A sidebar pane: its rows, its gutter, its winbar         |
 | `ui/session.lua`     | One tab page's state, and redrawing it                   |
 
@@ -32,7 +33,7 @@ The dependency direction is one-way: `init` only opens a session, `source` uses
 `status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
 `git`, `view` uses `lines`, `mixed`, `conflict` and `highlight`, `conflict` uses
 `mixed`, `render` uses `highlight`,
-`worddiff` and `lines`, `git` and `render` use `perf`, and `config`, `util`,
+`worddiff` and `lines`, `place` uses `lines`, `git` and `render` use `perf`, and `config`, `util`,
 `tree` and `perf` depend on nothing but Neovim.
 
 `ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
@@ -536,6 +537,63 @@ The toggle lives on the session rather than in the configuration, because
 changing it means building every view again from the sources. `ignore_whitespace`
 in `setup()` only says where a session starts out.
 
+### Staged or unstaged alone
+
+`gs` goes from both layers of the uncommitted changes to the staged one alone,
+then the unstaged one alone, and back. It is session state for the same reason
+`gw` is, and the configured `layer` is only where a session starts.
+
+- **The files pane lists the files with a change in the layer**, by
+  `status.has_staged` and `status.has_unstaged`. The session keeps every entry
+  as `uncommitted` and the listed ones as `entries`, so everything that goes by
+  the list — a directory's row, the working-tree row's diff, `]f` — follows the
+  layer without knowing about it. A range ending at the working tree does not:
+  it compares two trees, with no index between them.
+- **An unmerged file is unstaged only.** Its index has no stage 0, and so no
+  version a commit would take; resolving it is deciding what to stage.
+- **The status letters stay both.** One of them alone would hide that an `MM`
+  file is partly staged.
+- **What is shown says so, in words the winbars already have.** The diff's rev
+  label is what is compared: `HEAD, staged` or `index, unstaged`. The files
+  pane counts `5 staged` where it would count `5 files`. Filtering is a change
+  that cannot be seen from what is left, which is the same trap as `gw`.
+- **The row-level keys refuse to move rows into the layer shown**, where there
+  is nothing to move, and say so: `s` with the staged layer alone, `u` with the
+  unstaged one. The files pane's `s` and `u` work in either, and a directory's
+  row takes the files listed under it and none the layer hides.
+
+The diff is the mixed view projected onto the layer; see
+[One layer alone](#one-layer-alone).
+
+#### Where the diff's cursor goes
+
+Redrawing the same file keeps the cursor's row, which keeps the line as long as
+the rows stay in place. Both layers at once do: staging moves a change from one
+layer to the other and adds or removes no row. A layer alone does not, so there
+`diff.place` finds the line again by what it is, and the session asks it to on
+three occasions:
+
+| occasion                   | the line is found by                       |
+| -------------------------- | ------------------------------------------ |
+| switching layers           | its version and number, else the index's   |
+| the index changed under it | the version the layer leaves alone         |
+| staging from the diff      | what is left of the change, or the next    |
+
+- **The version a layer leaves alone** is HEAD for the staged layer and the
+  working tree for the unstaged one. Neither is written by staging, and every
+  unchanged row of the layer has a number in it.
+- **After staging from the diff**, the cursor goes to what is left of the change
+  from its start, so that rows above the selection are not passed over. With
+  none left, it goes on to the file's next change, as working down a file the
+  way `git add -p` does. Past the file's last change it stops at the next file's
+  header, or stays where it was: what it lands on is then no change, so pressing
+  the key again does nothing rather than acting on rows unseen.
+- **A file staged out of the layer drops out of the list**, and the files pane
+  drifts to the next file, whose diff opens at its header for the same reason.
+
+A change to the working tree from elsewhere still moves the row, as it does with
+both layers shown.
+
 ### Changing the index
 
 Two modules write to the index, and both hand back what they decided rather than
@@ -689,9 +747,17 @@ it by sha already finds it.
 #### The files pane is allowed to drift
 
 The same thing in the files pane is left alone. A file that has left the list has
-genuinely stopped having changes, so there is nothing to go on showing, and moving
-to the row that took its place is what a file manager does with a deleted file.
-With nothing left at all the pane holds its empty notice and the diff says so too.
+stopped having changes in what the list shows: any at all, or with one layer
+alone, any in that layer. Either way there is nothing to go on showing in it, and
+moving to the row that took its place is what a file manager does with a deleted
+file. With nothing left at all the pane holds its empty notice and the diff says
+so too.
+
+Keeping a file staged out of a layer listed until the cursor leaves it would let
+a mistaken `u` be undone from the list. It would also need a state for which
+files are held and when to forget them, a look for a held row, a count that
+disagrees with the rows shown, and a directory's diff holding a file with nothing
+in it. `gs` back to both layers undoes it instead.
 
 #### The status is read in the background
 
@@ -791,6 +857,8 @@ Everything one diff buffer needs, stored in `render.views[bufnr]` and dropped on
 - `rev`, `note` — shown in the winbar
 - `header_rows` — how many rows at the top are a commit's header; `nil` when
   there is none
+- `mixed`, `layer` — whether the rows are a mixed view, and the one layer it
+  shows alone; `layer` is `nil` for both
 
 Rows in `hunk_rows` and `files` are absolute in the combined buffer. Assembling
 several files means concatenating each file's lines and shifting its rows by the
@@ -958,6 +1026,54 @@ partially staged hunk interleaves the two layers:
 `change_pairs()` only pairs a deletion and an addition of the same `stage`.
 Across stages they are two separate changes, and a word diff between them
 would compare HEAD with the working tree past the index.
+
+### One layer alone
+
+With one layer shown, `mixed.project` turns the merged rows into the plain diff
+of the two versions that layer compares: HEAD -> index for `staged`, index ->
+working tree for `unstaged`. Nothing is reordered; each row is kept, turned into
+context, renamed or dropped.
+
+| row                | `staged`  | `unstaged` |
+| ------------------ | --------- | ---------- |
+| `context`          | kept      | kept       |
+| `del`, `staged`    | kept      | dropped    |
+| `add`, `staged`    | kept      | context    |
+| `del`, `unstaged`  | context   | kept       |
+| `add`, `unstaged`  | dropped   | kept       |
+| `del`, `index`     | `add`     | kept       |
+
+- **A row of the other layer is context when the index has it**, being in both
+  versions compared, and dropped otherwise. Hiding it rather than turning it
+  into context would make an index line look deleted.
+- **The `index` row takes the name of the layer shown.** It is an addition
+  HEAD -> index and a deletion index -> working tree. Left as `index`, pairing,
+  a file's counts and its colors would each treat it as the both-layers case.
+  Writing it back is unchanged: its side is the index, so either direction drops
+  it from the index, and the direction that would keep it is refused anyway.
+- **The result is the two-way diff, hunk for hunk**, since `mixed.merge` is
+  built from exactly those two diffs. Folds are computed after projecting, so a
+  change of the other layer opens nothing.
+
+Building the two-way diff directly would have given the same rows without
+their `index_pos`, `side` and working-tree number, and with them a second path
+for writing to the index and a second way to find a row's line for `gf`.
+Projected rows keep all three.
+
+What the projection changes downstream:
+
+- **The colors are a plain diff's**, with no bar. The blended background and the
+  `┃` tell two layers apart, and there is only one.
+- **The gutter numbers the two versions compared.** The index column comes from
+  `index_pos`, for a row whose side is the index: every row has an `index_pos`,
+  but for the rest it is the line they stand in front of.
+- **Context rows no longer have both numbers.** Staged alone, a line the working
+  tree dropped has no `new_lnum`; unstaged alone, a line the index added has no
+  `old_lnum`. Folds are remembered by the version the layer leaves alone, which
+  every unchanged row of it has: HEAD for staged, the working tree for unstaged.
+- **`gy` gives a row only the index has by its index number**, as the gutter
+  does: `in the index` staged, where it is an addition or unchanged, and
+  `deleted from the index` unstaged.
 
 ### File list
 
