@@ -147,6 +147,59 @@ function M.merge(head, index, work, opts)
   return out
 end
 
+--- Which of the two changes a mixed view shows: both at once, or one alone as
+--- the plain diff it is, HEAD -> index for `staged` and index -> working tree
+--- for `unstaged`.
+--- @alias gitview.Layer 'both'|'staged'|'unstaged'
+
+--- The rows of `merge` as one layer alone shows them.
+---
+--- Nothing is reordered. Each row keeps its place against the index, and with
+--- the other layer taken out, every hunk of the one left has its deletions
+--- before its additions, as a plain diff has. What changes is a row of the
+--- other layer, and the row of neither:
+---
+--- | row                | `staged`  | `unstaged` |
+--- | ------------------ | --------- | ---------- |
+--- | `del`, `unstaged`  | context   | kept       |
+--- | `add`, `unstaged`  | dropped   | kept       |
+--- | `del`, `staged`    | kept      | dropped    |
+--- | `add`, `staged`    | kept      | context    |
+--- | `del`, `index`     | `add`     | kept       |
+---
+--- A row of the other layer is in the index exactly when its side is, and then
+--- it is in both versions this layer compares, which makes it unchanged here.
+---
+--- The row of neither is an index line the working tree dropped: added from
+--- HEAD's point of view and deleted from the working tree's. It takes the name
+--- of the layer shown, as every other change there does, so that pairing
+--- words, counting a file's changes and coloring a row need not know about it.
+--- Writing it back still does the right thing, since a row whose side is the
+--- index is dropped from it whichever way it is moved.
+---
+--- The rows are changed in place.
+--- @param lines gitview.Line[] from `merge`
+--- @param layer gitview.Layer
+--- @return gitview.Line[]
+function M.project(lines, layer)
+  if layer == 'both' then
+    return lines
+  end
+  local out = {}
+  for _, l in ipairs(lines) do
+    if l.stage == 'index' then
+      l.kind, l.stage = layer == 'staged' and 'add' or 'del', layer
+      out[#out + 1] = l
+    elseif not l.stage or l.stage == layer then
+      out[#out + 1] = l
+    elseif l.side == 'index' then
+      l.kind, l.stage = 'context', nil
+      out[#out + 1] = l
+    end
+  end
+  return out
+end
+
 --- Fold unchanged runs the way diff.lines.build does: `context` lines are kept
 --- open on each side of a change, none before the first or after the last, and
 --- a run only one line longer than what is kept open is left open whole.
@@ -189,13 +242,14 @@ end
 --- @param index string[]
 --- @param work string[]
 --- @param context integer
---- @param opts? {algorithm?:string, linematch?:integer}
---- @return gitview.Line[]? lines nil when none of the three versions differ
+--- @param opts? {algorithm?:string, linematch?:integer, layer?:gitview.Layer}
+--- @return gitview.Line[]? lines nil when the layer shown has no change
 --- @return integer[] hunk_rows
 function M.build(head, index, work, context, opts)
   -- `fold` counts a hunk for every run of non-context lines, so an empty
-  -- `hunk_rows` is exactly "none of the three versions differ".
-  local out, hunk_rows = M.fold(M.merge(head, index, work, opts), context)
+  -- `hunk_rows` is exactly "the layer shown has no change".
+  local lines = M.project(M.merge(head, index, work, opts), opts and opts.layer or 'both')
+  local out, hunk_rows = M.fold(lines, context)
   if #hunk_rows == 0 then
     return nil, {}
   end

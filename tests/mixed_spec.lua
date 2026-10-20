@@ -128,3 +128,73 @@ test('mixed: an index-only line keeps its own index line number', function()
   local lines = mixed.merge({}, { 'x' }, {})
   eq({ '-x|index|1' }, dump_index(lines))
 end)
+
+--- The rows of `merge` as `layer` alone shows them, dumped as above.
+--- @param head string[]
+--- @param index string[]
+--- @param work string[]
+--- @param layer gitview.Layer
+--- @return string[]
+local function dump_layer(head, index, work, layer)
+  return dump(mixed.project(mixed.merge(head, index, work), layer))
+end
+
+test('mixed: one layer alone turns the other into context or drops it', function()
+  -- partially staged: `a -> A` unstaged, `b -> B` staged
+  local head, index, work = { 'a', 'b' }, { 'a', 'B' }, { 'A', 'B' }
+  eq({ '  a|1|', '-Sb|2|', '+SB||2' }, dump_layer(head, index, work, 'staged'))
+  eq({ '- a|1|', '+ A||1', '  B||2' }, dump_layer(head, index, work, 'unstaged'))
+end)
+
+test('mixed: an index-only line is an addition staged and a deletion unstaged', function()
+  -- `B` staged, then reverted in the working tree
+  local head, index, work = { 'a', 'b' }, { 'a', 'B' }, { 'a', 'b' }
+  eq({ '  a|1|1', '-Sb|2|', '+SB||' }, dump_layer(head, index, work, 'staged'))
+  eq({ '  a|1|1', '- B||', '+ b||2' }, dump_layer(head, index, work, 'unstaged'))
+end)
+
+test('mixed: both layers leave the rows as merged', function()
+  local head, index, work = { 'a', 'b' }, { 'a', 'B' }, { 'a', 'b' }
+  eq(dump(mixed.merge(head, index, work)), dump_layer(head, index, work, 'both'))
+end)
+
+-- A layer alone is meant to read as the plain diff of the two versions it
+-- compares, so the rows are checked against that diff built directly.
+test('mixed: one layer alone is the plain diff of its two versions', function()
+  local dlib = require('gitview.diff.lines')
+  local function rows(lines)
+    local out = {}
+    for _, l in ipairs(lines) do
+      out[#out + 1] = ({ add = '+', del = '-', context = ' ' })[l.kind] .. l.text
+    end
+    return out
+  end
+  local function plain(old, new)
+    return rows(dlib.build(dlib.hunks(old, new), old, new, math.huge))
+  end
+  local cases = {
+    { { 'a', 'b' }, { 'a', 'B' }, { 'A', 'B' } },
+    { { 'x' }, { 'X' }, { 'XX' } },
+    { { 'a', 'b', 'c', 'd' }, { 'a', 'c', 'd', 'e' }, { 'z', 'a', 'c', 'D', 'e' } },
+    { { 'a', 'b' }, { 'a', 'B' }, { 'a', 'b' } },
+    { {}, { 'x', 'y' }, { 'y', 'z' } },
+  }
+  for _, c in ipairs(cases) do
+    local head, index, work = c[1], c[2], c[3]
+    eq(plain(head, index), rows(mixed.project(mixed.merge(head, index, work), 'staged')))
+    eq(plain(index, work), rows(mixed.project(mixed.merge(head, index, work), 'unstaged')))
+  end
+end)
+
+test('mixed: build returns nil when the layer shown has no change', function()
+  eq(nil, (mixed.build({ 'a' }, { 'a' }, { 'A' }, 3, { layer = 'staged' })))
+  eq(nil, (mixed.build({ 'a' }, { 'A' }, { 'A' }, 3, { layer = 'unstaged' })))
+end)
+
+test('mixed: words pair within the one layer shown', function()
+  local dlib = require('gitview.diff.lines')
+  local head, index, work = { 'x = 1' }, { 'x = 2' }, { 'x = 3' }
+  -- the index line pairs with HEAD's when staged and the working tree's when not
+  eq({ { 1, 2 } }, dlib.change_pairs(mixed.project(mixed.merge(head, index, work), 'staged')))
+  eq({ { 1, 2 } }, dlib.change_pairs(mixed.project(mixed.merge(head, index, work), 'unstaged')))
+end)
