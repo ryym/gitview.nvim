@@ -395,16 +395,24 @@ local function rows_by_file(view, max_col)
 end
 
 --- Collect one file's syntax from its ghost buffers and replay it onto `buf`.
+---
+--- A version none of whose rows are wanted is not collected from at all. That
+--- skips parsing it too, which is what a parse costs whatever the query is
+--- restricted to: the old side of an added file, and both sides of a file
+--- whose lines are all longer than 'synmaxcol'.
 --- @param buf integer
 --- @param view gitview.View
 --- @param job gitview.FillJob from `rows_by_file`
 local function fill_file(buf, view, job)
   local f = view.files[job.file]
   local want = job.want
+  local function collect(side_buf, rows)
+    return side_buf and next(rows) and hl.collect(side_buf, f.lang, rows) or {}
+  end
   local segs = {
-    old = hl.collect(f.old_buf, f.lang, want.old),
-    new = hl.collect(f.new_buf, f.lang, want.new),
-    index = f.index_buf and hl.collect(f.index_buf, f.lang, want.index),
+    old = collect(f.old_buf, want.old),
+    new = collect(f.new_buf, want.new),
+    index = collect(f.index_buf, want.index),
   }
   for _, row in ipairs(job.rows) do
     local l = view.lines[row]
