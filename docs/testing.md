@@ -4,6 +4,9 @@
 make test
 ```
 
+Performance is not tested here: `make bench` measures it, and nothing fails on
+a slowdown. See [performance.md](performance.md#the-benchmark).
+
 ## How it runs
 
 `tests/run.lua` is executed by a headless Neovim (`nvim --headless --clean -l`).

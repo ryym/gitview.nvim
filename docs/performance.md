@@ -239,6 +239,66 @@ Some details keep it correct:
 
 ## Measuring it again
 
+### The benchmark
+
+```sh
+make bench
+make bench SCENARIOS='file_huge switch_from_huge'
+```
+
+`make bench` times a fixed set of scenarios and compares each number with the
+last few runs on the same machine. It is for watching the numbers drift over
+time and for comparing before and after a change; nothing fails on a slowdown.
+
+```
+scenario               metric        median   baseline   change
+file_rewrite           full_ms        366.8      381.3      -4%
+                       move_ms          0.5        0.6      -2%
+                       page_ms          3.0        2.8      +7%
+                       shown_ms        68.7       71.2      -4%
+```
+
+- **A scenario is a repository and what a user does in it.** Each builds a
+  repository with git, opens `:GitView` there and types keys: `G` onto a row,
+  `<C-w>l` into the diff, `j` and `<C-f>` inside it. Nothing reaches into the
+  plugin's modules, so a scenario survives a change to how a view is built or
+  drawn. They are listed in `bench/scenarios.lua`, with what each stands for.
+- **`shown_ms` and `full_ms`.** From the key to the selection's view being on
+  screen, and to nothing being left to do, such as the syntax of a large view
+  filled in afterwards. The end of the work is told by the spans of
+  [the timing log](#the-timing-log): no span open and the loop quiet for a
+  moment. When the screen was redrawn is told by a decoration provider's
+  `on_end`.
+- **Each sample is a Neovim of its own**, under `--clean`, with the screen fixed
+  at 200 by 50. A sample run after another in the same process would inherit
+  its caches and its garbage, and come out faster or slower depending on its
+  place. Three samples are taken by default, `BENCH_N` sets another count, and
+  the median is reported.
+- **The history is `.local/bench/history.jsonl`**, never committed, since the
+  numbers belong to the machine. A run is compared with the median of the last
+  five on the same host and Neovim version, and a metric 20% or more over it is
+  marked `!`. A run with uncommitted changes is recorded too, marked dirty, so
+  the run after a change compares against the one before it.
+- **Scaling** is reported for scenarios that differ only in size. A cost
+  growing with the size gives a ratio near the size factor, one growing with
+  its square a ratio near the factor squared. Such a regression shows in the
+  ratio as well as in the absolute times, and the ratio is the same on any
+  machine.
+
+Two languages cover the two highlighting paths: Lua, whose parser Neovim
+bundles, for Tree-sitter, and scss, which has no bundled parser, for the legacy
+syntax files. A scenario says which path it means to take, and the report warns
+if a sample took the other, as it would if Neovim began to bundle a parser for
+scss. A scenario needing a parser Neovim does not bundle is skipped without it;
+`BENCH_RTP` adds runtimepath entries, comma-separated:
+
+```sh
+BENCH_RTP=~/.local/share/nvim/site make bench SCENARIOS=json_lock
+```
+
+A full run takes about 40 s. The numbers vary by 10% or so between runs on an
+idle machine, more on battery or under load.
+
 ### The timing log
 
 The steps a reader waits on are timed all the time, and written to
