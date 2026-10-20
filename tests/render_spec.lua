@@ -408,6 +408,43 @@ test('a closed run expands tabs and is cut to the window', function()
   assert(text:find('  3 lines $'), text)
 end)
 
+--- Build the default view with 'synmaxcol' set to `col`. The diff buffer is
+--- created inside `build`, so it takes the global value.
+--- @param col integer
+--- @return integer bufnr, gitview.View
+local function build_with_synmaxcol(col)
+  local saved = vim.o.synmaxcol
+  vim.o.synmaxcol = col
+  local ok, buf, view = pcall(build)
+  vim.o.synmaxcol = saved
+  assert(ok, buf)
+  return buf, view
+end
+
+test("a line longer than 'synmaxcol' gets no syntax, and a shorter one does", function()
+  local buf, view = build_with_synmaxcol(#'  return a + b')
+  local long, short
+  for i, l in ipairs(view.lines) do
+    if l.text == 'function M.add(a, b, c)' then
+      long = i - 1
+    elseif l.text == '  return a + b' then
+      short = i - 1
+    end
+  end
+  assert(long and short, 'expected both lines in the fixture')
+  eq({}, marks(buf, 'gitview.syntax', long))
+  assert(#marks(buf, 'gitview.syntax', short) > 0, 'the shorter line lost its syntax')
+end)
+
+test("a 'synmaxcol' of 0 leaves every line its syntax", function()
+  local buf, view = build_with_synmaxcol(0)
+  for i, l in ipairs(view.lines) do
+    if l.text == 'function M.add(a, b, c)' then
+      assert(#marks(buf, 'gitview.syntax', i - 1) > 0, 'the line lost its syntax')
+    end
+  end
+end)
+
 -- A folded row is only seen once its fold is opened, so its syntax is left
 -- until after the open rows have theirs.
 test('the rows folded away get their syntax too, after the rest', function()
