@@ -3487,7 +3487,7 @@ end
 test('session: a conflict with no markers says how to resolve it', function()
   with_session(mid_merge_deleted, function(s)
     eq(true, s.entries[1].conflicted)
-    eq({ 'gone.txt   (unresolved conflict with no markers; s marks it resolved)' }, diff_rows(s))
+    eq({ 'gone.txt   (unresolved conflict with no markers; staging the file marks it resolved)' }, diff_rows(s))
   end)
 end)
 

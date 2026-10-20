@@ -1122,7 +1122,7 @@ function M.show_selected(s, keep_unchanged, span)
     -- added, which `s` in the list does.
     local reason = no_view_reason(s)
     if entry.conflicted then
-      reason = '(unresolved conflict with no markers; s marks it resolved)'
+      reason = '(unresolved conflict with no markers; staging the file marks it resolved)'
     end
     render.notice(s.diff_buf, ('%s   %s'):format(status.label(entry), reason))
     return
