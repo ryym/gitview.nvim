@@ -345,8 +345,9 @@ local PROGRESSIVE_ROWS = 1000
 --- editor. A file is never split, so a step overruns by up to one file.
 local STEP_BUDGET_MS = 10
 
---- The longest line, in bytes, whose syntax is collected: the diff buffer's
---- 'synmaxcol', where 0 means no limit, as it does for Vim.
+--- The longest line, in bytes, whose syntax is collected and whose words are
+--- compared: the diff buffer's 'synmaxcol', where 0 means no limit, as it does
+--- for Vim.
 ---
 --- Collecting costs per capture, so a line of minified code holds thousands of
 --- them, nearly all past the edge of an unwrapped window; and Tree-sitter's
@@ -354,9 +355,13 @@ local STEP_BUDGET_MS = 10
 --- KB took seconds on its own. Unlike Vim, a longer line goes uncolored as a
 --- whole rather than past the limit: the query is restricted by row, so the
 --- part before the limit costs nearly what the whole line does.
+---
+--- Comparing words costs per character, ~0.3 s for a pair of such lines, and
+--- pairing compares each deletion with up to ten additions. What it marks would
+--- mostly be off screen as well.
 --- @param buf integer
 --- @return number
-local function syntax_max_col(buf)
+local function highlight_max_col(buf)
   local col = vim.bo[buf].synmaxcol
   return col > 0 and col or math.huge
 end
@@ -375,7 +380,7 @@ end
 --- probes byte by byte, so telling it which rows matter keeps what the reader
 --- waits for bounded by the size of the diff rather than the size of the file.
 --- @param view gitview.View
---- @param max_col number from `syntax_max_col`
+--- @param max_col number from `highlight_max_col`
 --- @return gitview.FillJob[] open by file
 --- @return gitview.FillJob[] folded by file
 local function rows_by_file(view, max_col)
@@ -472,7 +477,7 @@ end
 --- @param buf integer
 --- @param view gitview.View
 local function fill_syntax(buf, view)
-  local open, folded = rows_by_file(view, syntax_max_col(buf))
+  local open, folded = rows_by_file(view, highlight_max_col(buf))
   local jobs = {} --- @type gitview.FillJob[]
   local order = fill_order(buf, view)
   local open_rows = 0
@@ -591,7 +596,7 @@ function M.draw(buf, view)
   end
 
   -- 3. word-level highlights on paired change lines
-  for _, pair in ipairs(dlib.change_pairs(view.lines)) do
+  for _, pair in ipairs(dlib.change_pairs(view.lines, highlight_max_col(buf))) do
     local del_row, add_row = pair[1], pair[2]
     local del_l, add_l = view.lines[del_row], view.lines[add_row]
     local old_text, new_text = del_l.text, add_l.text

@@ -436,6 +436,22 @@ test("a line longer than 'synmaxcol' gets no syntax, and a shorter one does", fu
   assert(#marks(buf, 'gitview.syntax', short) > 0, 'the shorter line lost its syntax')
 end)
 
+test("a pair of lines longer than 'synmaxcol' gets no word marks", function()
+  local function word_marks(buf, view)
+    local n = 0
+    for i in ipairs(view.lines) do
+      for _, m in ipairs(marks(buf, 'gitview.diff', i - 1)) do
+        if m[4].hl_group == 'GitViewAddText' or m[4].hl_group == 'GitViewDeleteText' then
+          n = n + 1
+        end
+      end
+    end
+    return n
+  end
+  assert(word_marks(build_with_synmaxcol(0)) > 0, 'expected the fixture to mark words')
+  eq(0, word_marks(build_with_synmaxcol(#'function M.add(a, b)' - 1)))
+end)
+
 test("a 'synmaxcol' of 0 leaves every line its syntax", function()
   local buf, view = build_with_synmaxcol(0)
   for i, l in ipairs(view.lines) do

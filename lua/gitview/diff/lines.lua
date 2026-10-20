@@ -181,9 +181,14 @@ local PAIR_MAX_BLOCK = 500
 --- the same file. In a mixed view they must also belong to the same stage: a
 --- staged deletion followed by an unstaged addition is two separate changes.
 ---
+--- A line longer than `max_col` bytes is left unpaired, since comparing it is
+--- what costs: a word diff costs per character.
+---
 --- @param lines gitview.Line[]
+--- @param max_col number? defaults to no limit
 --- @return [integer, integer][] pairs of 1-based rows {del_row, add_row}
-function M.change_pairs(lines)
+function M.change_pairs(lines, max_col)
+  max_col = max_col or math.huge
   local pairs_ = {}
   local i = 1
   while i <= #lines do
@@ -214,11 +219,15 @@ function M.change_pairs(lines)
           local old = lines[d].text
           for a = next_add, math.min(add_end, next_add + PAIR_LOOKAHEAD - 1) do
             local new = lines[a].text
-            local old_ranges, new_ranges = worddiff.ranges(old, new)
-            if worddiff.useful(old, new, old_ranges, new_ranges) then
-              pairs_[#pairs_ + 1] = { d, a }
-              next_add = a + 1
+            if #old > max_col then
               break
+            elseif #new <= max_col then
+              local old_ranges, new_ranges = worddiff.ranges(old, new)
+              if worddiff.useful(old, new, old_ranges, new_ranges) then
+                pairs_[#pairs_ + 1] = { d, a }
+                next_add = a + 1
+                break
+              end
             end
           end
         end

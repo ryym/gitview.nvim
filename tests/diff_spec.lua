@@ -259,3 +259,14 @@ test('change_pairs leaves a block over 500 lines unpaired', function()
   eq(500, #dlib.change_pairs(block(500)))
   eq({}, dlib.change_pairs(block(501)))
 end)
+
+test('change_pairs leaves lines longer than max_col unpaired, and pairs the rest', function()
+  local lines = change_lines({
+    { 'del', 'local long_name = 1' },
+    { 'del', 'local b = 2' },
+    { 'add', 'local long_name = 10' },
+    { 'add', 'local b = 20' },
+  })
+  eq({ { 1, 3 }, { 2, 4 } }, dlib.change_pairs(lines))
+  eq({ { 2, 4 } }, dlib.change_pairs(lines, #'local b = 20'))
+end)
