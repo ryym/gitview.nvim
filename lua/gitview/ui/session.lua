@@ -1916,7 +1916,7 @@ local function wait_for_read(s)
   if not s.outdated then
     return false
   end
-  util.info('the status is being re-read; try again in a moment, or refresh with R')
+  util.info('the status is being re-read; try again in a moment, or refresh')
   return true
 end
 
@@ -1992,7 +1992,7 @@ local function refuses_conflict(entry)
   if not entry.conflicted then
     return false
   end
-  local why = '%s has an unresolved conflict; edit it with gf, or mark it resolved with s in the list'
+  local why = '%s has an unresolved conflict; edit the file, or stage it whole to mark it resolved'
   util.warn(why:format(entry.path))
   return true
 end
