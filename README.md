@@ -433,6 +433,11 @@ carries configuration, and the colors do not depend on it.
 - **Languages without a Tree-sitter parser need `:syntax` enabled.** They fall
   back to it, and a Tree-sitter-only setup gets no colors there. Highlighting
   them is also slower.
+- **A line longer than `'synmaxcol'` gets neither syntax colors nor word
+  highlights**, only its background. Unlike Vim, the whole line goes uncolored,
+  not only the part past the limit. Collecting colors for minified code costs
+  seconds per line; to lift the limit anyway, set `'synmaxcol'` to `0` in the
+  diff buffer, whose filetype is `gitview-diff`.
 - **The winbar can be taken over by your config.** The file at the top of the
   window is reported through `'winbar'`, so a configuration or plugin that sets
   it for every window hides it. Every file still has its own header line in the

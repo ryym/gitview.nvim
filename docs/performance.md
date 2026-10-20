@@ -173,6 +173,38 @@ The views and the list states now live in file-local tables read through
 neither module holds a table. Anything a window option can reach through
 `require` has to stay small; new per-buffer state belongs in a local table.
 
+### Leave long lines uncolored
+
+Collecting a line's syntax costs per capture, ~3 µs to collect one and ~1 µs to
+set its extmark, so the cost follows the bytes on the open rows rather than
+their number. A line of minified code holds thousands of captures, and for a
+very long line Tree-sitter's captures pass grows faster than the line does: it
+took ~3x as long each time the line doubled, mostly in predicates such as
+`#match?`. One changed line of ~400 KB of JavaScript took 6.7 s to draw, and a
+view of three rows is drawn synchronously.
+
+A line longer than `'synmaxcol'` is therefore left out, the limit Vim applies
+for the same reason:
+
+| change                                         | effect (the line above) |
+| ---------------------------------------------- | ----------------------- |
+| Collect no syntax past `'synmaxcol'`           | 6.7 s → 0.9 s           |
+| Parse no version none of whose rows are wanted | 0.9 s → 0.6 s           |
+| Compare no words past `'synmaxcol'`            | 0.6 s → 2 ms            |
+
+- **The whole line goes uncolored**, not only the part past the limit as in Vim.
+  The query is restricted by row, so the part before the limit would cost
+  nearly what the whole line does.
+- **Parsing is skipped only when nothing is wanted from a version.** Every other
+  version is still parsed whole, since that is what gives context. The old side
+  of an added file is never parsed either.
+- **Pairing is where word diffs cost.** Each deletion is compared with up to ten
+  additions to find its pair, so a long line is left unpaired rather than only
+  unmarked.
+
+A line just under the limit still costs in full: 200 lines of ~2.8 KB take
+3.3 s, and are not filled progressively, since that is decided by rows.
+
 ### Fill large views progressively
 
 A view of more than 1000 open rows gets its text, diff colors and word
