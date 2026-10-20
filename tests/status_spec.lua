@@ -155,6 +155,14 @@ test('status: an unmerged path is marked conflicted and shown as UU', function()
   eq(false, status.in_index(entries[1]))
 end)
 
+-- With no stage 0, the index has nothing a commit would take, so only the
+-- working tree side counts as changed.
+test('status: an unmerged path is unstaged only', function()
+  local entries = status.entries({ change('U', 'fight.txt') }, { change('U', 'fight.txt') }, {})
+  eq(false, status.has_staged(entries[1]))
+  eq(true, status.has_unstaged(entries[1]))
+end)
+
 test('status: an ordinary change is not conflicted', function()
   local entries = status.entries({ change('M', 'a.txt') }, { change('M', 'b.txt') }, { 'c.txt' })
   for _, e in ipairs(entries) do

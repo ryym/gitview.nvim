@@ -115,10 +115,15 @@ end
 --- An untracked file is in neither, so it counts as unstaged only. Both letters
 --- are `?` for it, which is why the test is not simply "not unchanged".
 ---
+--- An unmerged path is not staged either. Its index holds the merge stages but
+--- no stage 0, so there is no version of it that a commit would take, and
+--- nothing to compare with HEAD. Its working tree side still counts.
+---
 --- @param e gitview.StatusEntry
 --- @return boolean
 function M.has_staged(e)
-  return e.index_status ~= UNCHANGED and e.index_status ~= UNTRACKED
+  local x = e.index_status
+  return x ~= UNCHANGED and x ~= UNTRACKED and x ~= UNMERGED
 end
 
 --- Whether the working tree differs from the index for this entry.
