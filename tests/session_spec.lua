@@ -3507,3 +3507,228 @@ test('session: a directory shows its conflicted files among the others', functio
     eq(view.files[2].row + 1, view.hunk_rows[#view.hunk_rows])
   end)
 end)
+
+--- Twenty numbered lines, with some of them replaced.
+--- @param changed table<integer, string>?
+--- @return string[]
+local function numbered(changed)
+  local lines = {}
+  for i = 1, 20 do
+    lines[i] = (changed or {})[i] or ('line ' .. i)
+  end
+  return lines
+end
+
+--- A file staged only, one unstaged only, one with both, and an untracked one.
+local function layered(repo)
+  repo.write('both.txt', { 'one' })
+  repo.write('staged.txt', { 'one' })
+  repo.write('work.txt', { 'one' })
+  repo.commit('init')
+  repo.write('both.txt', { 'two' })
+  repo.write('staged.txt', { 'two' })
+  repo.git('add', 'both.txt', 'staged.txt')
+  repo.write('both.txt', { 'three' })
+  repo.write('work.txt', { 'two' })
+  repo.write('loose.txt', { 'new' })
+end
+
+--- @param s gitview.Session
+--- @return string
+local function files_winbar(s)
+  vim.g.statusline_winid = s.files_win
+  return (list.winbar():gsub('%%#%w+#', ''))
+end
+
+--- The kind and text of the diff row under the cursor.
+--- @param s gitview.Session
+--- @return string
+local function cursor_line(s)
+  local view = assert(require('gitview.diff.render').view_of(s.diff_buf), 'no view drawn')
+  local l = view.lines[vim.api.nvim_win_get_cursor(s.diff_win)[1]]
+  return ('%s %s'):format(l.kind, l.text)
+end
+
+test('session: `gs` goes through both layers, staged alone and unstaged alone', function()
+  with_session(layered, function(s)
+    local name = vim.fs.basename(s.root)
+    eq({ 'both.txt', 'loose.txt', 'staged.txt', 'work.txt' }, rows(s))
+    eq((' %s   4 files'):format(name), files_winbar(s))
+    eq(' HEAD, staged + unstaged', diff_winbar(s))
+    press(s, 'gs')
+    eq({ 'both.txt', 'staged.txt' }, rows(s))
+    eq((' %s   2 staged'):format(name), files_winbar(s))
+    eq(' HEAD, staged', diff_winbar(s))
+    press(s, 'gs')
+    -- an untracked file is unstaged only
+    eq({ 'both.txt', 'loose.txt', 'work.txt' }, rows(s))
+    eq((' %s   3 unstaged'):format(name), files_winbar(s))
+    eq(' index, unstaged', diff_winbar(s))
+    press(s, 'gs')
+    eq({ 'both.txt', 'loose.txt', 'staged.txt', 'work.txt' }, rows(s))
+  end)
+end)
+
+test('session: a layer alone shows that change of a file alone', function()
+  with_session(layered, function(s)
+    press(s, 'gs')
+    eq({ 'both.txt', 'one', 'two' }, diff_rows(s))
+    press(s, 'gs')
+    eq({ 'both.txt', 'two', 'three' }, diff_rows(s))
+  end)
+end)
+
+-- An unmerged file's index has no version a commit would take, and resolving
+-- it is deciding what to stage.
+test('session: an unmerged file is listed unstaged and not staged', function()
+  with_session(mid_merge, function(s)
+    press(s, 'gs')
+    eq({ 'nothing staged' }, rows(s))
+    eq({ 'nothing staged' }, diff_rows(s))
+    press(s, 'gs')
+    eq({ 'fight.txt' }, rows(s))
+  end)
+end)
+
+test('session: switching layers keeps the file and the line the cursor is on', function()
+  with_session(function(repo)
+    repo.write('f.txt', numbered())
+    repo.commit('init')
+    repo.write('f.txt', numbered({ [19] = 'NINETEEN' }))
+    repo.git('add', 'f.txt')
+    repo.write('f.txt', numbered({ [2] = 'TWO', [19] = 'NINETEEN' }))
+  end, function(s)
+    put_cursor(s, changed_row(s, 'NINETEEN'))
+    press_diff(s, 'gs')
+    eq('add NINETEEN', cursor_line(s))
+    press_diff(s, 'gs')
+    -- unchanged from the index to the working tree
+    eq('context NINETEEN', cursor_line(s))
+    press_diff(s, 'gs')
+    eq('add NINETEEN', cursor_line(s))
+  end)
+end)
+
+test('session: switching to a layer without the file selects the first file', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.write('b.txt', numbered())
+    repo.commit('init')
+    repo.write('a.txt', { 'two' })
+    repo.git('add', 'a.txt')
+    repo.write('b.txt', numbered({ [19] = 'NINETEEN' }))
+  end, function(s)
+    session.select(s, 2)
+    put_cursor(s, changed_row(s, 'NINETEEN'))
+    press_diff(s, 'gs')
+    eq('a.txt', s.entries[selected(s)].path)
+    eq(1, vim.api.nvim_win_get_cursor(s.diff_win)[1])
+  end)
+end)
+
+test('session: the diff refuses to stage what its layer does not show', function()
+  with_session(layered, function(s, repo)
+    press(s, 'gs')
+    local before = repo.git('status', '--short')
+    put_cursor(s, changed_row(s, 'two'))
+    eq({ 'gitview: only staged changes are shown' }, notified(function()
+      press_diff(s, 's')
+    end))
+    eq({ 'gitview: only staged changes are shown' }, notified(function()
+      press_diff(s, 'S')
+    end))
+    press(s, 'gs')
+    put_cursor(s, changed_row(s, 'three'))
+    eq({ 'gitview: only unstaged changes are shown' }, notified(function()
+      press_diff(s, 'u')
+    end))
+    eq(before, repo.git('status', '--short'))
+  end)
+end)
+
+-- Staging from a layer alone takes the rows out of it, so the cursor goes on to
+-- what is left rather than keeping a row that is now another line.
+test('session: staging from a layer alone moves on through the changes', function()
+  with_session(function(repo)
+    repo.write('f.txt', numbered())
+    repo.write('g.txt', { 'one' })
+    repo.commit('init')
+    repo.write('f.txt', numbered({ [2] = 'TWO', [19] = 'NINETEEN' }))
+    repo.write('g.txt', { 'two' })
+  end, function(s)
+    press(s, 'gsgs')
+    put_cursor(s, changed_row(s, 'TWO'))
+    press_diff(s, 's')
+    -- what is left of the change, from its start
+    eq('del line 2', cursor_line(s))
+    press_diff(s, 's')
+    -- the change is gone, so on to the next one in the file
+    eq('del line 19', cursor_line(s))
+    press_diff(s, 'S')
+    -- and with the file's last change gone, so is the file: the next one is
+    -- shown from its header, so that `s` pressed again does nothing
+    eq('g.txt', s.entries[selected(s)].path)
+    eq(1, vim.api.nvim_win_get_cursor(s.diff_win)[1])
+  end)
+end)
+
+test('session: staging the last change of a layer alone leaves the cursor', function()
+  with_session(function(repo)
+    repo.write('f.txt', numbered())
+    repo.commit('init')
+    repo.write('f.txt', numbered({ [2] = 'TWO', [19] = 'NINETEEN' }))
+  end, function(s)
+    press(s, 'gsgs')
+    put_cursor(s, changed_row(s, 'NINETEEN'))
+    press_diff(s, 'S')
+    eq({ 'gitview: nothing to stage here' }, notified(function()
+      press_diff(s, 's')
+    end))
+  end)
+end)
+
+test('session: a layer alone keeps the line when the index changes under it', function()
+  with_session(function(repo)
+    repo.write('f.txt', numbered())
+    repo.commit('init')
+    repo.write('f.txt', numbered({ [19] = 'NINETEEN' }))
+    repo.git('add', 'f.txt')
+    repo.write('f.txt', numbered({ [2] = 'TWO', [19] = 'NINETEEN' }))
+  end, function(s, repo)
+    press(s, 'gs')
+    put_cursor(s, changed_row(s, 'NINETEEN'))
+    repo.git('add', 'f.txt')
+    session.refresh(s)
+    settle(s)
+    eq('add NINETEEN', cursor_line(s))
+  end)
+end)
+
+-- A directory's row stands for what is on screen under it.
+test("session: a directory's `s` in a layer alone takes only the files listed", function()
+  with_tree_session(function(repo)
+    repo.write('src/a.lua', { 'one' })
+    repo.write('src/b.lua', { 'one' })
+    repo.commit('init')
+    repo.write('src/a.lua', { 'two' })
+    repo.git('add', 'src/a.lua')
+    repo.write('src/a.lua', { 'three' })
+    repo.write('src/b.lua', { 'two' })
+  end, function(s, repo)
+    press(s, 'gs')
+    eq({ './', 'src/', 'src/a.lua' }, rows(s))
+    files_cursor(s, 2)
+    press(s, 's')
+    eq('M  src/a.lua\n M src/b.lua\n', repo.git('status', '--short'))
+  end)
+end)
+
+test('session: the working-tree row shows the layer the list does', function()
+  with_session(layered, function(s)
+    press(s, 'gs')
+    goto_worktree(s)
+    session.show_selected(s)
+    eq({ 'both.txt', 'staged.txt' }, view_files(s))
+    eq(' HEAD, staged   [2 files]', diff_winbar(s))
+  end)
+end)

@@ -8,6 +8,8 @@ local M = {}
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
 --- @field ignore_whitespace boolean where a diff starts out; `:GitView`
 ---        can turn it on and off while it is open
+--- @field layer gitview.Layer which uncommitted changes `:GitView` starts out
+---        showing: `both`, or `staged` or `unstaged` alone
 --- @field list_ratio number share of the width the sidebar of `:GitView` takes
 --- @field commit_count integer how many recent commits `:GitView` lists
 --- @field commit_ratio number share of the sidebar height the commit list takes
@@ -23,6 +25,7 @@ M.values = {
   algorithm = 'histogram',
   linematch = 0,
   ignore_whitespace = false,
+  layer = 'both',
   list_ratio = 0.25,
   commit_count = 100,
   commit_ratio = 0.4,

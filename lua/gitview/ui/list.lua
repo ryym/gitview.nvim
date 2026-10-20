@@ -24,6 +24,8 @@ local M = {}
 --- @field entries gitview.StatusEntry[]? the files pane
 --- @field notice string? the files pane, shown in place of the entries while
 ---        there are none to show yet
+--- @field layer gitview.Layer? the files pane, which changes the entries are
+---        those with; both by default
 --- @field commits gitview.Commit[]? the commits pane
 --- @field worktree boolean? the commits pane, with a row for the working tree
 ---        above the commits
@@ -67,6 +69,16 @@ local M = {}
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
 M.EMPTY_NOTICE = 'no uncommitted changes'
+
+--- What to show instead of the list when no file has a change in `layer`.
+--- @param layer gitview.Layer?
+--- @return string
+function M.empty_notice(layer)
+  if layer == 'staged' or layer == 'unstaged' then
+    return 'nothing ' .. layer
+  end
+  return M.EMPTY_NOTICE
+end
 
 --- Shown instead of the list until the uncommitted changes have been read.
 M.LOADING_NOTICE = 'reading the status...'
@@ -280,7 +292,7 @@ function M.content(model)
     end
     local entries = model.entries or {}
     if #entries == 0 then
-      return { { text = M.EMPTY_NOTICE } }
+      return { { text = M.empty_notice(model.layer) } }
     end
     local rows, files = {}, {}
     for i, e in ipairs(entries) do
@@ -415,7 +427,12 @@ function M.winbar()
     text = ' ' .. vim.fs.basename(state.root)
     -- Zero files would be a claim about a list that has not been read.
     if not state.notice then
-      text = ('%s   %s'):format(text, util.counted(#state.entries, 'file'))
+      -- A layer alone is named by what it counts, since the list leaving files
+      -- out unannounced would be a trap.
+      local layer = state.layer or 'both'
+      local count = layer == 'both' and util.counted(#state.entries, 'file')
+        or ('%d %s'):format(#state.entries, layer)
+      text = ('%s   %s'):format(text, count)
     end
   elseif state.scope then
     -- What is being looked into has no row of its own, so this is the only place
@@ -492,6 +509,7 @@ function M.draw(buf, model)
     root = model.root,
     entries = model.entries or {},
     notice = model.notice,
+    layer = model.layer,
     commits = model.commits or {},
     scope = model.scope,
     stale = model.stale,

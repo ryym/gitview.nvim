@@ -10,6 +10,7 @@ local index = require('gitview.index')
 local keymap = require('gitview.diff.keymap')
 local list = require('gitview.ui.list')
 local perf = require('gitview.perf')
+local place = require('gitview.diff.place')
 local render = require('gitview.diff.render')
 local source = require('gitview.diff.source')
 local stage = require('gitview.stage')
@@ -30,7 +31,10 @@ local M = {}
 --- @field commits_buf integer
 --- @field diff_win integer
 --- @field diff_buf integer drawn into repeatedly, never swapped out
---- @field entries gitview.StatusEntry[] empty until the first read finishes
+--- @field uncommitted gitview.StatusEntry[] every uncommitted file; empty until
+---        the first read finishes
+--- @field entries gitview.StatusEntry[] the files the list shows: those of
+---        `uncommitted` with a change in `layer`
 --- @field files_notice string? shown in place of the files while there are none
 ---        to show yet: until the first read finishes, or after it failed
 --- @field reads integer bumped by every read of the status, so a read can tell
@@ -46,6 +50,11 @@ local M = {}
 --- @field ignore_whitespace boolean whether lines differing only in whitespace
 ---        count as changed; starts from the configuration and is toggled while
 ---        the session is open
+--- @field layer gitview.Layer which of the uncommitted changes are shown, in the
+---        list and in the diff; starts from the configuration and is switched
+---        while the session is open
+--- @field placing gitview.Placing? where the next draw of the selection puts the
+---        diff's cursor, when keeping its row would not keep the line
 --- @field mark string? sha of the marked commit, or `list.WORKTREE` for the
 ---        working-tree row. While it is set the commits pane compares it with
 ---        whatever the cursor is on, rather than showing one commit against its
@@ -95,9 +104,50 @@ function M.current()
   return M.sessions[vim.api.nvim_get_current_tabpage()]
 end
 
---- What the diff pane compares. Unlike the diff commands there is no choice of
---- revision here: the point of the view is what has not been committed.
-local REV = 'HEAD, staged + unstaged'
+--- What the diff pane compares, by layer. Unlike the diff commands there is no
+--- choice of revision here: the point of the view is what has not been
+--- committed. The staged layer alone compares HEAD with the index, and the
+--- unstaged one the index with the working tree.
+--- @type table<gitview.Layer, string>
+local REVS = {
+  both = 'HEAD, staged + unstaged',
+  staged = 'HEAD, staged',
+  unstaged = 'index, unstaged',
+}
+
+--- @param s gitview.Session
+--- @return string
+local function rev_of(s)
+  return REVS[s.layer]
+end
+
+--- The order `gs` goes through the layers in.
+--- @type table<gitview.Layer, gitview.Layer>
+local NEXT_LAYER = { both = 'staged', staged = 'unstaged', unstaged = 'both' }
+
+--- The files with a change in `layer`.
+---
+--- An untracked file is unstaged only, as it is everywhere else. So is an
+--- unmerged one: its index has no version a commit would take, and resolving it
+--- is deciding what to stage.
+--- @param entries gitview.StatusEntry[]
+--- @param layer gitview.Layer
+--- @return gitview.StatusEntry[]
+local function in_layer(entries, layer)
+  if layer == 'both' then
+    return entries
+  end
+  local has = layer == 'staged' and status.has_staged or status.has_unstaged
+  return vim.tbl_filter(has, entries)
+end
+
+--- Where to put the diff's cursor once the selection is drawn again, and how to
+--- find it there; see gitview.diff.place.
+--- @class gitview.Placing
+--- @field id gitview.SelectionId what was selected when it was asked for. A draw
+---        of anything else drops it.
+--- @field anchor gitview.Anchor
+--- @field find fun(view: gitview.View, a: gitview.Anchor): integer?
 
 --- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir', id:string}
 
@@ -130,12 +180,15 @@ end
 ---
 --- Ignoring whitespace is session state rather than configuration: it is a way
 --- of looking at one thing, turned on and off again while reading, and the
---- configured value is only where it starts.
+--- configured value is only where it starts. So is the layer, which only has a
+--- say in a mixed view: a range ending at the working tree compares two
+--- versions, with no index between them.
 --- @param s gitview.Session
---- @return {algorithm:string, linematch:integer, ignore_whitespace:boolean}
+--- @return {algorithm:string, linematch:integer, ignore_whitespace:boolean, layer:gitview.Layer}
 local function diff_opts(s)
   local opts = config.diff_opts(config.values)
   opts.ignore_whitespace = s.ignore_whitespace
+  opts.layer = s.layer
   return opts
 end
 
@@ -200,6 +253,40 @@ end
 local function reset_view(s)
   if vim.api.nvim_win_is_valid(s.diff_win) then
     vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
+  end
+end
+
+--- Draw a view of what is uncommitted, and put the cursor where `s.placing`
+--- asks, if it asked for this view. A row it cannot find is left as it was.
+--- @param s gitview.Session
+--- @param view gitview.View
+local function draw_placed(s, view)
+  render.draw(s.diff_buf, view)
+  local p = s.placing
+  s.placing = nil
+  if not p or not vim.deep_equal(p.id, s.shown) or not vim.api.nvim_win_is_valid(s.diff_win) then
+    return
+  end
+  local row = p.find(view, p.anchor)
+  if row then
+    vim.api.nvim_win_set_cursor(s.diff_win, { row, 0 })
+  end
+end
+
+--- Ask the next draw of the selection to find the line under the diff's cursor
+--- with `find`, rather than keeping its row. Nothing is asked when the diff is
+--- not on a line of what is uncommitted.
+--- @param s gitview.Session
+--- @param find fun(view: gitview.View, a: gitview.Anchor): integer?
+--- @param row integer? the row whose line to find; the cursor's by default
+local function place_next(s, find, row)
+  local view = render.view_of(s.diff_buf)
+  if not view or not view.mixed or not vim.api.nvim_win_is_valid(s.diff_win) then
+    return
+  end
+  local anchor = place.anchor(view, row or vim.api.nvim_win_get_cursor(s.diff_win)[1])
+  if anchor and s.shown then
+    s.placing = { id = s.shown, anchor = anchor, find = find }
   end
 end
 
@@ -403,7 +490,7 @@ end
 --- @return string[]
 local function untracked_paths(s)
   local paths = {}
-  for _, e in ipairs(s.entries) do
+  for _, e in ipairs(s.uncommitted) do
     if status.is_untracked(e) then
       paths[#paths + 1] = e.path
     end
@@ -464,7 +551,7 @@ local function range_of(s, target)
   local older, newer = ends_of(s, target)
   if not older then
     if target.kind == 'worktree' then
-      return nil, REV
+      return nil, rev_of(s)
     end
     local commit = s.commits[target.index]
     return git.commit_range(commit), ('%s %s'):format(commit.sha, commit.subject)
@@ -650,20 +737,21 @@ end
 local function read_entries(s, entries)
   if #entries == 0 then
     return function()
-      render.notice(s.diff_buf, list.EMPTY_NOTICE)
+      render.notice(s.diff_buf, list.empty_notice(s.layer))
     end
   end
   local sources, skipped = perf.measure('source', source.for_entries, entries, s.root)
+  local rev = rev_of(s)
   return function()
     local view, left_out =
-      perf.measure('build', vlib.build, sources, REV, config.values.context, diff_opts(s))
-    view = vlib.list_skipped(view, REV, skipped, left_out, no_view_reason(s))
+      perf.measure('build', vlib.build, sources, rev, config.values.context, diff_opts(s))
+    view = vlib.list_skipped(view, rev, skipped, left_out, no_view_reason(s))
     if not view then
-      render.notice(s.diff_buf, ('%s   %s'):format(REV, no_view_reason(s)))
+      render.notice(s.diff_buf, ('%s   %s'):format(rev, no_view_reason(s)))
       return
     end
     view.note = note_of(s)
-    render.draw(s.diff_buf, view)
+    draw_placed(s, view)
   end
 end
 
@@ -854,7 +942,7 @@ end
 --- @param target gitview.ListTarget a commit, the working tree or a directory
 local function draw_loading(s, target)
   if target.kind == 'dir' or target.kind == 'commit_dir' then
-    local label = target.kind == 'dir' and REV or (s.scope and s.scope.label or '')
+    local label = target.kind == 'dir' and rev_of(s) or (s.scope and s.scope.label or '')
     render.draw(s.diff_buf, vlib.placeholder(label, LOADING))
     return
   end
@@ -1086,14 +1174,21 @@ function M.show_selected(s, keep_unchanged, span)
   -- hunk does, and being thrown back to the top on every `s` would make working
   -- down a diff impossible. Anything else is new contents in a reused buffer,
   -- where an inherited position means nothing.
+  --
+  -- With one layer alone, a change to the index adds or takes away rows, so
+  -- the row is no longer the line. Unless something has said where to go, the
+  -- line is found again.
   if not vim.deep_equal(id, s.shown) then
     reset_view(s)
+    s.placing = nil
+  elseif s.layer ~= 'both' and not s.placing then
+    place_next(s, place.follow)
   end
   s.shown = id
 
   local target = s.selected
   if not target then
-    render.notice(s.diff_buf, s.files_notice or list.EMPTY_NOTICE)
+    render.notice(s.diff_buf, s.files_notice or list.empty_notice(s.layer))
     return
   end
   if shows_many(target) then
@@ -1106,7 +1201,7 @@ function M.show_selected(s, keep_unchanged, span)
   end
   local entry = s.entries[target.index]
   if not entry then
-    render.notice(s.diff_buf, list.EMPTY_NOTICE)
+    render.notice(s.diff_buf, list.empty_notice(s.layer))
     return
   end
   if entry.binary then
@@ -1115,7 +1210,7 @@ function M.show_selected(s, keep_unchanged, span)
   end
   local src = perf.measure('source', source.for_entry, entry, s.root)
   local view = src
-    and perf.measure('build', vlib.build, { src }, REV, config.values.context, diff_opts(s))
+    and perf.measure('build', vlib.build, { src }, rev_of(s), config.values.context, diff_opts(s))
   if not view then
     -- A pure rename or a mode change is a real change with no lines to show. An
     -- unmerged file with no conflict marked out is still unresolved until it is
@@ -1128,7 +1223,7 @@ function M.show_selected(s, keep_unchanged, span)
     return
   end
   view.note = note_of(s)
-  render.draw(s.diff_buf, view)
+  draw_placed(s, view)
   s.index_lines = src.index_lines
 end
 
@@ -1310,6 +1405,7 @@ local function redraw_list(s, target, keep_unchanged)
     root = s.root,
     entries = s.entries,
     notice = s.files_notice,
+    layer = s.layer,
     tree = as_tree,
   })
   list.draw(s.commits_buf, {
@@ -1444,7 +1540,8 @@ local function read_status(s, report, keep_unchanged)
     -- The first list read puts the cursor on the first file rather than the
     -- first row, which in a tree is the root and shows nothing.
     local first = s.files_notice ~= nil and #s.entries == 0
-    s.entries = entries
+    s.uncommitted = entries
+    s.entries = in_layer(entries, s.layer)
     s.files_notice = nil
     s.outdated = nil
     -- While a range is being looked into, the commits pane shows its files and
@@ -1458,7 +1555,7 @@ local function read_status(s, report, keep_unchanged)
     -- The working-tree row comes and goes with the entries, and its mark with it.
     drop_lost_mark(s)
     local target = target_of_id(s, id)
-    if not target and first and #entries > 0 then
+    if not target and first and #s.entries > 0 then
       target = { kind = 'file', index = 1 }
     end
     redraw_list(s, target, keep_unchanged)
@@ -1529,6 +1626,27 @@ function M.toggle_whitespace(s)
   s.ignore_whitespace = not s.ignore_whitespace
   s.generation = s.generation + 1
   M.show_selected(s)
+end
+
+--- Show the next layer of the uncommitted changes: both, staged alone, or
+--- unstaged alone, and round again.
+---
+--- A file the list goes on showing stays selected, and the diff's cursor stays
+--- on the line it was on, though every row of it may have moved. A file the
+--- list no longer shows gives way to its first file: where the cursor was in
+--- the old list means nothing in the new one.
+--- @param s gitview.Session
+function M.toggle_layer(s)
+  local id = selection_id(s)
+  place_next(s, place.same_line)
+  s.layer = NEXT_LAYER[s.layer]
+  s.entries = in_layer(s.uncommitted, s.layer)
+  s.generation = s.generation + 1
+  local target = target_of_id(s, id)
+  if not target and id and (id.kind == 'file' or id.kind == 'dir') and #s.entries > 0 then
+    target = { kind = 'file', index = 1 }
+  end
+  redraw_list(s, target)
 end
 
 --- The row of the commits pane the cursor is on, and what a mark on it would
@@ -1808,9 +1926,14 @@ end
 --- letters, the file's three versions and which lines count as staged all move
 --- together, and re-reading is what keeps them agreeing.
 ---
---- The cursor is left on the row it was on. Staging or unstaging never removes a
---- file from the list — it still differs from HEAD either way — and the list is
---- ordered by path, so the row goes on meaning the same file.
+--- The cursor is left on the row it was on. With both layers shown, staging or
+--- unstaging never removes a file from the list — it still differs from HEAD
+--- either way — and the list is ordered by path, so the row goes on meaning the
+--- same file. With one alone, a file left with no change in it drops out of the
+--- list, and the row moves on to the next file, the next to work through.
+---
+--- A directory's row takes the files the list shows under it, and none that the
+--- layer hides: what the row stands for is what is on screen.
 ---
 --- @param s gitview.Session
 --- @param op 'stage'|'unstage'
@@ -1874,6 +1997,21 @@ local function refuses_conflict(entry)
   return true
 end
 
+--- Say why nothing in the diff can be moved the way `op` asks, if the layer
+--- shown is the one it would move rows into: unstaged alone has nothing staged
+--- to unstage, and staged alone nothing to stage.
+--- @param s gitview.Session
+--- @param op 'stage'|'unstage'
+--- @return boolean refused
+local function refuses_layer(s, op)
+  local shown = op == 'stage' and 'staged' or 'unstaged'
+  if s.layer ~= shown then
+    return false
+  end
+  util.info(('only %s changes are shown'):format(shown))
+  return true
+end
+
 --- Move some of the selected file's rows across the index, then redraw.
 ---
 --- The rows on display are the operation's whole input: each one says which
@@ -1905,6 +2043,9 @@ local function apply_to_rows(s, op, first, last)
   if not entry or not view or not s.index_lines then
     return
   end
+  if refuses_layer(s, op) then
+    return
+  end
   -- Ignoring whitespace folds a line that differs only in whitespace into a
   -- context row, whose text is read from the index. Writing the shown rows back
   -- would then leave that line at its index version while the working tree kept
@@ -1924,6 +2065,16 @@ local function apply_to_rows(s, op, first, last)
   if err then
     util.git_error(err)
     return
+  end
+  -- With one layer alone, what was moved leaves the view, and the change it
+  -- was part of with it when it was all of it. The cursor goes on from where
+  -- the change began.
+  if view.layer then
+    local at = first
+    while at <= last and not index.selection(view.lines, at, at, op)[1] do
+      at = at + 1
+    end
+    place_next(s, place.after_change, index.hunk_at(view.lines, at) or at)
   end
   s.outdated = true
   M.refresh(s)
@@ -1962,7 +2113,7 @@ local function set_diff_stage_keymaps(s)
     map(lhs:upper(), function()
       local target = s.selected
       local entry = target and target.kind == 'file' and s.entries[target.index]
-      if entry and refuses_conflict(entry) then
+      if entry and (refuses_conflict(entry) or refuses_layer(s, op)) then
         return
       end
       local view = render.view_of(s.diff_buf)
@@ -2058,12 +2209,17 @@ end
 --- `gw` is mapped in every buffer of the session, since what it changes is what
 --- the diff pane shows wherever the cursor happens to be. It shadows the `gw`
 --- format operator, which means nothing in a buffer that cannot be modified.
+---
+--- `gs` is mapped the same way, for the same reason, over `:sleep`.
 --- @param s gitview.Session
-local function set_whitespace_keymap(s)
+local function set_view_keymaps(s)
   for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
     util.buf_mapper(buf)('gw', function()
       M.toggle_whitespace(s)
     end, 'toggle ignoring whitespace')
+    util.buf_mapper(buf)('gs', function()
+      M.toggle_layer(s)
+    end, 'show both layers, staged alone or unstaged alone')
   end
 end
 
@@ -2299,6 +2455,7 @@ function M.open()
     files_buf = list.create_buffer(),
     commits_buf = list.create_buffer(),
     diff_buf = render.create_buffer(),
+    uncommitted = {},
     entries = {},
     files_notice = list.LOADING_NOTICE,
     reads = 0,
@@ -2308,6 +2465,7 @@ function M.open()
     range_reads = {},
     range_order = {},
     ignore_whitespace = config.values.ignore_whitespace,
+    layer = config.values.layer,
     has_head = git.has_head(root),
   }
   s.commits = read_commits(s)
@@ -2344,7 +2502,7 @@ function M.open()
   set_commits_keymaps(s)
   set_diff_keymaps(s)
   set_diff_stage_keymaps(s)
-  set_whitespace_keymap(s)
+  set_view_keymaps(s)
 
   for _, buf in ipairs({ s.files_buf, s.commits_buf }) do
     vim.api.nvim_create_autocmd({ 'CursorMoved', 'WinEnter' }, {
