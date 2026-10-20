@@ -325,9 +325,9 @@ not implemented.
 #### Ignoring whitespace
 
 `gw`, from any of the three windows, stops lines that differ only in whitespace
-from counting as changed. The winbar says `space ignored` while it is on, and a
-file whose only change is whitespace says so rather than claiming to have no
-change at all. `gw` again puts it back.
+from counting as changed. The winbar says `-w`, as `git diff` would, while it is
+on, and a file whose only change is whitespace says so rather than claiming to
+have no change at all. `gw` again puts it back.
 
 While it is on, `s` and `u` **in the diff** refuse: a folded line is drawn as
 context, taken from the index, so staging the rows on screen would write that

@@ -519,8 +519,8 @@ key.
 
 Two things have to be said out loud, because the fold is otherwise invisible:
 
-- **The winbar reads `space ignored`** for as long as it is on. A mode that
-  silently changes which lines count as different is a trap.
+- **The winbar reads `-w`**, `git diff`'s flag for it, for as long as it is on.
+  A mode that silently changes which lines count as different is a trap.
 - **A file whose only change is whitespace says `(no change outside whitespace)`**
   rather than `(no textual change)`, which would be a lie in exactly the case
   where the fold hides everything there was.

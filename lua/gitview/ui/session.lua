@@ -152,8 +152,10 @@ local function note_of(s, ...)
     end
   end
   -- A mode that silently changes which lines count as different would be a trap.
+  -- It is named by `git diff`'s own flag for it, which says the same thing in
+  -- the fewest cells.
   if s.ignore_whitespace then
-    notes[#notes + 1] = 'space ignored'
+    notes[#notes + 1] = '-w'
   end
   return #notes > 0 and table.concat(notes, '   ') or nil
 end
@@ -1910,7 +1912,7 @@ local function apply_to_rows(s, op, first, last)
   -- nothing unstaged. Whole-file `s` is unaffected: it is `git add`, and reads no
   -- rows.
   if s.ignore_whitespace then
-    util.warn('whitespace is being ignored; stage the whole file, or turn it off with gw')
+    util.warn('whitespace is being ignored; stage the whole file, or stop ignoring it')
     return
   end
   local rows = index.selection(view.lines, first, last, op)

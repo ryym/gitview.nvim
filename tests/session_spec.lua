@@ -2433,9 +2433,9 @@ end)
 test('session: the winbar says when whitespace is being ignored', function()
   with_session(whitespace, function(s)
     session.select(s, 1)
-    assert(not diff_winbar(s):find('space ignored', 1, true), diff_winbar(s))
+    assert(not diff_winbar(s):find('   -w', 1, true), diff_winbar(s))
     session.toggle_whitespace(s)
-    assert(diff_winbar(s):find('space ignored', 1, true), diff_winbar(s))
+    assert(diff_winbar(s):find('   -w', 1, true), diff_winbar(s))
   end)
 end)
 
@@ -3099,7 +3099,7 @@ test('session: a long subject is cut to leave the file, the sha and the notes', 
     show_commit(s, 1)
     local commit = s.commits[1]
     local fixed = (' a.lua @ %s'):format(commit.sha)
-    local tail = '   [2 files]   space ignored'
+    local tail = '   [2 files]   -w'
     local wide = drawn_winbar(s, 200)
     eq(fixed .. ' ' .. commit.subject .. tail, wide)
 
