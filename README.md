@@ -453,7 +453,8 @@ The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
 `GitViewIndent`. Where the branch has an upstream, a pushed sha is in
 `GitViewCommitShaPushed` instead of `GitViewCommitSha`, and the line naming
-the upstream is in `GitViewUpstream`.
+the upstream has the name in `GitViewUpstream` and the rule in
+`GitViewUpstreamRule`.
 `GitViewCommitSha` colors the shas in the diff's winbar as well. The rest of
 that winbar, other than the file, is in `GitViewWinBarText`.
 

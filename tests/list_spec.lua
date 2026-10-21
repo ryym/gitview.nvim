@@ -120,7 +120,11 @@ local function upstream_paint(buf)
     end
     if m[4].virt_lines then
       assert(not m[4].virt_lines_above, 'a line above the first row is not shown')
-      out.lines[m[2]] = m[4].virt_lines[1][1][1]
+      local text = {}
+      for _, chunk in ipairs(m[4].virt_lines[1]) do
+        text[#text + 1] = chunk[1]
+      end
+      out.lines[m[2]] = table.concat(text)
     end
   end
   return out

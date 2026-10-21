@@ -363,6 +363,10 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- color of its own, which would make an ordinary state look like a warning.
   set('GitViewCommitShaPushed', { link = 'Comment' })
   set('GitViewUpstream', { link = 'Comment' })
+  -- Dimmer than the name it carries, and as dim as the indent guides, so the
+  -- line sits back like the borders between windows rather than outweighing
+  -- them.
+  set('GitViewUpstreamRule', { link = 'Whitespace' })
   set('GitViewListCursor', { link = 'Title' })
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.
@@ -607,11 +611,18 @@ function M.paint_upstream(buf, upstream, unpushed)
       -- onto them. The first row has none above it, and the line is left out
       -- until a working-tree row is drawn there.
       if c.full_sha == upstream.sha and i > 1 then
-        local label = ('── %s '):format(upstream.name)
+        local lead = '── '
+        local name = upstream.name .. ' '
         -- As wide as any window could be, since the line is cut off at its edge.
-        local fill = math.max(vim.o.columns - vim.fn.strdisplaywidth(label), 0)
+        local fill = math.max(vim.o.columns - vim.fn.strdisplaywidth(lead .. name), 0)
         vim.api.nvim_buf_set_extmark(buf, upstream_ns, i - 2, 0, {
-          virt_lines = { { { label .. ('─'):rep(fill), 'GitViewUpstream' } } },
+          virt_lines = {
+            {
+              { lead, 'GitViewUpstreamRule' },
+              { name, 'GitViewUpstream' },
+              { ('─'):rep(fill), 'GitViewUpstreamRule' },
+            },
+          },
         })
       end
     end
