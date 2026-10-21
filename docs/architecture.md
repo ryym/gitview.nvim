@@ -23,6 +23,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `diff/conflict.lua`  | The lines of an unmerged file, by part of a conflict    |
 | `diff/highlight.lua` | Scratch buffers, and collecting highlight segments      |
 | `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
+| `diff/color.lua`     | Deriving diff colors from the colorscheme's             |
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
 | `diff/keymap.lua`    | What the keys do inside a diff buffer                   |
 | `diff/place.lua`     | Finding a row again in a view drawn after it            |
@@ -32,9 +33,9 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 The dependency direction is one-way: `init` only opens a session, `source` uses
 `status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
 `git`, `view` uses `lines`, `mixed`, `conflict` and `highlight`, `conflict` uses
-`mixed`, `render` uses `highlight`,
+`mixed`, `render` uses `highlight`, `color`,
 `worddiff` and `lines`, `place` uses `lines`, `git` and `render` use `perf`, and `config`, `util`,
-`tree` and `perf` depend on nothing but Neovim.
+`tree`, `color` and `perf` depend on nothing but Neovim.
 
 `ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
 under `diff/` knows that `ui` exists.

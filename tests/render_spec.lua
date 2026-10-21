@@ -563,6 +563,50 @@ test('word colors stand out even when Normal has no background', function()
   assert(ok, err)
 end)
 
+-- Some colorschemes keep their diff colors close to the background, and the
+-- plain push left the words hardly distinguishable from their lines.
+test('word colors stand out from a faint diff color', function()
+  local color = require('gitview.diff.color')
+  local saved = {}
+  for _, name in ipairs({ 'Normal', 'DiffAdd', 'DiffDelete' }) do
+    saved[name] = vim.api.nvim_get_hl(0, { name = name, link = false })
+  end
+  vim.api.nvim_set_hl(0, 'Normal', { bg = 0x1a1b26 })
+  vim.api.nvim_set_hl(0, 'DiffAdd', { bg = 0x20303b })
+  vim.api.nvim_set_hl(0, 'DiffDelete', { bg = 0x37222c })
+  local groups = {
+    GitViewAdd = 'GitViewAddText',
+    GitViewDelete = 'GitViewDeleteText',
+    GitViewStagedAdd = 'GitViewStagedAddText',
+    GitViewStagedDelete = 'GitViewStagedDeleteText',
+  }
+  local function clear()
+    for line, word in pairs(groups) do
+      vim.cmd('hi clear ' .. line)
+      vim.cmd('hi clear ' .. word)
+    end
+  end
+  local ok, err = pcall(function()
+    clear()
+    render.setup_highlights()
+    local function bg(name)
+      return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false }).bg
+    end
+    for line, word in pairs(groups) do
+      assert(
+        color.distance(bg(line), bg(word)) >= color.MIN_DISTANCE,
+        word .. ' must stand out from ' .. line
+      )
+    end
+  end)
+  for name, h in pairs(saved) do
+    vim.api.nvim_set_hl(0, name, h)
+  end
+  clear()
+  render.setup_highlights()
+  assert(ok, err)
+end)
+
 test('a colorscheme change puts the groups back', function()
   render.setup_highlights()
   vim.cmd.colorscheme('default')

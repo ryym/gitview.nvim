@@ -1,3 +1,4 @@
+local color = require('gitview.diff.color')
 local config = require('gitview.config')
 local hl = require('gitview.diff.highlight')
 local util = require('gitview.util')
@@ -67,33 +68,41 @@ local highlights = util.highlights('gitview.highlights', function(set)
     return { bg = h.bg or tonumber(fallback:sub(2), 16), ctermbg = h.ctermbg }
   end
 
-  --- Move a color away from (`factor` > 1) or towards (`factor` < 1) the
-  --- normal background.
-  ---
   --- `Normal` carries no background of its own when the colorscheme lets the
   --- terminal's background show through, and that color cannot be read back, so
   --- 'background' picks which end of the range to push away from. Falling back
-  --- to `spec` instead made the word highlight identical to the line highlight,
-  --- which is to say invisible.
+  --- to the color being pushed instead made the word highlight identical to the
+  --- line highlight, which is to say invisible.
+  local light = vim.o.background == 'light'
+  local base = vim.api.nvim_get_hl(0, { name = 'Normal', link = false }).bg
+    or (light and 0xffffff or 0x000000)
+
+  --- Move a color away from (`factor` > 1) or towards (`factor` < 1) the
+  --- normal background.
+  ---
+  --- `ctermbg` is a palette index, so it cannot be scaled the same way. Reusing
+  --- the line color at least keeps a background in 256-color terminals, where
+  --- dropping it left the word ranges with no highlight at all.
   --- @param spec table result of bg_only
   --- @param factor number
   local function scale(spec, factor)
     if not spec.bg then
       return spec
     end
-    local base = vim.api.nvim_get_hl(0, { name = 'Normal', link = false }).bg
-      or (vim.o.background == 'light' and 0xffffff or 0x000000)
-    local out = 0
-    for _, shift in ipairs({ 16, 8, 0 }) do
-      local b = bit.band(bit.rshift(base, shift), 0xff)
-      local c = bit.band(bit.rshift(spec.bg, shift), 0xff)
-      local v = math.max(0, math.min(255, math.floor(b + (c - b) * factor)))
-      out = out + bit.lshift(v, shift)
+    return { bg = color.scale(spec.bg, base, factor), ctermbg = spec.ctermbg }
+  end
+
+  --- The color of a changed word on a line of `spec` scaled by `line`. See
+  --- `color.word`.
+  --- @param spec table result of bg_only
+  --- @param line number
+  --- @param factor number
+  local function word(spec, line, factor)
+    if not spec.bg then
+      return spec
     end
-    -- `ctermbg` is a palette index, so it cannot be scaled the same way. Reusing
-    -- the line color at least keeps a background in 256-color terminals, where
-    -- dropping it left the word ranges with no highlight at all.
-    return { bg = out, ctermbg = spec.ctermbg }
+    local pole = light and 0x000000 or 0xffffff
+    return { bg = color.word(spec.bg, base, line, factor, pole), ctermbg = spec.ctermbg }
   end
 
   -- Word-level highlights must stay recognisably "the add color" / "the delete
@@ -103,15 +112,15 @@ local highlights = util.highlights('gitview.highlights', function(set)
   local del = bg_only('DiffDelete', '#3a1f1c')
   set('GitViewAdd', add)
   set('GitViewDelete', del)
-  set('GitViewAddText', scale(add, 1.4))
-  set('GitViewDeleteText', scale(del, 1.4))
+  set('GitViewAddText', word(add, 1, 1.4))
+  set('GitViewDeleteText', word(del, 1, 1.4))
   -- Staged changes in a mixed view are the same hues, faded: they are settled,
   -- and what is still unstaged is what needs attention. The gutter marks them
   -- with a bar too, since 256-color terminals get no fading.
   set('GitViewStagedAdd', scale(add, 0.6))
   set('GitViewStagedDelete', scale(del, 0.6))
-  set('GitViewStagedAddText', scale(add, 0.9))
-  set('GitViewStagedDeleteText', scale(del, 0.9))
+  set('GitViewStagedAddText', word(add, 0.6, 0.9))
+  set('GitViewStagedDeleteText', word(del, 0.6, 0.9))
   set('GitViewStagedAddBar', { link = 'Added' })
   set('GitViewStagedDeleteBar', { link = 'Removed' })
   -- A conflict's parts take the diff colors other tools give them: ours the add
