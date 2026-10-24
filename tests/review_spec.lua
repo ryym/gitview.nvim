@@ -517,8 +517,12 @@ test('review: a directory marks the headers of the files checked off', function(
     eq(1, #marks)
     eq(view.files[1].row - 1, marks[1][2])
     eq('✓ ', marks[1][4].virt_text[1][1])
-    -- on the header's band, which virtual text does not take by itself
-    eq({ 'GitViewFileHeaderBg', 'GitViewReviewedMark' }, marks[1][4].virt_text[1][2])
+    -- on the header's band and in its weight, which virtual text does not take
+    -- by itself
+    eq(
+      { 'GitViewFileHeaderBg', 'GitViewFileHeader', 'GitViewReviewedMark' },
+      marks[1][4].virt_text[1][2]
+    )
   end, { tree = true })
 end)
 
