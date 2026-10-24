@@ -2809,9 +2809,6 @@ local function set_files_keymaps(s)
   map('<CR>', function()
     vim.api.nvim_set_current_win(s.diff_win)
   end, 'focus the diff')
-  -- `s` and `u` rather than one key toggling: a file with changes on both sides
-  -- has no obvious sense in which it is on or off, and a row here states that
-  -- state rather than hiding it, so the direction is given explicitly.
   map('<BS>', function()
     if not M.end_review(s) then
       util.run_global_map('n', '<BS>')
@@ -2827,6 +2824,9 @@ local function set_files_keymaps(s)
       check_rows(s, pressed_rows(mode == 'x'))
     end, 'check off the files under review selected', { mode })
   end
+  -- `s` and `u` rather than one key toggling: a file with changes on both sides
+  -- has no obvious sense in which it is on or off, and a row here states that
+  -- state rather than hiding it, so the direction is given explicitly.
   map('s', function()
     apply_to_selected(s, 'stage')
   end, 'stage the file or directory under the cursor')
