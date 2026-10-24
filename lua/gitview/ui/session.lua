@@ -61,6 +61,8 @@ local M = {}
 ---        parent
 --- @field scope gitview.ListScope? the range being looked into, whose files
 ---        replace the commits pane while it is set
+--- @field review gitview.Review? the range being reviewed, whose files replace
+---        the uncommitted ones in the files pane while it is set
 --- @field selected gitview.ListTarget? what the diff pane is showing
 --- @field shown gitview.SelectionId? what it is currently showing, so that
 ---        redrawing the same thing can keep the scroll position
@@ -103,6 +105,15 @@ local M = {}
 --- @field empty_tree string? the empty tree's sha, once a range has needed it
 --- @field resized boolean? whether the screen was resized while another tab
 ---        page was current, leaving the sidebar to be laid out on return
+
+--- A range under review: its files in the files pane, one by one.
+---
+--- Both ends are fixed when it starts. A review of the working tree alone starts
+--- at the commit HEAD was then rather than at HEAD, so that what is committed
+--- while it goes on stays in it.
+--- @class gitview.Review: gitview.ListReview
+--- @field before gitview.SelectionId? what the files pane had the cursor on
+---        before, to go back to at the end
 
 --- @type table<integer, gitview.Session>
 M.sessions = {}
@@ -157,20 +168,34 @@ end
 --- @field anchor gitview.Anchor
 --- @field find fun(view: gitview.View, a: gitview.Anchor): integer?
 
---- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir', id:string}
+--- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir', id:string, review:true?}
 
---- The range a file or directory of a range belongs to.
+--- The range a file or directory of a range belongs to: the one under review
+--- or the one looked into, which may be the same range in two lists.
 --- @param s gitview.Session
---- @param _ gitview.ListTarget|gitview.SelectionId a `commit_file` or `commit_dir`
+--- @param t gitview.ListTarget|gitview.SelectionId a `commit_file` or `commit_dir`
 --- @return gitview.ListScope?
-local function scope_of(s, _)
+local function scope_of(s, t)
+  if t.review then
+    return s.review and s.review.scope
+  end
   return s.scope
 end
 
+--- What a view of a range's files says about the range beyond what it compares.
+--- A review says what it found out when it started, as its winbar does.
 --- @param s gitview.Session
+--- @param t gitview.ListTarget a `commit_file` or `commit_dir`
+--- @return string?
+local function scope_note(s, t)
+  return t.review and s.review and s.review.note or nil
+end
+
+--- What a row names, in terms that survive a redraw; see `target_of_id`.
+--- @param s gitview.Session
+--- @param t gitview.ListTarget?
 --- @return gitview.SelectionId?
-local function selection_id(s)
-  local t = s.selected
+local function id_of(s, t)
   if not t then
     return nil
   end
@@ -190,7 +215,13 @@ local function selection_id(s)
     local c = scope and scope.changes[t.index]
     named = c and c.path
   end
-  return named and { kind = t.kind, id = named } or nil
+  return named and { kind = t.kind, id = named, review = t.review } or nil
+end
+
+--- @param s gitview.Session
+--- @return gitview.SelectionId?
+local function selection_id(s)
+  return id_of(s, s.selected)
 end
 
 --- The diff options a view of this session is built with.
@@ -255,7 +286,7 @@ local NO_CHANGE = '(no change)'
 --- @return integer buf
 local function pane_of(s, target)
   local kind = target.kind
-  if kind == 'file' or kind == 'dir' then
+  if kind == 'file' or kind == 'dir' or target.review then
     return s.files_win, s.files_buf
   end
   return s.commits_win, s.commits_buf
@@ -270,7 +301,7 @@ end
 
 --- What a position in the diff pane is kept under: what is selected, and what it
 --- is compared in. A commit shows another range once a commit is marked, and a
---- file of a range is only that file in that range.
+--- file of a range is only that file in that range, and in the list it is in.
 --- @param s gitview.Session
 --- @param id gitview.SelectionId
 --- @return string
@@ -282,7 +313,7 @@ local function position_key(s, id)
     local scope = scope_of(s, id)
     within = scope and (scope.range.old or '') .. '..' .. (scope.range.new or '') or ''
   end
-  return table.concat({ id.kind, id.id, within }, '\0')
+  return table.concat({ id.kind, id.id, within, id.review and 'review' or '' }, '\0')
 end
 
 --- Keep where the diff pane is on what it has drawn, for when that is shown
@@ -675,6 +706,20 @@ local function range_of(s, target)
   return { old = old, new = new }, ('%s^..%s'):format(older.sha, new or 'working tree')
 end
 
+--- The commit a range chosen at `target` starts from the parent of: the older
+--- end, or the commit on its own. Nil for the working tree on its own.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget a commit or the working tree
+--- @return string?
+local function first_of(s, target)
+  local older = ends_of(s, target)
+  if older then
+    return older.sha
+  end
+  local commit = target.kind == 'commit' and s.commits[target.index]
+  return commit and commit.sha or nil
+end
+
 --- What to say in the winbar about a range beyond what it compares.
 ---
 --- `git diff` compares the two trees whatever their history, but across a fork
@@ -978,7 +1023,7 @@ local function read_scope_dir(s, target)
       render.notice(s.diff_buf, ('%s   %s'):format(scope.label, no_view_reason(s)))
       return
     end
-    view.note = note_of(s)
+    view.note = note_of(s, scope_note(s, target))
     draw_view(s, view)
   end
 end
@@ -1229,7 +1274,7 @@ local function show_commit_file(s, target)
     render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
     return
   end
-  view.note = note_of(s)
+  view.note = note_of(s, scope_note(s, target))
   draw_view(s, view)
 end
 
@@ -1302,6 +1347,11 @@ function M.show_selected(s, keep_unchanged, span)
 
   local target = s.selected
   if not target then
+    local review = s.review
+    if review and #review.scope.changes == 0 then
+      render.notice(s.diff_buf, list.EMPTY_REVIEW_NOTICE)
+      return
+    end
     render.notice(s.diff_buf, s.files_notice or list.empty_notice(s.layer))
     return
   end
@@ -1437,7 +1487,7 @@ local function select_nth(s, like, index)
     return
   end
   index = math.max(1, math.min(count, index))
-  local target = { kind = like.kind, index = index } --- @type gitview.ListTarget
+  local target = { kind = like.kind, index = index, review = like.review } --- @type gitview.ListTarget
   local win, buf = pane_of(s, target)
   local row = list.row_of(buf, target)
   if row then
@@ -1477,7 +1527,8 @@ local function target_of_id(s, id)
   if id.kind == 'dir' or id.kind == 'commit_dir' then
     local files = id.kind == 'dir' and s.entries or (scope and scope.changes or {})
     local _, indices = files_in(files, id.id)
-    return indices[1] and { kind = id.kind, index = indices[1], path = id.id } or nil
+    return indices[1] and { kind = id.kind, index = indices[1], path = id.id, review = id.review }
+      or nil
   end
   local haystack, name
   if id.kind == 'file' then
@@ -1489,7 +1540,7 @@ local function target_of_id(s, id)
   end
   for i, it in ipairs(haystack) do
     if it[name] == id.id then
-      return { kind = id.kind, index = i }
+      return { kind = id.kind, index = i, review = id.review }
     end
   end
   return nil
@@ -1521,6 +1572,7 @@ local function redraw_list(s, target, keep_unchanged)
     pane = 'files',
     root = s.root,
     entries = s.entries,
+    review = s.review,
     notice = s.files_notice,
     layer = s.layer,
     tree = as_tree,
@@ -1605,8 +1657,8 @@ end
 --- tree may have moved on. A range between commits cannot have, and is left as
 --- it is; so is the list when it cannot be read, being the best there is.
 --- @param s gitview.Session
-local function reread_scope(s)
-  local scope = assert(s.scope)
+--- @param scope gitview.ListScope
+local function reread_scope(s, scope)
   if scope.range.new then
     return
   end
@@ -1667,7 +1719,12 @@ local function read_status(s, report, keep_unchanged)
     if not s.scope then
       read_log(s, id)
     else
-      reread_scope(s)
+      reread_scope(s, s.scope)
+    end
+    -- A review is in the files pane, and is re-read whatever the commits pane
+    -- is showing.
+    if s.review then
+      reread_scope(s, s.review.scope)
     end
     -- The working-tree row comes and goes with the entries, and its mark with it.
     drop_lost_mark(s)
@@ -1754,6 +1811,13 @@ end
 --- the old list means nothing in the new one.
 --- @param s gitview.Session
 function M.toggle_layer(s)
+  -- A review compares two trees, with no index between them, so nothing it
+  -- shows would change. What would is the files pane once the review is over,
+  -- left filtered by a switch made while it could not be seen.
+  if s.review then
+    util.info('the layer cannot be switched during a review')
+    return
+  end
   local id = selection_id(s)
   place_next(s, place.same_line)
   s.layer = NEXT_LAYER[s.layer]
@@ -1822,13 +1886,14 @@ end
 --- @param range gitview.Range
 --- @param label string
 --- @param at string what backing out puts the cursor back on
-local function look_into(s, range, label, at)
+--- @param first string? see `gitview.ListScope`
+local function look_into(s, range, label, at, first)
   local changes, err = git.changed_between(range, s.root, untracked_paths(s))
   if not changes then
     util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
     return
   end
-  s.scope = { range = range, label = label, at = at, changes = changes }
+  s.scope = { range = range, label = label, at = at, first = first, changes = changes }
   redraw_list(s, { kind = 'commit_file', index = 1 })
 end
 
@@ -1849,10 +1914,30 @@ function M.enter(s)
   end
   local range, label = range_of(s, target)
   if not range then
+    if s.review then
+      util.info('the uncommitted files are not listed during a review')
+      return
+    end
     vim.api.nvim_set_current_win(s.files_win)
     return
   end
-  look_into(s, range, label, assert(at))
+  look_into(s, range, label, assert(at), first_of(s, target))
+end
+
+--- Stop looking into the range, and name the row the commits pane goes back to:
+--- the one it was looked into from.
+--- @param s gitview.Session
+--- @param scope gitview.ListScope the one being looked into
+--- @return gitview.SelectionId
+local function close_scope(s, scope)
+  s.scope = nil
+  local kind = scope.at == list.WORKTREE and 'worktree' or 'commit'
+  local id = { kind = kind, id = assert(scope.at) } --- @type gitview.SelectionId
+  -- The log went unread while the range's files stood in front of it, and it may
+  -- have moved on since. Reading it here is also what decides whether the commit
+  -- being backed out onto is still in it.
+  read_log(s, id)
+  return id
 end
 
 --- Go back to the uncommitted changes, with the cursor on the commit that was
@@ -1863,14 +1948,94 @@ function M.leave(s)
   if not scope then
     return
   end
-  s.scope = nil
-  local kind = scope.at == list.WORKTREE and 'worktree' or 'commit'
-  local id = { kind = kind, id = scope.at } --- @type gitview.SelectionId
-  -- The log went unread while the range's files stood in front of it, and it may
-  -- have moved on since. Reading it here is also what decides whether the commit
-  -- being backed out onto is still in it.
-  read_log(s, id)
-  redraw_list(s, target_of_id(s, id))
+  redraw_list(s, target_of_id(s, close_scope(s, scope)))
+end
+
+--- Review what the commits pane compares, as `<CR>` would look into it: its
+--- files take the place of the uncommitted ones in the files pane, which gets
+--- the focus. A range being looked into is reviewed instead, and looking into
+--- it ends, since the same files would be listed twice.
+---
+--- The working tree on its own is reviewed from the commit HEAD is on now, and
+--- that commit is the one named from then on, so that what is committed while
+--- the review goes on stays in it.
+---
+--- The mark is cleared: the range is the review's now, and a range still
+--- painted in the commits pane would look like one still being chosen.
+--- @param s gitview.Session
+function M.start_review(s)
+  local scope = s.scope
+  local range, label, first
+  if scope then
+    range, label, first = scope.range, scope.label, scope.first
+  else
+    local target = selected_end(s)
+    if not target then
+      return
+    end
+    range, label = range_of(s, target)
+    first = first_of(s, target)
+    if not range then
+      local head = git.head(s.root)
+      if not head then
+        return
+      end
+      range, label = { old = head.full_sha }, head.sha .. '..working tree'
+    end
+  end
+  local changes, err = git.changed_between(range, s.root, untracked_paths(s))
+  if not changes then
+    util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
+    return
+  end
+  -- Tell whether the range spans a fork once, here: the ends are fixed, and so
+  -- is whether they are on one line.
+  local note
+  if first and not git.is_ancestor(first, range.new or 'HEAD', s.root) then
+    note = 'diverged'
+  end
+  -- Keep what the files pane goes back to at the end from before the first
+  -- review, when this one starts over another.
+  local before
+  if s.review then
+    before = s.review.before
+  else
+    local row = vim.api.nvim_win_get_cursor(s.files_win)[1]
+    before = id_of(s, list.target_at(s.files_buf, row))
+  end
+  s.review = {
+    scope = { range = range, label = label, first = first, changes = changes },
+    note = note,
+    before = before,
+  }
+  s.mark = nil
+  local back = scope and close_scope(s, scope)
+  redraw_list(s, { kind = 'commit_file', index = 1, review = true })
+  local row = back and list.row_of(s.commits_buf, target_of_id(s, back))
+  if row then
+    vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  end
+  -- Focus the files pane only once drawn, so that entering it finds the
+  -- review's files there rather than drawing the uncommitted ones on the way.
+  vim.api.nvim_set_current_win(s.files_win)
+end
+
+--- End the review, and list the uncommitted files again with the cursor where
+--- it was before.
+--- @param s gitview.Session
+--- @return boolean ended false when there was no review
+function M.end_review(s)
+  local review = s.review
+  if not review then
+    return false
+  end
+  s.review = nil
+  local target = target_of_id(s, review.before)
+  if not target and #s.entries > 0 then
+    target = { kind = 'file', index = 1 }
+  end
+  redraw_list(s, target)
+  return true
 end
 
 --- Where the commit being looked into sits in the list, or nothing when the
@@ -1905,6 +2070,12 @@ end
 function M.step_commit(s, dir)
   local scope = s.scope
   local place, first
+  -- Refuse while a file under review is shown: it is no commit, nor in one the
+  -- commits pane is on, so there is none to step from.
+  if s.selected and s.selected.review then
+    util.info('no commit is shown')
+    return
+  end
   if scope then
     place = scope_place(s, scope)
     if not place then
@@ -1930,7 +2101,8 @@ function M.step_commit(s, dir)
 
   if scope then
     local commit = s.commits[to]
-    look_into(s, git.commit_range(commit), ('%s %s'):format(commit.sha, commit.subject), commit.sha)
+    local label = ('%s %s'):format(commit.sha, commit.subject)
+    look_into(s, git.commit_range(commit), label, commit.sha, commit.sha)
     return
   end
   local target = to == 0 and { kind = 'worktree', index = 1 } or { kind = 'commit', index = to }
@@ -2027,6 +2199,19 @@ local function open_listed(s, win)
   M.open_file(s, vim.fs.joinpath(s.root, item.path), 1)
 end
 
+--- Refuse to stage from a review, saying why. The files are a range's, which
+--- has no index between its two sides, and the files pane they sit in is where
+--- staging is done otherwise.
+--- @param target gitview.ListTarget?
+--- @return boolean refused
+local function refuses_review(target)
+  if not (target and target.review) then
+    return false
+  end
+  util.info('nothing is staged during a review')
+  return true
+end
+
 --- Refuse to stage from panes the session has made out of date, saying why.
 --- @param s gitview.Session
 --- @return boolean refused
@@ -2057,7 +2242,7 @@ end
 --- @param op 'stage'|'unstage'
 local function apply_to_selected(s, op)
   local target = s.selected
-  if not target or wait_for_read(s) then
+  if not target or wait_for_read(s) or refuses_review(target) then
     return
   end
   local action, why
@@ -2143,6 +2328,9 @@ end
 --- @param last integer inclusive
 local function apply_to_rows(s, op, first, last)
   local target = s.selected
+  if refuses_review(target) then
+    return
+  end
   -- The rows of a file would do here, as they do in its own diff, but the index
   -- contents to write them into are read for one file. Of the views of many
   -- files, only a directory's sits among the files that can be staged by row.
@@ -2230,6 +2418,9 @@ local function set_diff_stage_keymaps(s)
     end
     map(lhs:upper(), function()
       local target = s.selected
+      if refuses_review(target) then
+        return
+      end
       local entry = target and target.kind == 'file' and s.entries[target.index]
       if entry and (refuses_conflict(entry) or refuses_layer(s, op)) then
         return
@@ -2271,6 +2462,16 @@ local function set_files_keymaps(s)
   -- `s` and `u` rather than one key toggling: a file with changes on both sides
   -- has no obvious sense in which it is on or off, and a row here states that
   -- state rather than hiding it, so the direction is given explicitly.
+  map('<BS>', function()
+    if not M.end_review(s) then
+      util.run_global_map('n', '<BS>')
+    end
+  end, 'end the review')
+  -- Point `gr` to the commits pane, where the ranges are chosen, rather than
+  -- leave it to Neovim's own `gr` keys.
+  map('gr', function()
+    util.info('a review is started from the commits pane')
+  end, 'nothing to review here')
   map('s', function()
     apply_to_selected(s, 'stage')
   end, 'stage the file or directory under the cursor')
@@ -2305,6 +2506,12 @@ local function set_commits_keymaps(s)
   map('m', function()
     M.set_mark(s)
   end, 'mark this commit as the far end of a range')
+  -- `g` and a letter, as the other keys that change what the session is doing
+  -- rather than act on a row. Mapped with `<nowait>`, so that Neovim's own
+  -- `grn` and the like do not hold it up.
+  map('gr', function()
+    M.start_review(s)
+  end, 'review the commit or range')
   map('<Esc>', function()
     -- `<Esc>` is commonly mapped already, to `:nohlsearch` above all, and this
     -- map hides it in the pane: with no range to clear it does what it would

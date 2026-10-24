@@ -132,6 +132,20 @@ function M.has_head(cwd)
   return M.run({ 'git', 'rev-parse', '--verify', '--quiet', 'HEAD' }, cwd).ok
 end
 
+--- The commit HEAD is on, by sha: in full, and abbreviated as `log` writes it.
+---
+--- For something that has to go on naming the commit HEAD is on now, after
+--- HEAD itself has moved.
+--- @param cwd string
+--- @return {full_sha:string, sha:string}?
+function M.head(cwd)
+  -- Both forms in one call, which rules out `--verify`: it takes one revision
+  -- only.
+  local res = M.run({ 'git', 'rev-parse', 'HEAD', '--short', 'HEAD' }, cwd)
+  local full, short = (res.ok and res.stdout or ''):match('^(%x+)\n(%x+)')
+  return full and { full_sha = full, sha = short } or nil
+end
+
 --- Parse the stream `git cat-file --batch` writes.
 ---
 --- Each object is a header line `<sha> <type> <size>` followed by exactly

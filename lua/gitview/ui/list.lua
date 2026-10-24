@@ -10,18 +10,30 @@ local util = require('gitview.util')
 
 local M = {}
 
---- @class gitview.ListScope what the commits pane is looking into, in place of
---- the commits themselves
+--- @class gitview.ListScope a range whose files are listed: what the commits
+--- pane is looking into, in place of the commits themselves, or what the files
+--- pane is reviewing, in place of the uncommitted files
 --- @field range gitview.Range the two revisions being compared
 --- @field label string what to call it
---- @field at string sha of the commit to put the cursor back on when backing out,
----        or `WORKTREE` for the working-tree row
+--- @field at string? sha of the commit to put the cursor back on when backing
+---        out, or `WORKTREE` for the working-tree row; nil for a review, which
+---        backs out in the files pane
+--- @field first string? sha of the commit at the older end, the one the range
+---        starts at the parent of; nil when the range starts at a commit as it
+---        stands, as a review of the working tree alone does
 --- @field changes gitview.Change[] what the range changed
+
+--- @class gitview.ListReview what the files pane is reviewing
+--- @field scope gitview.ListScope
+--- @field note string? what the winbar says about the range beyond what it
+---        compares
 
 --- @class gitview.ListModel what one pane of the sidebar is showing
 --- @field pane 'files'|'commits' which of the two it is
 --- @field root string repository root
 --- @field entries gitview.StatusEntry[]? the files pane
+--- @field review gitview.ListReview? the files pane, reviewing a range in place
+---        of listing the entries
 --- @field notice string? the files pane, shown in place of the entries while
 ---        there are none to show yet
 --- @field layer gitview.Layer? the files pane, which changes the entries are
@@ -44,6 +56,9 @@ local M = {}
 --- @field path string? the directory, without a trailing slash; `''` for the
 ---        root. A directory and the first file in it share an index, and so
 ---        may a directory and the one it is in
+--- @field review true? a file or directory of the range under review, in the
+---        files pane, rather than of the range looked into. The two can be the
+---        same range, and are still two lists
 
 --- @class gitview.ListSpan a stretch of a row drawn differently from its text
 --- @field from integer 0-based byte column
@@ -106,6 +121,11 @@ local SHA_SHOWN = 4
 --- `git commit --allow-empty` makes.
 M.EMPTY_COMMIT_NOTICE = 'this commit changed nothing'
 
+--- Shown in place of the files of a review that has none. A review ending at
+--- the working tree can be started before anything is edited, and its files
+--- come in as they are.
+M.EMPTY_REVIEW_NOTICE = 'nothing changed in the range'
+
 --- Two status letters and a space. A row with no entry keeps the width so the
 --- paths stay in one column.
 local BLANK_GUTTER = '   '
@@ -157,8 +177,9 @@ end
 ---        a rename, `row` what the flat list would show, and `letters` the status
 ---        letters it shows in its gutter
 --- @param dir_kind 'dir'|'commit_dir'
+--- @param review true? the files are those of a review
 --- @return gitview.ListRow[]
-local function tree_rows(files, dir_kind)
+local function tree_rows(files, dir_kind, review)
   local paths = vim.tbl_map(function(f)
     return f.path
   end, files)
@@ -202,7 +223,7 @@ local function tree_rows(files, dir_kind)
       end
       row = {
         text = text,
-        target = { kind = dir_kind, index = next_file[i], path = n.dir },
+        target = { kind = dir_kind, index = next_file[i], path = n.dir, review = review },
         spans = spans,
         lead = { { DIR_MARK, 'GitViewDirectory' } },
       }
@@ -241,20 +262,22 @@ local function gutter_of(letters)
   return table.concat(out) .. (' '):rep(#BLANK_GUTTER - width)
 end
 
---- The files one commit changed, shown in the commits pane in place of the
---- commits themselves.
+--- The files a range changed, shown in place of what the pane otherwise lists:
+--- the commits, for a range looked into, or the uncommitted files, for one
+--- under review.
 ---
---- A commit's changes and the uncommitted entries are different shapes, so they
---- are never mixed into one buffer: looking into a commit replaces what the
---- pane holds. Which commit that is, is named by the pane's `'winbar'`, so no
---- row of the buffer has to stand for it.
+--- A range's changes and the uncommitted entries are different shapes, so they
+--- are never mixed into one buffer: the range replaces what the pane holds.
+--- Which range that is, is named by the pane's `'winbar'`, so no row of the
+--- buffer has to stand for it.
 ---
 --- @param scope gitview.ListScope
 --- @param as_tree boolean?
+--- @param review true? the range is under review
 --- @return gitview.ListRow[]
-local function scope_rows(scope, as_tree)
+local function scope_rows(scope, as_tree, review)
   if #scope.changes == 0 then
-    return { { text = M.EMPTY_COMMIT_NOTICE } }
+    return { { text = review and M.EMPTY_REVIEW_NOTICE or M.EMPTY_COMMIT_NOTICE } }
   end
   local rows, files = {}, {}
   for i, c in ipairs(scope.changes) do
@@ -263,13 +286,13 @@ local function scope_rows(scope, as_tree)
     rows[i] = {
       text = status.change_label(c),
       gutter = gutter_of(letters),
-      target = { kind = 'commit_file', index = i },
+      target = { kind = 'commit_file', index = i, review = review },
       subject = 0,
     }
     local renamed = (c.status == 'R' or c.status == 'C') and c.old_path or nil
     files[i] = { path = c.path, old = renamed, row = rows[i], letters = letters }
   end
-  return as_tree and tree_rows(files, 'commit_dir') or rows
+  return as_tree and tree_rows(files, 'commit_dir', review) or rows
 end
 
 --- What hides the tail of a sha at the start of a row. `%h` is never shorter
@@ -287,6 +310,9 @@ end
 --- @return gitview.ListRow[]
 function M.content(model)
   if model.pane == 'files' then
+    if model.review then
+      return scope_rows(model.review.scope, model.tree, true)
+    end
     if model.notice then
       return { { text = model.notice } }
     end
@@ -427,7 +453,13 @@ function M.winbar()
     return ''
   end
   local text
-  if state.pane == 'files' then
+  if state.review then
+    -- The range has no row of its own, as one looked into has none.
+    text = ' review ' .. state.review.scope.label
+    if state.review.note then
+      text = ('%s   %s'):format(text, state.review.note)
+    end
+  elseif state.pane == 'files' then
     text = ' ' .. vim.fs.basename(state.root)
     -- Zero files would be a claim about a list that has not been read.
     if not state.notice then
@@ -512,6 +544,7 @@ function M.draw(buf, model)
     pane = model.pane,
     root = model.root,
     entries = model.entries or {},
+    review = model.review,
     notice = model.notice,
     layer = model.layer,
     commits = model.commits or {},
@@ -699,7 +732,7 @@ function M.same_target(a, b)
   if not a or not b then
     return a == nil and b == nil
   end
-  return a.kind == b.kind and a.index == b.index and a.path == b.path
+  return a.kind == b.kind and a.index == b.index and a.path == b.path and a.review == b.review
 end
 
 return M
