@@ -271,24 +271,24 @@ compared too, as additions, which `git diff` itself would leave out. The row is
 there even when nothing is uncommitted, so such a range can be set up first and
 then follows the edits as they are made.
 
-| key         | in the files pane   | in the commits pane  | in the diff                   |
-| ----------- | ------------------- | -------------------- | ----------------------------- |
-| `<CR>`      | focus the diff      | look into the commit |                               |
-| `<BS>`      |                     | back out of it       |                               |
-| `m`         |                     | mark, for a range    |                               |
-| `<Esc>`     |                     | clear the mark       |                               |
-| `gw`        | ignore whitespace   | ignore whitespace    | ignore whitespace             |
-| `gs`        | staged / unstaged   | staged / unstaged    | staged / unstaged             |
-| `s`         | stage file / dir    |                      | stage the line or selection   |
-| `u`         | unstage file / dir  |                      | unstage the line or selection |
-| `S` / `U`   |                     |                      | stage / unstage this hunk     |
-| `]f` / `[f` |                     |                      | next / previous file          |
-| `]r` / `[r` |                     |                      | next / previous commit        |
-| `]c` / `[c` |                     |                      | next / previous hunk          |
-| `gf`        | open the file       | open the file        | open the file at this line    |
-| `gy`        |                     |                      | copy the file and line(s)     |
-| `R`         | re-read             | re-read              |                               |
-| `q`         | close               | close                | close                         |
+| key         | in the files pane  | in the commits pane  | in the diff                   |
+| ----------- | ------------------ | -------------------- | ----------------------------- |
+| `<CR>`      | focus the diff     | look into the commit |                               |
+| `<BS>`      |                    | back out of it       |                               |
+| `m`         |                    | mark, for a range    |                               |
+| `<Esc>`     |                    | clear the mark       |                               |
+| `gw`        | ignore whitespace  | ignore whitespace    | ignore whitespace             |
+| `gs`        | staged / unstaged  | staged / unstaged    | staged / unstaged             |
+| `s`         | stage file / dir   |                      | stage the line or selection   |
+| `u`         | unstage file / dir |                      | unstage the line or selection |
+| `S` / `U`   |                    |                      | stage / unstage this hunk     |
+| `]f` / `[f` |                    |                      | next / previous file          |
+| `]r` / `[r` |                    |                      | next / previous commit        |
+| `]c` / `[c` |                    |                      | next / previous hunk          |
+| `gf`        | open the file      | open the file        | open the file at this line    |
+| `gy`        |                    |                      | copy the file and line(s)     |
+| `R`         | re-read            | re-read              |                               |
+| `q`         | close              | close                | close                         |
 
 `gf` opens the file in the tab page `:GitView` was first run from, and leaves the
 session open to come back to. From the diff it lands on the line under the
@@ -507,10 +507,10 @@ carries configuration, and the colors do not depend on it.
 make test
 ```
 
-| document | what it covers |
-| --- | --- |
-| [docs/architecture.md](docs/architecture.md) | The pipeline, the modules, the data shapes, and the invariants |
+| document                                     | what it covers                                                                                |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [docs/architecture.md](docs/architecture.md) | The pipeline, the modules, the data shapes, and the invariants                                |
 | [docs/neovim-notes.md](docs/neovim-notes.md) | Neovim and git behaviours the code depends on, and why the obvious alternatives were rejected |
-| [docs/staging.md](docs/staging.md) | How the index is written, why not with a patch, and where that has holes |
-| [docs/performance.md](docs/performance.md) | Where the time goes, measured, and how to measure it again |
-| [docs/testing.md](docs/testing.md) | How the suite runs and how to add to it |
+| [docs/staging.md](docs/staging.md)           | How the index is written, why not with a patch, and where that has holes                      |
+| [docs/performance.md](docs/performance.md)   | Where the time goes, measured, and how to measure it again                                    |
+| [docs/testing.md](docs/testing.md)           | How the suite runs and how to add to it                                                       |
