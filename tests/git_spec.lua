@@ -561,3 +561,31 @@ test('a range to the working tree takes the untracked files it is given', functi
     end, changes))
   end)
 end)
+
+-- git reads a file whose time is no older than the index's, since its stat
+-- cannot tell it apart from the version the index was written with. A copy of
+-- the index made at the time of the diff would be newer than such a file.
+test('a range to the working tree sees a file rewritten as the index was written', function()
+  helpers.with_repo(function(repo)
+    -- In the past, so that a copy made now is newer. The rewrite keeps
+    -- the size and the time the index has for the file, and the index is
+    -- written in that second too, as when an edit follows a commit at once.
+    local then_ = os.time() - 10
+    local function at_then(path)
+      vim.uv.fs_utime(repo.root .. '/' .. path, then_, then_)
+    end
+    repo.write('a.txt', { 'one' })
+    at_then('a.txt')
+    repo.commit('first')
+    local sha = assert(git.log(1, repo.root))[1].sha
+    repo.write('a.txt', { 'two' })
+    at_then('a.txt')
+    at_then('.git/index')
+    repo.write('new.txt', { 'new' })
+
+    local changes = assert(git.changed_between({ old = sha }, repo.root, { 'new.txt' }))
+    eq({ 'a.txt', 'new.txt' }, vim.tbl_map(function(c)
+      return c.path
+    end, changes))
+  end)
+end)
