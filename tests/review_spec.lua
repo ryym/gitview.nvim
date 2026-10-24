@@ -786,3 +786,61 @@ test('review: a directory is marked by the files in it', function()
     eq({ '!', '!', '!', '✓', '✓' }, marks(s))
   end, { tree = true })
 end)
+
+--- The highlight groups a row of the files pane is drawn with, its own and
+--- those of what is drawn in front of it.
+--- @param s gitview.Session
+--- @param row integer
+--- @return table<string, true>
+local function row_groups(s, row)
+  local r = assert(list.state_of(s.files_buf)).rows[row]
+  local groups = {}
+  for _, sp in ipairs(r.spans or {}) do
+    if sp.group then
+      groups[sp.group] = true
+    end
+  end
+  for _, chunk in ipairs(r.lead or {}) do
+    if chunk[2] then
+      groups[chunk[2]] = true
+    end
+  end
+  for g in (r.gutter or ''):gmatch('%%#(%w+)#') do
+    groups[g] = true
+  end
+  return groups
+end
+
+test('review: a checked row is faded, status letter included', function()
+  with_session(history, function(s, repo)
+    review_worktree(s)
+    press(s, 'x')
+    eq({ GitViewReviewed = true }, row_groups(s, 1))
+    eq({ GitViewStatusStaged = true }, row_groups(s, 2))
+    -- one changed since is to be read again, and not faded
+    repo.write('a.lua', { 'return 8' })
+    refresh(s)
+    eq({ GitViewStatusStaged = true }, row_groups(s, 1))
+  end)
+end)
+
+test('review: a directory is faded once every file in it is checked', function()
+  with_session(function(repo)
+    repo.write('src/a.lua', { 'return 1' })
+    repo.write('src/b.lua', { 'return 1' })
+    repo.write('top.lua', { 'return 1' })
+    repo.commit('first')
+    repo.write('src/a.lua', { 'return 2' })
+    repo.write('src/b.lua', { 'return 2' })
+    repo.write('top.lua', { 'return 2' })
+  end, function(s)
+    review_worktree(s)
+    press(s, '3Gx')
+    eq({ GitViewDirectory = true }, row_groups(s, 2))
+    -- the letters in front of a name, in a tree, fade with it
+    eq({ GitViewReviewed = true }, row_groups(s, 3))
+    press(s, '4Gx')
+    eq({ GitViewReviewed = true }, row_groups(s, 2))
+    eq({ GitViewDirectory = true }, row_groups(s, 1))
+  end, { tree = true })
+end)

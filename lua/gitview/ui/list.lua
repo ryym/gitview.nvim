@@ -284,6 +284,22 @@ local function gutter_of(letters)
   return table.concat(out) .. (' '):rep(#BLANK_GUTTER - width)
 end
 
+--- Draw a row in the faded color of what has been read, wherever it has a color
+--- of its own.
+--- @param row gitview.ListRow
+local function fade(row)
+  for _, span in ipairs(row.spans or {}) do
+    if span.group then
+      span.group = 'GitViewReviewed'
+    end
+  end
+  for _, chunk in ipairs(row.lead or {}) do
+    if chunk[2] then
+      chunk[2] = 'GitViewReviewed'
+    end
+  end
+end
+
 --- The mark of a directory under review, from the files in it: changed while
 --- any is, checked once every one is.
 --- @param checks table<string, gitview.Check>
@@ -332,13 +348,14 @@ local function scope_rows(scope, as_tree, under)
   local in_review = under and true or nil
   local rows, files = {}, {}
   for i, c in ipairs(scope.changes) do
-    -- One letter, in the color the list already uses for a settled change.
-    local letters = { { c.status, 'GitViewStatusStaged' } }
     local text = status.change_label(c)
     local state = under and review.state(under.checks, c.path)
-    -- A changed file is not faded: it is to be read again.
-    local spans = state == 'checked' and { { from = 0, to = #text, group = 'GitViewReviewed' } }
-      or nil
+    -- A changed file is not faded: it is to be read again. The letter fades with
+    -- the rest of a checked row, which would otherwise still catch the eye.
+    local faded = state == 'checked'
+    local spans = faded and { { from = 0, to = #text, group = 'GitViewReviewed' } } or nil
+    -- One letter, in the color the list already uses for a settled change.
+    local letters = { { c.status, faded and 'GitViewReviewed' or 'GitViewStatusStaged' } }
     rows[i] = {
       text = text,
       gutter = gutter_of(letters),
@@ -358,6 +375,11 @@ local function scope_rows(scope, as_tree, under)
     for _, r in ipairs(rows) do
       if r.target and r.target.kind == 'commit_dir' then
         r.check = dir_check(under.checks, scope.changes, r.target.path)
+        -- Faded with its files once they are all read, so that what is left of
+        -- a tree to read stands out from it.
+        if r.check == CHECK_MARKS.checked then
+          fade(r)
+        end
       end
     end
   end

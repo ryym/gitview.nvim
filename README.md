@@ -290,7 +290,7 @@ meanwhile. `gr` while looking into a range reviews that range instead.
 - **A file checked off is marked `✓` and faded**, in the list and on its header
   in the diff. In the list the marks have a column of their own at the left
   edge, which lines them up however deep a tree nests a file. A directory is
-  marked once every file in it is. The files pane's winbar counts them, as
+  marked and faded once every file in it is. The files pane's winbar counts them, as
   `3/12`.
 - **A file that changes after it was checked off is marked `!`**, rather than
   unchecked, and counted apart, as `3/12 !1`. It is read again, and checked
