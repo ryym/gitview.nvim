@@ -40,6 +40,8 @@ end
 ---       header shows in place of what it adds and deletes
 --- @field old_rev string? see gitview.Source
 --- @field new_rev string? see gitview.Source
+--- @field new_lines string[] the new version as it was read, which is what the
+---        view shows of it
 
 --- @class gitview.View
 --- @field lines gitview.Line[]

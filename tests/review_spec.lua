@@ -594,3 +594,128 @@ test('review: `x` outside one checks nothing off', function()
     end))
   end)
 end)
+
+--- Start reviewing the working tree of `history` on its own: a.lua edited and
+--- loose.lua untracked.
+--- @param s gitview.Session
+local function review_worktree(s)
+  goto_worktree(s)
+  press(s, 'gr', s.commits_win)
+end
+
+--- Put the files pane's cursor on a row and follow it, as moving there does.
+--- @param s gitview.Session
+--- @param row integer
+local function files_row(s, row)
+  vim.api.nvim_win_set_cursor(s.files_win, { row, 0 })
+  session.follow_cursor(s, s.files_win)
+end
+
+--- @param s gitview.Session
+local function refresh(s)
+  session.refresh(s)
+  settle(s)
+end
+
+test('review: a file changed after it was checked off is marked so', function()
+  with_session(history, function(s, repo)
+    review_worktree(s)
+    press(s, 'x')
+    eq({ 'M✓ ', 'A  ' }, gutters(s))
+    repo.write('a.lua', { 'return 8' })
+    refresh(s)
+    eq({ 'M! ', 'A  ' }, gutters(s))
+    assert(winbar(s, s.files_win):find('0/2 !1', 1, true), winbar(s, s.files_win))
+    -- back as it was read, it is checked again
+    repo.write('a.lua', { 'return 4' })
+    refresh(s)
+    eq({ 'M✓ ', 'A  ' }, gutters(s))
+  end)
+end)
+
+test('review: a changed file is read again and checked again', function()
+  with_session(history, function(s, repo)
+    review_worktree(s)
+    press(s, 'ggVjx')
+    repo.write('a.lua', { 'return 8' })
+    refresh(s)
+    -- the only one left to read
+    files_row(s, 2)
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal(']x')
+    eq(1, s.selected.index)
+    eq({ 'every file is checked' }, notified(function()
+      vim.cmd.normal('x')
+    end))
+    eq({ 'M✓ ', 'A✓ ' }, gutters(s))
+  end)
+end)
+
+-- The diff of a file ending at the working tree is read from it whenever it is
+-- drawn, and a write that goes through no git command triggers no refresh.
+test('review: a file drawn again as it is now shows it changed', function()
+  with_session(history, function(s, repo)
+    review_worktree(s)
+    press(s, 'x')
+    repo.write('a.lua', { 'return 8' })
+    files_row(s, 2)
+    files_row(s, 1)
+    eq({ 'M! ', 'A  ' }, gutters(s))
+  end)
+end)
+
+-- A check records what was on screen: the file may have moved on with nothing
+-- having drawn it again.
+test('review: checking from the diff records what the diff showed', function()
+  with_session(history, function(s, repo)
+    review_worktree(s)
+    repo.write('a.lua', { 'return 8' })
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal('x')
+    eq({ 'M✓ ', 'A  ' }, gutters(s))
+    refresh(s)
+    eq({ 'M! ', 'A  ' }, gutters(s))
+  end)
+end)
+
+test('review: a deleted file stays checked while it stays deleted', function()
+  with_session(history, function(s, repo)
+    vim.fn.delete(repo.root .. '/b.lua')
+    refresh(s)
+    review_worktree(s)
+    eq({ 'a.lua', 'b.lua', 'loose.lua' }, rows(s))
+    press(s, 'jx')
+    refresh(s)
+    eq({ 'M  ', 'D✓ ', 'A  ' }, gutters(s))
+    repo.write('b.lua', { 'return 2' })
+    -- an empty file in its place is not the deletion that was read
+    repo.write('b.lua', {})
+    refresh(s)
+    eq('M! ', gutters(s)[2])
+  end)
+end)
+
+test('review: a binary file is compared as bytes', function()
+  with_session(history, function(s, repo)
+    local path = repo.root .. '/blob.bin'
+    vim.fn.writefile(vim.fn.list2blob({ 0, 1, 2 }), path)
+    refresh(s)
+    review_worktree(s)
+    eq({ 'a.lua', 'blob.bin', 'loose.lua' }, rows(s))
+    press(s, 'jx')
+    eq('A✓ ', gutters(s)[2])
+    vim.fn.writefile(vim.fn.list2blob({ 0, 1, 3 }), path)
+    refresh(s)
+    eq('A! ', gutters(s)[2])
+  end)
+end)
+
+test('review: a range between commits is never marked changed', function()
+  with_session(history, function(s, repo)
+    review_second(s)
+    press(s, 'x')
+    repo.write('a.lua', { 'return 8' })
+    refresh(s)
+    eq({ 'M✓ ', 'A  ' }, gutters(s))
+  end)
+end)

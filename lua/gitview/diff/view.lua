@@ -74,6 +74,7 @@ function M.build(sources, rev, context, diff_opts)
         conflicts = src.conflicted and #fhunks or nil,
         old_rev = src.old_rev,
         new_rev = src.new_rev,
+        new_lines = src.new_lines,
       }
       file_rows[#file_rows + 1] = offset
       local index = #files

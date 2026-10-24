@@ -367,8 +367,12 @@ local function restore_position(s, view)
   end)
 end
 
---- What marks a file under review as checked off, in the diff as in the list.
-local CHECK_MARK = { '✓', 'GitViewReviewed' }
+--- What marks a file under review as checked off, and as changed since, in
+--- the diff as in the list.
+local CHECK_MARKS = {
+  checked = { '✓', 'GitViewReviewed' },
+  changed = { '!', 'GitViewReviewChanged' },
+}
 
 --- The paths of the files a review lists.
 --- @param r gitview.Review
@@ -403,11 +407,67 @@ local function paint_checks(s)
   end
   local marks = {}
   for i, path in ipairs(view_paths(s, view)) do
-    if review.state(r.checks, path) == 'checked' then
-      marks[i] = CHECK_MARK
-    end
+    local state = review.state(r.checks, path)
+    marks[i] = state and CHECK_MARKS[state] or nil
   end
   render.paint_marks(s.diff_buf, marks)
+end
+
+local redraw_checks
+
+--- What a file under review is read as, for a check to record or to compare
+--- with: the lines a view was built from when there is one, since what was
+--- read is what was on screen, and otherwise the file as it is now. Nil in a
+--- range between commits, whose files cannot change.
+--- @param s gitview.Session
+--- @param r gitview.Review
+--- @param path string
+--- @param lines string[]? the new side a view was built from
+--- @return {hash:string, binary:boolean?}?
+local function read_as(s, r, path, lines)
+  if r.scope.range.new then
+    return nil
+  end
+  local change
+  for _, c in ipairs(r.scope.changes) do
+    if c.path == path then
+      change = c
+      break
+    end
+  end
+  -- A deleted file's view has an empty new side, which a file emptied would
+  -- have too.
+  if change and change.status == 'D' then
+    return { hash = review.DELETED }
+  end
+  if lines then
+    return { hash = review.hash_lines(lines) }
+  end
+  local binary = change and change.binary or nil
+  return { hash = review.hash_file(vim.fs.joinpath(s.root, path), binary), binary = binary }
+end
+
+--- Note what the files of a view under review are, from what the view is about
+--- to be built of. A file ending at the working tree is read from it whenever
+--- its view is, which can be before any refresh notices it has changed.
+--- @param s gitview.Session
+--- @param target gitview.ListTarget
+--- @param sources gitview.Source[]
+--- @return boolean moved whether any check changed state
+local function see_sources(s, target, sources)
+  local r = s.review
+  if not (r and target.review) or r.scope.range.new then
+    return false
+  end
+  local moved = false
+  for _, src in ipairs(sources) do
+    local path = vim.fs.relpath(s.root, src.path) or src.path
+    local now = read_as(s, r, path, src.new_lines)
+    if now and review.see(r.checks, path, now.hash) then
+      moved = true
+    end
+  end
+  return moved
 end
 
 --- Draw a view of what is selected. The first one drawn of it puts the cursor
@@ -1061,6 +1121,7 @@ local function read_scope_dir(s, target)
   end
   local sources, skipped = range_read_in(read, s.root, assert(target.path))
   return function()
+    local moved = see_sources(s, target, sources)
     local view, left_out =
       perf.measure('build', vlib.build, sources, scope.label, config.values.context, diff_opts(s))
     view = vlib.list_skipped(view, scope.label, skipped, left_out, no_view_reason(s))
@@ -1070,6 +1131,9 @@ local function read_scope_dir(s, target)
     end
     view.note = note_of(s, scope_note(s, target))
     draw_view(s, view)
+    if moved then
+      redraw_checks(s)
+    end
   end
 end
 
@@ -1312,6 +1376,7 @@ local function show_commit_file(s, target)
   end
 
   local src = perf.measure('source', source.for_range_change, scope.range, change, s.root)
+  local moved = src and see_sources(s, target, { src })
   local view = src
     and perf.measure('build', vlib.build, { src }, scope.label, config.values.context, diff_opts(s))
   if not view then
@@ -1321,6 +1386,9 @@ local function show_commit_file(s, target)
   end
   view.note = note_of(s, scope_note(s, target))
   draw_view(s, view)
+  if moved then
+    redraw_checks(s)
+  end
 end
 
 --- Whether what is selected is compared with the working tree, which can change
@@ -1621,7 +1689,7 @@ end
 --- the diff's headers. Nothing is read and the diff is not drawn again, so a
 --- view of many files is not built anew on every check.
 --- @param s gitview.Session
-local function redraw_checks(s)
+function redraw_checks(s)
   list.draw(s.files_buf, files_model(s))
   -- The paint went with the lines it was on.
   if s.selected and s.selected.review then
@@ -1734,6 +1802,24 @@ local function reread_scope(s, scope)
   end
 end
 
+--- Note what every file checked off in a review ending at the working tree is
+--- now, whether the review still lists it or not: one put back as it was and
+--- changed again is checked once it is as it was read.
+---
+--- Every one is read again, with no shortcut such as its modification time:
+--- a change missed would leave what has not been read marked as read, the worst
+--- way for a review to be wrong.
+--- @param s gitview.Session
+local function see_files(s)
+  local r = assert(s.review)
+  if r.scope.range.new then
+    return
+  end
+  for path, c in pairs(r.checks) do
+    review.see(r.checks, path, review.hash_file(vim.fs.joinpath(s.root, path), c.binary))
+  end
+end
+
 --- Read the uncommitted changes in the background, then redraw both panes.
 ---
 --- Listing untracked files walks the whole working tree, which takes a second in
@@ -1791,6 +1877,7 @@ local function read_status(s, report, keep_unchanged)
     -- is showing.
     if s.review then
       reread_scope(s, s.review.scope)
+      see_files(s)
     end
     -- The working-tree row comes and goes with the entries, and its mark with it.
     drop_lost_mark(s)
@@ -2536,7 +2623,13 @@ local function check_rows(s, first, last)
   if #paths == 0 then
     return
   end
-  review.toggle(r.checks, paths)
+  -- Read each file as it is now, as a row has no view on screen to go by.
+  -- `toggle` records what was read only when it checks the files off.
+  local reads = {}
+  for _, path in ipairs(paths) do
+    reads[path] = read_as(s, r, path)
+  end
+  review.toggle(r.checks, paths, reads)
   redraw_checks(s)
 end
 
@@ -2613,7 +2706,15 @@ local function check_shown(s)
     util.info('no file here')
     return
   end
-  local checked = review.toggle(assert(s.review).checks, { path })
+  -- Record the lines the view was built from rather than the file now, which
+  -- may have moved on without anything having drawn it again. A file shown
+  -- with no view, such as a binary one, has nothing on screen to go by but its
+  -- name.
+  local r = assert(s.review)
+  local view = render.view_of(s.diff_buf)
+  local drawn = view and s.drawn and s.drawn.view == view and view.files[many and at or 1]
+  local lines = drawn and (vim.fs.relpath(s.root, drawn.path) == path) and drawn.new_lines or nil
+  local checked = review.toggle(r.checks, { path }, { [path] = read_as(s, r, path, lines) })
   redraw_checks(s)
   if checked then
     go_to_open(s, paths, at, many == true, 1)

@@ -132,8 +132,9 @@ M.EMPTY_REVIEW_NOTICE = 'nothing changed in the range'
 --- paths stay in one column.
 local BLANK_GUTTER = '   '
 
---- What marks a file under review as checked off.
+--- What marks a file under review as checked off, and as changed since.
 local CHECK_MARK = '✓'
+local CHANGED_MARK = '!'
 
 --- What one level of a tree is drawn as: a guide, as indent-blankline draws one,
 --- within the two columns a level takes anyway. Lines joining a directory to
@@ -281,7 +282,8 @@ end
 ---
 --- A file under review is marked after its status letter once checked off, in
 --- the column a second letter takes elsewhere, and faded: what is left to read
---- is what stands out.
+--- is what stands out. One changed since it was checked is marked apart, and
+--- left as bright as one not read yet.
 --- @param scope gitview.ListScope
 --- @param as_tree boolean?
 --- @param under gitview.ListReview? the review the range is under, if any
@@ -298,9 +300,16 @@ local function scope_rows(scope, as_tree, under)
     local text = status.change_label(c)
     local spans
     if under then
-      local checked = review.state(under.checks, c.path) == 'checked'
-      letters[2] = checked and { CHECK_MARK, 'GitViewReviewed' } or { ' ' }
-      spans = checked and { { from = 0, to = #text, group = 'GitViewReviewed' } } or nil
+      local state = review.state(under.checks, c.path)
+      if state == 'checked' then
+        letters[2] = { CHECK_MARK, 'GitViewReviewed' }
+        spans = { { from = 0, to = #text, group = 'GitViewReviewed' } }
+      elseif state == 'changed' then
+        -- Not faded: it is to be read again.
+        letters[2] = { CHANGED_MARK, 'GitViewReviewChanged' }
+      else
+        letters[2] = { ' ' }
+      end
     end
     rows[i] = {
       text = text,
@@ -420,6 +429,8 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- A file checked off in a review has been read, and steps back as a pushed
   -- commit does.
   set('GitViewReviewed', { link = 'Comment' })
+  -- A file to read again, which is something to act on.
+  set('GitViewReviewChanged', { link = 'DiagnosticWarn' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -484,6 +495,14 @@ function M.winbar()
     end, state.review.scope.changes)
     if #paths > 0 then
       text = ('%s   %d/%d'):format(text, review.progress(state.review.checks, paths), #paths)
+      -- Changed files count as not checked, so the count alone would not say
+      -- there are files to read again.
+      local changed = #vim.tbl_filter(function(path)
+        return review.state(state.review.checks, path) == 'changed'
+      end, paths)
+      if changed > 0 then
+        text = ('%s %s%d'):format(text, CHANGED_MARK, changed)
+      end
     end
     if state.review.note then
       text = ('%s   %s'):format(text, state.review.note)
