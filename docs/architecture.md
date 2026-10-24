@@ -563,6 +563,12 @@ changes afterwards is told apart from one still as it was read:
 - **A changed file stays checked, marked as changed**, and counts as still to
   be read. Put back as it was read, it is checked again.
 
+In the list, the marks are drawn by `'statuscolumn'` in a column at the left
+edge that only a review has, in a tree as well, where the status letters stay
+by the names. At the edge they line up however deep a file is nested, and the
+column itself tells a review apart from the uncommitted files. A directory's
+mark is worked out from its files: changed while any is, checked once all are.
+
 The diff's header marks are painted in a namespace of their own rather than
 drawn with the view: a check changes them without changing the view, and
 building a view of many files again on every check would be slow. Only a view

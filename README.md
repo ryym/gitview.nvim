@@ -288,10 +288,14 @@ meanwhile. `gr` while looking into a range reviews that range instead.
   off the file being read and goes on to the next one still to be read. `]x`
   and `[x` go to the next and previous one, round from the other end.
 - **A file checked off is marked `✓` and faded**, in the list and on its header
-  in the diff. The files pane's winbar counts them, as `3/12`.
+  in the diff. In the list the marks have a column of their own at the left
+  edge, which lines them up however deep a tree nests a file. A directory is
+  marked once every file in it is. The files pane's winbar counts them, as
+  `3/12`.
 - **A file that changes after it was checked off is marked `!`**, rather than
   unchecked, and counted apart, as `3/12 !1`. It is read again, and checked
-  again with `x`. Only a range ending at the working tree can change. What a
+  again with `x`, and a directory with such a file in it is marked `!` too. Only
+  a range ending at the working tree can change. What a
   check records is what the diff showed, so a file rewritten while it was being
   read is not taken as read.
 - **`<BS>` in the files pane ends the review**, and the checks go with it. A
