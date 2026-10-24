@@ -159,6 +159,14 @@ end
 
 --- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir', id:string}
 
+--- The range a file or directory of a range belongs to.
+--- @param s gitview.Session
+--- @param _ gitview.ListTarget|gitview.SelectionId a `commit_file` or `commit_dir`
+--- @return gitview.ListScope?
+local function scope_of(s, _)
+  return s.scope
+end
+
 --- @param s gitview.Session
 --- @return gitview.SelectionId?
 local function selection_id(s)
@@ -178,7 +186,8 @@ local function selection_id(s)
   elseif t.kind == 'worktree' then
     named = list.WORKTREE
   else
-    local c = s.scope and s.scope.changes[t.index]
+    local scope = scope_of(s, t)
+    local c = scope and scope.changes[t.index]
     named = c and c.path
   end
   return named and { kind = t.kind, id = named } or nil
@@ -238,13 +247,14 @@ end
 --- it, and "no textual change" would suggest files whose change is elsewhere.
 local NO_CHANGE = '(no change)'
 
---- Which pane a kind of target lives in. The sidebar holds two lists, and a
---- selection belongs to exactly one of them.
+--- Which pane a target lives in. The sidebar holds two lists, and a selection
+--- belongs to exactly one of them.
 --- @param s gitview.Session
---- @param kind 'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir'
+--- @param target gitview.ListTarget|gitview.SelectionId
 --- @return integer win
 --- @return integer buf
-local function pane_of(s, kind)
+local function pane_of(s, target)
+  local kind = target.kind
   if kind == 'file' or kind == 'dir' then
     return s.files_win, s.files_buf
   end
@@ -268,8 +278,9 @@ local function position_key(s, id)
   local within = ''
   if id.kind == 'commit' or id.kind == 'worktree' then
     within = s.mark or ''
-  elseif (id.kind == 'commit_file' or id.kind == 'commit_dir') and s.scope then
-    within = (s.scope.range.old or '') .. '..' .. (s.scope.range.new or '')
+  elseif id.kind == 'commit_file' or id.kind == 'commit_dir' then
+    local scope = scope_of(s, id)
+    within = scope and (scope.range.old or '') .. '..' .. (scope.range.new or '') or ''
   end
   return table.concat({ id.kind, id.id, within }, '\0')
 end
@@ -937,16 +948,15 @@ local function range_read_in(read, root, dir)
   return sources, skipped
 end
 
---- Read a directory of the range being looked into. Returned as `read_entries`
---- returns it.
+--- Read a directory of a range. Returned as `read_entries` returns it.
 ---
 --- The whole range is read and kept, and the directory taken out of it: the
 --- commit's own row and every other directory in it then share one read.
 --- @param s gitview.Session
---- @param target gitview.ListTarget a directory of the scope
+--- @param target gitview.ListTarget a directory of a scope
 --- @return fun() draw
 local function read_scope_dir(s, target)
-  local scope = s.scope
+  local scope = scope_of(s, target)
   if not scope then
     return function()
       render.notice(s.diff_buf, list.EMPTY_NOTICE)
@@ -1008,7 +1018,8 @@ local LOADING = '(loading…)'
 --- @return boolean
 local function is_kept(s, target)
   if target.kind == 'commit_dir' then
-    local key = s.scope and range_key(s.scope.range)
+    local scope = scope_of(s, target)
+    local key = scope and range_key(scope.range)
     return key ~= nil and s.range_reads[key] ~= nil
   end
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
@@ -1037,7 +1048,8 @@ end
 --- @param target gitview.ListTarget a commit, the working tree or a directory
 local function draw_loading(s, target)
   if target.kind == 'dir' or target.kind == 'commit_dir' then
-    local label = target.kind == 'dir' and rev_of(s) or (s.scope and s.scope.label or '')
+    local scope = target.kind == 'commit_dir' and scope_of(s, target)
+    local label = target.kind == 'dir' and rev_of(s) or (scope and scope.label or '')
     render.draw(s.diff_buf, vlib.placeholder(label, LOADING))
     return
   end
@@ -1189,16 +1201,16 @@ local function show_many(s, target, span)
   read_behind_placeholder(s, target, span)
 end
 
---- Draw one file of the range being looked into.
+--- Draw one file of a range.
 ---
 --- This is the same two-version view `show_many` draws, narrowed to one file:
 --- one entry of the change list the scope already holds, so nothing has to be
 --- listed again.
 --- @param s gitview.Session
---- @param index integer into the scope's changes
-local function show_commit_file(s, index)
-  local scope = s.scope
-  local change = scope and scope.changes[index]
+--- @param target gitview.ListTarget a file of a scope
+local function show_commit_file(s, target)
+  local scope = scope_of(s, target)
+  local change = scope and scope.changes[target.index]
   if not scope or not change then
     render.notice(s.diff_buf, list.EMPTY_NOTICE)
     return
@@ -1234,7 +1246,8 @@ local function reads_worktree(s)
     return s.mark == list.WORKTREE
   end
   if t.kind == 'commit_file' or t.kind == 'commit_dir' then
-    return s.scope ~= nil and s.scope.range.new == nil
+    local scope = scope_of(s, t)
+    return scope ~= nil and scope.range.new == nil
   end
   return true
 end
@@ -1297,7 +1310,7 @@ function M.show_selected(s, keep_unchanged, span)
     return
   end
   if target.kind == 'commit_file' then
-    show_commit_file(s, target.index)
+    show_commit_file(s, target)
     return
   end
   local entry = s.entries[target.index]
@@ -1411,19 +1424,21 @@ end
 --- Put the list's cursor on the nth file it lists and show it. An index past
 --- either end is clamped, so `]f` on the last file stays on the last file.
 ---
---- Which list that is depends on where the session is: the uncommitted changes,
---- or the files of the commit being looked into.
+--- Which list that is is the one `like` is in: the uncommitted changes, or the
+--- files of a range.
 --- @param s gitview.Session
---- @param kind 'file'|'commit_file'
+--- @param like gitview.ListTarget a file of the list, only its kind and the
+---        list it is in read
 --- @param index integer
-local function select_nth(s, kind, index)
-  local count = kind == 'file' and #s.entries or #(s.scope and s.scope.changes or {})
+local function select_nth(s, like, index)
+  local scope = like.kind == 'commit_file' and scope_of(s, like)
+  local count = like.kind == 'file' and #s.entries or #(scope and scope.changes or {})
   if count == 0 then
     return
   end
   index = math.max(1, math.min(count, index))
-  local target = { kind = kind, index = index } --- @type gitview.ListTarget
-  local win, buf = pane_of(s, kind)
+  local target = { kind = like.kind, index = index } --- @type gitview.ListTarget
+  local win, buf = pane_of(s, target)
   local row = list.row_of(buf, target)
   if row then
     vim.api.nvim_win_set_cursor(win, { row, 0 })
@@ -1437,7 +1452,7 @@ end
 --- @param s gitview.Session
 --- @param index integer
 function M.select(s, index)
-  select_nth(s, 'file', index)
+  select_nth(s, { kind = 'file', index = 1 }, index)
 end
 
 --- What the selection names, in terms that survive a redraw.
@@ -1458,8 +1473,9 @@ local function target_of_id(s, id)
     return has_worktree_row(s) and { kind = 'worktree', index = 1 } or nil
   end
   -- A directory is still there as long as a file in it is.
+  local scope = (id.kind == 'commit_file' or id.kind == 'commit_dir') and scope_of(s, id)
   if id.kind == 'dir' or id.kind == 'commit_dir' then
-    local files = id.kind == 'dir' and s.entries or (s.scope and s.scope.changes or {})
+    local files = id.kind == 'dir' and s.entries or (scope and scope.changes or {})
     local _, indices = files_in(files, id.id)
     return indices[1] and { kind = id.kind, index = indices[1], path = id.id } or nil
   end
@@ -1469,7 +1485,7 @@ local function target_of_id(s, id)
   elseif id.kind == 'commit' then
     haystack, name = s.commits, 'sha'
   else
-    haystack, name = s.scope and s.scope.changes or {}, 'path'
+    haystack, name = scope and scope.changes or {}, 'path'
   end
   for i, it in ipairs(haystack) do
     if it[name] == id.id then
@@ -1523,7 +1539,7 @@ local function redraw_list(s, target, keep_unchanged)
   clamp_cursor(s.commits_win)
 
   local from = target or s.selected
-  local win, buf = pane_of(s, from and from.kind or 'file')
+  local win, buf = pane_of(s, from or { kind = 'file', index = 1 })
   local row = target and list.row_of(buf, target)
   if row then
     vim.api.nvim_win_set_cursor(win, { row, 0 })
@@ -1992,7 +2008,8 @@ local function open_listed(s, win)
   if target and target.kind == 'file' then
     item = s.entries[target.index]
   elseif target and target.kind == 'commit_file' then
-    item = s.scope and s.scope.changes[target.index]
+    local scope = scope_of(s, target)
+    item = scope and scope.changes[target.index]
   end
   if target and target.kind == 'worktree' then
     util.info('the uncommitted changes are many files; open one from the files pane')
@@ -2341,8 +2358,8 @@ local function set_diff_keymaps(s)
       end
       -- The focus stays in the diff: the key was pressed while reading it, and
       -- the next file is read there too.
-      local kind = (t and t.kind == 'commit_file') and 'commit_file' or 'file'
-      select_nth(s, kind, (t and t.index or 1) + dir)
+      local like = (t and t.kind == 'commit_file') and t or { kind = 'file', index = 1 }
+      select_nth(s, like, (t and t.index or 1) + dir)
     end,
     goto_commit = function(dir)
       M.step_commit(s, dir)
