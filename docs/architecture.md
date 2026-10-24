@@ -12,6 +12,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `status.lua`         | What is uncommitted, as one entry per file               |
 | `stage.lua`          | Which git command moves a file into or out of the index  |
+| `review.lua`         | Which files of a review are checked off, and changed     |
 | `tree.lua`           | Laying out the listed paths as a tree of directories     |
 | `index.lua`          | Writing part of a file's changes into the index          |
 | `util.lua`           | Messages shown to the user                              |
@@ -33,7 +34,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 The dependency direction is one-way: `init` only opens a session, `source` uses
 `status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
 `git`, `view` uses `lines`, `mixed`, `conflict` and `highlight`, `conflict` uses
-`mixed`, `render` uses `highlight`, `color`,
+`mixed`, `review` uses `source`, `render` uses `highlight`, `color`,
 `worddiff` and `lines`, `place` uses `lines`, `git` and `render` use `perf`, and `config`, `util`,
 `tree`, `color` and `perf` depend on nothing but Neovim.
 
@@ -509,6 +510,70 @@ a time is what backing out, moving and going in again would otherwise be for.
 Inside a range they refuse: a range has no commit next to it. Whether the scope
 is one commit is read from what it compares, not from the mark, which `<Esc>`
 can clear while the scope stands.
+
+### Reviewing a range
+
+`gr` sets the session's `review` to whatever `<CR>` would look into, and the
+files pane is **replaced** by that range's files. It is the files pane rather
+than the commits pane so that the commits pane stays free for looking into
+other commits while the review goes on, which is why looking into is kept
+beside it rather than replaced by it. A range being looked into is promoted:
+looking into it ends, since the same files would be listed twice.
+
+The rows are the files of a range, as a commit's are, and of the same kinds:
+`commit_file` and `commit_dir`. A target says which list it is in with
+`review`, and every lookup of a range's files goes through the row, by
+`scope_of`, as does the choice of pane. The two lists can hold the same range,
+so `review` is part of what the diff pane shows as well — `shown` and the key a
+position is kept under — or a file looked into would be taken for the same file
+under review.
+
+- **Both ends are fixed when it starts.** The working tree on its own is not a
+  range, and is reviewed from the commit HEAD is on at that moment, by sha:
+  naming HEAD would compare from wherever HEAD has got to, and what was
+  committed meanwhile would leave the review. Whether the ends diverged is
+  asked once, since neither moves.
+- **What it compares is re-read on refresh** when it ends at the working tree,
+  as a range looked into is, and whatever the commits pane is showing.
+- **Staging and switching the layer are refused.** A range has no index between
+  its sides, so the layer would change nothing on screen and leave the files
+  pane filtered once the review was over.
+
+#### Checks
+
+`review.lua` keeps which files are checked off, by path: the new side's for a
+rename, the old side's for a deletion. A check lives as long as the review, in
+memory; it is not kept anywhere once the review ends.
+
+A check records what was read rather than that something was. In a range ending
+at the working tree that is a hash of the new side's lines, so that a file that
+changes afterwards is told apart from one still as it was read:
+
+- **A check made from the diff records the lines the view was built from**,
+  which `gitview.File` keeps. The file may have moved on since the view was
+  drawn: a write that goes through no git command triggers no refresh.
+- **One made from the list, or of a file shown with no view**, records the file
+  as it is then. A binary file is hashed as bytes, a deleted one recorded as
+  such.
+- **Every checked file is read again on each refresh**, listed or not, and a
+  file under review is compared whenever its view is built, which can come
+  before the refresh. Nothing is skipped by modification time: a change missed
+  would leave unread content marked as read. Reading and hashing a file of a
+  few hundred lines takes about a tenth of a millisecond.
+- **A changed file stays checked, marked as changed**, and counts as still to
+  be read. Put back as it was read, it is checked again.
+
+The diff's header marks are painted in a namespace of their own rather than
+drawn with the view: a check changes them without changing the view, and
+building a view of many files again on every check would be slow. Only a view
+drawn for a selection under review is painted, never one of the same files
+looked into.
+
+A review part way through asks before its checks are thrown away, through
+`vim.fn.confirm` with No as the default; `vim.ui.select` is left alone, since
+a plugin may replace it. A finished review does not ask: that is how one
+ordinarily ends. Only `q` asks among the ways of closing, since closing the tab
+page otherwise cannot be stopped.
 
 ### Ignoring whitespace
 
