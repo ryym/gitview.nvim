@@ -132,7 +132,9 @@ right. The sidebar is split in two: the uncommitted changes above, the recent
 commits below. Moving the cursor in either draws whatever it lands on, and moving
 between the two panes switches which list the diff follows. The row the diff is
 showing has its name colored, and only in the pane it follows, so which one that
-is can be read even while the focus is in the diff.
+is can be read even while the focus is in the diff. Coming back to a row shown
+before puts the diff's cursor back on the line it was left on, or the one
+nearest it once the file has changed since.
 
 Where the branch tracks an upstream, a commit's sha says whether it is pushed:
 what the upstream already has is faded. A line such as `── origin/main ───` sits

@@ -1739,6 +1739,93 @@ test('session: the position survives a file moving in the list', function()
   end)
 end)
 
+--- The text of the diff row under the cursor.
+--- @param s gitview.Session
+--- @return string
+local function diff_text(s)
+  return require('gitview.diff.render').view_of(s.diff_buf).lines[diff_row(s)].text
+end
+
+--- `long_history` with a second uncommitted file to move away to.
+local function two_long(repo)
+  long_history(repo)
+  repo.write('b.txt', { 'new' })
+end
+
+test('session: coming back to a commit puts the diff pane where it was left', function()
+  with_session(long_history, function(s)
+    show_commit(s, 1)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 50, 0 })
+    local before = vim.api.nvim_win_call(s.diff_win, vim.fn.winsaveview)
+    show_commit(s, 2)
+    eq(1, diff_row(s))
+    show_commit(s, 1)
+    local after = vim.api.nvim_win_call(s.diff_win, vim.fn.winsaveview)
+    eq({ before.lnum, before.topline }, { after.lnum, after.topline })
+  end)
+end)
+
+test('session: coming back to a file puts the diff pane where it was left', function()
+  with_session(two_long, function(s)
+    session.select(s, 1)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 30, 0 })
+    session.select(s, 2)
+    session.select(s, 1)
+    eq(30, diff_row(s))
+  end)
+end)
+
+-- The row is not the line once the file has changed: lines added above push it
+-- down.
+test('session: a file edited while away is come back to on the same line', function()
+  with_session(two_long, function(s, repo)
+    session.select(s, 1)
+    put_cursor(s, changed_row(s, 'again 20'))
+    session.select(s, 2)
+    local lines = { 'top 1', 'top 2', 'top 3' }
+    for i = 1, 40 do
+      lines[#lines + 1] = ('again %d'):format(i)
+    end
+    repo.write('a.txt', lines)
+    session.refresh(s)
+    settle(s)
+    session.select(s, 1)
+    eq('again 20', diff_text(s))
+  end)
+end)
+
+test('session: a line gone while away is come back to at the one nearest it', function()
+  with_session(two_long, function(s, repo)
+    session.select(s, 1)
+    put_cursor(s, changed_row(s, 'again 20'))
+    session.select(s, 2)
+    local lines = {}
+    for i = 1, 40 do
+      if i ~= 20 then
+        lines[#lines + 1] = ('again %d'):format(i)
+      end
+    end
+    repo.write('a.txt', lines)
+    session.refresh(s)
+    settle(s)
+    session.select(s, 1)
+    assert(vim.tbl_contains({ 'again 19', 'again 21' }, diff_text(s)), diff_text(s))
+  end)
+end)
+
+-- With a commit marked, the same commit's row compares another range, and a
+-- position in one says nothing about the other.
+test('session: a commit compared with the mark keeps a position of its own', function()
+  with_session(long_history, function(s)
+    show_commit(s, 1)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 50, 0 })
+    show_commit(s, 2)
+    s.mark = s.commits[2].sha
+    show_commit(s, 1)
+    eq(1, diff_row(s))
+  end)
+end)
+
 --- A history that forks and merges, so that a range can be asked for across it.
 --- The commit list is newest first: merge side, on main, on side, first.
 local function forked_history(repo)

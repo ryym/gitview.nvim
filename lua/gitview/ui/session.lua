@@ -64,6 +64,14 @@ local M = {}
 --- @field selected gitview.ListTarget? what the diff pane is showing
 --- @field shown gitview.SelectionId? what it is currently showing, so that
 ---        redrawing the same thing can keep the scroll position
+--- @field shown_key string? `shown` and what it is compared in; see
+---        `position_key`
+--- @field drawn {key:string, view:gitview.View}? the view last drawn for
+---        `shown_key`, while the diff pane still holds it
+--- @field restoring boolean? whether the next view drawn is the first one of
+---        what is shown, to be put back where it was last left
+--- @field positions table<string, gitview.Position> where the diff pane was
+---        last left on each thing shown, by `position_key`
 --- @field generation integer bumped by every draw, so one read in the
 ---        background can tell whether it is still wanted
 --- @field pending {generation:integer, span:gitview.PerfSpan}? the view waiting
@@ -243,6 +251,93 @@ local function pane_of(s, kind)
   return s.commits_win, s.commits_buf
 end
 
+--- Where the diff pane was left on something it showed.
+--- @class gitview.Position
+--- @field view vim.fn.winsaveview.ret the window's view: cursor and scroll
+--- @field anchor gitview.Anchor? what the cursor was on, to find it again in a
+---        view that has changed since
+--- @field text string the text of the line the cursor was on
+
+--- What a position in the diff pane is kept under: what is selected, and what it
+--- is compared in. A commit shows another range once a commit is marked, and a
+--- file of a range is only that file in that range.
+--- @param s gitview.Session
+--- @param id gitview.SelectionId
+--- @return string
+local function position_key(s, id)
+  local within = ''
+  if id.kind == 'commit' or id.kind == 'worktree' then
+    within = s.mark or ''
+  elseif (id.kind == 'commit_file' or id.kind == 'commit_dir') and s.scope then
+    within = (s.scope.range.old or '') .. '..' .. (s.scope.range.new or '')
+  end
+  return table.concat({ id.kind, id.id, within }, '\0')
+end
+
+--- Keep where the diff pane is on what it has drawn, for when that is shown
+--- again. Nothing is kept while the pane holds anything else, such as a notice
+--- or a placeholder.
+--- @param s gitview.Session
+local function save_position(s)
+  local d = s.drawn
+  if not d or render.view_of(s.diff_buf) ~= d.view or not vim.api.nvim_win_is_valid(s.diff_win) then
+    return
+  end
+  local saved = vim.api.nvim_win_call(s.diff_win, vim.fn.winsaveview)
+  local line = d.view.lines[saved.lnum]
+  s.positions[d.key] = {
+    view = saved,
+    anchor = place.anchor(d.view, saved.lnum),
+    text = line and line.text or '',
+  }
+end
+
+--- Put the diff pane back where it was last left on what `view` shows.
+---
+--- A commit never changes, but whatever reads the working tree may have, and so
+--- may the layer or whitespace it is shown with. The line the cursor was on is
+--- found again, or the one nearest it, and the cursor kept as far down the
+--- window as it was. A row that is no line of a file, such as a commit's
+--- message, is taken as it was.
+--- @param s gitview.Session
+--- @param view gitview.View
+local function restore_position(s, view)
+  local p = s.drawn and s.positions[s.drawn.key]
+  if not p then
+    return
+  end
+  local saved = p.view
+  local row = p.anchor and place.revisit(view, p.anchor, p.text) or saved.lnum
+  row = math.min(row, #view.lines)
+  if row == saved.lnum then
+    vim.api.nvim_win_call(s.diff_win, function()
+      vim.fn.winrestview(saved)
+    end)
+    return
+  end
+  vim.api.nvim_win_call(s.diff_win, function()
+    vim.fn.winrestview({
+      lnum = row,
+      col = 0,
+      topline = math.max(1, row - (saved.lnum - saved.topline)),
+    })
+  end)
+end
+
+--- Draw a view of what is selected. The first one drawn of it puts the cursor
+--- back where it was last left on it.
+--- @param s gitview.Session
+--- @param view gitview.View
+local function draw_view(s, view)
+  render.draw(s.diff_buf, view)
+  s.drawn = s.shown_key and { key = s.shown_key, view = view } or nil
+  local restoring = s.restoring
+  s.restoring = nil
+  if restoring and vim.api.nvim_win_is_valid(s.diff_win) then
+    restore_position(s, view)
+  end
+end
+
 --- Put the diff pane back at the start.
 ---
 --- The pane is one buffer for the life of the session, so a position in it
@@ -261,7 +356,7 @@ end
 --- @param s gitview.Session
 --- @param view gitview.View
 local function draw_placed(s, view)
-  render.draw(s.diff_buf, view)
+  draw_view(s, view)
   local p = s.placing
   s.placing = nil
   if not p or not vim.deep_equal(p.id, s.shown) or not vim.api.nvim_win_is_valid(s.diff_win) then
@@ -805,7 +900,7 @@ local function read_commit(s, target)
       -- to call unchanged, but the message is still worth reading.
       view = vlib.placeholder(label, NO_CHANGE, vlib.commit_header(detail, assert(commit)))
       view.note = note_of(s, note)
-      render.draw(s.diff_buf, view)
+      draw_view(s, view)
       return
     end
     if not view then
@@ -816,7 +911,7 @@ local function read_commit(s, target)
     if detail then
       vlib.prepend(view, vlib.commit_header(detail, assert(commit)))
     end
-    render.draw(s.diff_buf, view)
+    draw_view(s, view)
   end
 end
 
@@ -874,7 +969,7 @@ local function read_scope_dir(s, target)
       return
     end
     view.note = note_of(s)
-    render.draw(s.diff_buf, view)
+    draw_view(s, view)
   end
 end
 
@@ -1123,7 +1218,7 @@ local function show_commit_file(s, index)
     return
   end
   view.note = note_of(s)
-  render.draw(s.diff_buf, view)
+  draw_view(s, view)
 end
 
 --- Whether what is selected is compared with the working tree, which can change
@@ -1173,18 +1268,24 @@ function M.show_selected(s, keep_unchanged, span)
   -- Redrawing the same thing keeps the position in it: that is what staging a
   -- hunk does, and being thrown back to the top on every `s` would make working
   -- down a diff impossible. Anything else is new contents in a reused buffer,
-  -- where an inherited position means nothing.
+  -- where an inherited position means nothing: it starts at the top, or where
+  -- it was last left when it has been shown before. Until it is drawn the pane
+  -- holds something else, and no position is kept from it.
   --
   -- With one layer alone, a change to the index adds or takes away rows, so
   -- the row is no longer the line. Unless something has said where to go, the
   -- line is found again.
   if not vim.deep_equal(id, s.shown) then
+    save_position(s)
+    s.drawn = nil
+    s.restoring = true
     reset_view(s)
     s.placing = nil
   elseif s.layer ~= 'both' and not s.placing then
     place_next(s, place.follow)
   end
   s.shown = id
+  s.shown_key = id and position_key(s, id)
 
   local target = s.selected
   if not target then
@@ -2464,6 +2565,7 @@ function M.open()
     details = {},
     range_reads = {},
     range_order = {},
+    positions = {},
     ignore_whitespace = config.values.ignore_whitespace,
     layer = config.values.layer,
     has_head = git.has_head(root),

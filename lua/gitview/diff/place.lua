@@ -202,6 +202,48 @@ function M.same_line(view, a)
   end, a.index_pos)
 end
 
+--- The line number each version's rows are found by.
+local LNUM_KEYS = { old = 'old_lnum', new = 'new_lnum', index = 'index_pos' }
+
+--- The row of the same line in a view drawn any time later, with whatever may
+--- have changed since: the file's contents, the layer, whitespace.
+---
+--- A line number alone does not follow a line that lines added or removed above
+--- it have moved, so the line is looked for by its text too, at the number
+--- nearest the one it had. Failing that, the row nearest that number is taken,
+--- in the same version or else in the index, and a file with neither left is
+--- found at its header.
+--- @param view gitview.View
+--- @param a gitview.Anchor
+--- @param text string the line's text as it was
+--- @return integer?
+function M.revisit(view, a, text)
+  local rows, header = file_of(view, a)
+  if not rows or a.header then
+    return header
+  end
+  local function lnum_of(r)
+    local l = view.lines[r]
+    return l.side == a.side and own_lnum(l) or nil
+  end
+  local found = nearest(rows, function(r)
+    return view.lines[r].text == text and lnum_of(r) or nil
+  end, a.lnum)
+  if found then
+    return found
+  end
+  local key = LNUM_KEYS[a.side]
+  found = key and nearest(rows, function(r)
+    return view.lines[r][key]
+  end, a.lnum)
+  if not found and a.index_pos then
+    found = nearest(rows, function(r)
+      return view.lines[r].index_pos
+    end, a.index_pos)
+  end
+  return found or header
+end
+
 --- The row of the same line in a later view of a layer shown alone, after the
 --- index has changed under it. The index's numbers have moved, so the line is
 --- found by the version that has not: the row at the same number there, or
