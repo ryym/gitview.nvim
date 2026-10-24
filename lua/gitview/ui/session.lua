@@ -370,7 +370,7 @@ end
 --- What marks a file under review as checked off, and as changed since, in
 --- the diff as in the list.
 local CHECK_MARKS = {
-  checked = { '✓', 'GitViewReviewed' },
+  checked = { '✓', 'GitViewReviewedMark' },
   changed = { '!', 'GitViewReviewChanged' },
 }
 

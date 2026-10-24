@@ -142,7 +142,7 @@ local CHANGED_MARK = '!'
 --- The marks by state, as the column at the left edge draws them.
 --- @type table<string, [string, string]>
 local CHECK_MARKS = {
-  checked = { CHECK_MARK, 'GitViewReviewed' },
+  checked = { CHECK_MARK, 'GitViewReviewedMark' },
   changed = { CHANGED_MARK, 'GitViewReviewChanged' },
 }
 
@@ -469,6 +469,9 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- A file checked off in a review has been read, and steps back as a pushed
   -- commit does.
   set('GitViewReviewed', { link = 'Comment' })
+  -- The mark itself is not faded with the row: it is what says the file is
+  -- done, and a faded one would be hard to pick out.
+  set('GitViewReviewedMark', { link = 'DiagnosticOk' })
   -- A file to read again, which is something to act on.
   set('GitViewReviewChanged', { link = 'DiagnosticWarn' })
 end)

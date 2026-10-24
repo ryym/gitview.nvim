@@ -702,8 +702,11 @@ function M.paint_marks(buf, marks)
   for i, mark in pairs(marks) do
     local f = view.files[i]
     if f then
+      -- Virtual text takes none of the highlights under it, so the header's
+      -- band is put under the mark's own group, or the mark would sit in a hole
+      -- in the band.
       vim.api.nvim_buf_set_extmark(buf, ns_marks, f.row - 1, 0, {
-        virt_text = { { mark[1] .. ' ', mark[2] } },
+        virt_text = { { mark[1] .. ' ', { 'GitViewFileHeaderBg', mark[2] } } },
         virt_text_pos = 'inline',
       })
     end

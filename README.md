@@ -490,8 +490,9 @@ a conflicted file. A commit's header uses
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,
 `GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
-`GitViewIndent`. A review marks the files checked off with `GitViewReviewed`,
-in the list and on their headers in the diff, and those changed since with
+`GitViewIndent`. A review marks the files checked off with
+`GitViewReviewedMark`, in the list and on their headers in the diff, and fades
+their rows with `GitViewReviewed`; those changed since are marked with
 `GitViewReviewChanged`. Where the branch has an upstream, a pushed sha is in
 `GitViewCommitShaPushed` instead of `GitViewCommitSha`, and the line naming
 the upstream has the name in `GitViewUpstream` and the rule in
