@@ -150,7 +150,7 @@ test('review: `gr` on a commit reviews that commit alone in the files pane', fun
     eq({ 'a.lua', 'b.lua' }, rows(s))
     eq(s.files_win, vim.api.nvim_get_current_win())
     eq({ kind = 'commit_file', index = 1, review = true }, s.selected)
-    eq((' review %s second'):format(s.commits[2].sha), winbar(s, s.files_win))
+    eq((' review %s second   0/2'):format(s.commits[2].sha), winbar(s, s.files_win))
     -- the commits pane is left as it was
     eq(s.commits[1].sha .. ' third', commit_rows(s)[2])
     local text = table.concat(diff_rows(s), '\n')
@@ -165,7 +165,7 @@ test('review: `gr` on a range reviews it from the older end', function()
     goto_commit(s, 2)
     press(s, 'gr', s.commits_win)
     eq({ 'a.lua', 'b.lua' }, rows(s))
-    eq((' review %s^..%s'):format(s.commits[3].sha, s.commits[2].sha), winbar(s, s.files_win))
+    eq((' review %s^..%s   0/2'):format(s.commits[3].sha, s.commits[2].sha), winbar(s, s.files_win))
     -- the range is the review's now
     eq(nil, s.mark)
   end)
@@ -177,7 +177,7 @@ test('review: the working tree alone is reviewed from the commit HEAD is on', fu
     goto_worktree(s)
     press(s, 'gr', s.commits_win)
     eq({ 'a.lua', 'loose.lua' }, rows(s))
-    eq((' review %s..working tree'):format(head.sha), winbar(s, s.files_win))
+    eq((' review %s..working tree   0/2'):format(head.sha), winbar(s, s.files_win))
     -- what is committed meanwhile stays in the review
     repo.commit('fourth')
     session.refresh(s)
@@ -198,7 +198,7 @@ test('review: `gr` while looking into a range reviews that range instead', funct
     press(s, 'gr', s.commits_win)
     eq(nil, s.scope)
     eq({ 'a.lua', 'b.lua' }, rows(s))
-    eq((' review %s second'):format(s.commits[2].sha), winbar(s, s.files_win))
+    eq((' review %s second   0/2'):format(s.commits[2].sha), winbar(s, s.files_win))
     -- the commits pane is back on the commit it was looked into from
     local row = vim.api.nvim_win_get_cursor(s.commits_win)[1]
     eq({ kind = 'commit', index = 2 }, list.target_at(s.commits_buf, row))
@@ -366,5 +366,231 @@ test('review: `gr` in the files pane starts nothing', function()
       press(s, 'gr')
     end))
     eq(nil, s.review)
+  end)
+end)
+
+local checks = require('gitview.review')
+
+test('review.toggle checks every path, or takes them off once all are', function()
+  local c = { ['a'] = {} }
+  eq(true, checks.toggle(c, { 'a', 'b' }))
+  eq({ 'a', 'b' }, vim.fn.sort(vim.tbl_keys(c)))
+  eq(false, checks.toggle(c, { 'a', 'b' }))
+  eq({}, c)
+end)
+
+test('review.next_open goes round from the other end', function()
+  local c = { ['b'] = {} }
+  local paths = { 'a', 'b', 'c' }
+  eq(3, checks.next_open(c, paths, 1, 1))
+  eq(1, checks.next_open(c, paths, 3, 1))
+  eq(3, checks.next_open(c, paths, 1, -1))
+  eq(1, checks.next_open(c, paths, 0, 1))
+  eq(3, checks.next_open(c, paths, 4, -1))
+  -- the file it starts from comes last
+  eq(1, checks.next_open({ b = {}, c = {} }, paths, 1, 1))
+  eq(nil, checks.next_open({ a = {}, b = {}, c = {} }, paths, 1, 1))
+end)
+
+--- The gutter of each row of the files pane, without its highlight groups.
+--- @param s gitview.Session
+--- @return string[]
+local function gutters(s)
+  return vim.tbl_map(function(r)
+    return ((r.gutter or ''):gsub('%%#%w+#', ''))
+  end, assert(list.state_of(s.files_buf)).rows)
+end
+
+--- Start reviewing commit 2 of `history`, which changed a.lua and b.lua.
+--- @param s gitview.Session
+local function review_second(s)
+  goto_commit(s, 2)
+  press(s, 'gr', s.commits_win)
+end
+
+--- Answer `vim.fn.confirm` with `answer` while `fn` runs, and say what was asked.
+--- @param answer integer
+--- @param fn fun()
+--- @return string[]
+local function confirming(answer, fn)
+  local confirm = vim.fn.confirm
+  local asked = {}
+  vim.fn.confirm = function(msg)
+    asked[#asked + 1] = msg
+    return answer
+  end
+  local ok, err = pcall(fn)
+  vim.fn.confirm = confirm
+  assert(ok, err)
+  return asked
+end
+
+test('review: `x` in the list checks a file off and counts it', function()
+  with_session(history, function(s)
+    review_second(s)
+    press(s, 'x')
+    eq({ 'M✓ ', 'A  ' }, gutters(s))
+    eq((' review %s second   1/2'):format(s.commits[2].sha), winbar(s, s.files_win))
+    press(s, 'x')
+    eq({ 'M  ', 'A  ' }, gutters(s))
+  end)
+end)
+
+test('review: `x` on a directory checks off every file in it', function()
+  with_session(history, function(s)
+    review_second(s)
+    -- the root, with one of its files checked already
+    press(s, 'jx')
+    press(s, 'ggx')
+    eq({ './', 'a.lua', 'b.lua' }, rows(s))
+    assert(winbar(s, s.files_win):find('2/2', 1, true), winbar(s, s.files_win))
+    press(s, 'ggx')
+    assert(winbar(s, s.files_win):find('0/2', 1, true), winbar(s, s.files_win))
+  end, { tree = true })
+end)
+
+test('review: `x` over a selection checks off every file in it', function()
+  with_session(history, function(s)
+    review_second(s)
+    press(s, 'ggVjx')
+    eq({ 'M✓ ', 'A✓ ' }, gutters(s))
+  end)
+end)
+
+test('review: `x` in the diff checks the file off and goes on to the next', function()
+  with_session(history, function(s)
+    review_second(s)
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal('x')
+    eq({ kind = 'commit_file', index = 2, review = true }, s.selected)
+    eq(s.diff_win, vim.api.nvim_get_current_win())
+    eq({ 'M✓ ', 'A  ' }, gutters(s))
+    -- the last one leaves nothing to go on to
+    eq({ 'every file is checked' }, notified(function()
+      vim.cmd.normal('x')
+    end))
+    -- taking a check off stays on the file
+    vim.cmd.normal('x')
+    eq({ kind = 'commit_file', index = 2, review = true }, s.selected)
+    eq({ 'M✓ ', 'A  ' }, gutters(s))
+  end)
+end)
+
+test('review: `]x` and `[x` go round to the files still to be read', function()
+  with_session(history, function(s, repo)
+    goto_worktree(s)
+    -- three files: a.lua, loose.lua, and one more
+    repo.write('more.lua', { 'return 6' })
+    session.refresh(s)
+    settle(s)
+    goto_worktree(s)
+    press(s, 'gr', s.commits_win)
+    eq({ 'a.lua', 'loose.lua', 'more.lua' }, rows(s))
+    press(s, 'jx')
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal(']x')
+    eq(3, s.selected.index)
+    vim.cmd.normal(']x')
+    eq(1, s.selected.index)
+    vim.cmd.normal('[x')
+    eq(3, s.selected.index)
+  end)
+end)
+
+test('review: a directory marks the headers of the files checked off', function()
+  with_session(history, function(s)
+    review_second(s)
+    session.select(s, 1)
+    vim.api.nvim_win_set_cursor(s.files_win, { 1, 0 })
+    session.follow_cursor(s, s.files_win)
+    vim.wait(1000, function()
+      return render.view_of(s.diff_buf) ~= nil and #render.view_of(s.diff_buf).files == 2
+    end)
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
+    vim.cmd.normal('x')
+    local view = assert(render.view_of(s.diff_buf))
+    -- the cursor goes on to the next file's header, in the same view
+    eq(view.files[2].row, vim.api.nvim_win_get_cursor(s.diff_win)[1])
+    local ns = vim.api.nvim_create_namespace('gitview.diff.marks')
+    local marks = vim.api.nvim_buf_get_extmarks(s.diff_buf, ns, 0, -1, { details = true })
+    eq(1, #marks)
+    eq(view.files[1].row - 1, marks[1][2])
+    eq('✓ ', marks[1][4].virt_text[1][1])
+  end, { tree = true })
+end)
+
+test('review: the same file looked into is not marked', function()
+  with_session(history, function(s)
+    review_second(s)
+    press(s, 'x')
+    goto_commit(s, 2)
+    press(s, '<CR>', s.commits_win)
+    goto_row(s, { kind = 'commit_file', index = 1 })
+    local ns = vim.api.nvim_create_namespace('gitview.diff.marks')
+    eq({}, vim.api.nvim_buf_get_extmarks(s.diff_buf, ns, 0, -1, {}))
+    vim.api.nvim_set_current_win(s.diff_win)
+    eq({ 'not a file under review' }, notified(function()
+      vim.cmd.normal('x')
+    end))
+  end)
+end)
+
+test('review: ending part way through asks first', function()
+  with_session(history, function(s)
+    review_second(s)
+    press(s, 'x')
+    eq({ 'Discard 1 check?' }, confirming(2, function()
+      press(s, '<BS>')
+    end))
+    assert(s.review, 'the review ended')
+    confirming(1, function()
+      press(s, '<BS>')
+    end)
+    eq(nil, s.review)
+  end)
+end)
+
+test('review: ending with every file or none checked asks nothing', function()
+  with_session(history, function(s)
+    review_second(s)
+    eq({}, confirming(2, function()
+      press(s, '<BS>')
+    end))
+    eq(nil, s.review)
+    review_second(s)
+    press(s, 'ggVjx')
+    eq({}, confirming(2, function()
+      press(s, '<BS>')
+    end))
+    eq(nil, s.review)
+  end)
+end)
+
+test('review: starting over or closing part way through asks first', function()
+  with_session(history, function(s)
+    review_second(s)
+    press(s, 'x')
+    goto_commit(s, 1)
+    eq({ 'Discard 1 check?' }, confirming(2, function()
+      press(s, 'gr', s.commits_win)
+    end))
+    eq({ 'a.lua', 'b.lua' }, rows(s))
+    eq({ 'Discard 1 check?' }, confirming(2, function()
+      press(s, 'q')
+    end))
+    assert(vim.api.nvim_tabpage_is_valid(s.tab), 'the session closed')
+  end)
+end)
+
+test('review: `x` outside one checks nothing off', function()
+  with_session(history, function(s)
+    eq({ 'files are checked off during a review' }, notified(function()
+      press(s, 'x')
+    end))
+    vim.api.nvim_set_current_win(s.diff_win)
+    eq({ 'files are checked off during a review' }, notified(function()
+      vim.cmd.normal('x')
+    end))
   end)
 end)

@@ -11,6 +11,8 @@ local M = {}
 
 local ns_syntax = vim.api.nvim_create_namespace('gitview.syntax')
 local ns_diff = vim.api.nvim_create_namespace('gitview.diff')
+--- Marks on file headers, which change without the view being drawn again.
+local ns_marks = vim.api.nvim_create_namespace('gitview.diff.marks')
 
 --- Kept off `M` on purpose. The window options call into this module as
 --- `v:lua.require(...).fn()`, which converts `M` into a Vim value on every call:
@@ -578,6 +580,7 @@ function M.draw(buf, view)
   -- previous view on rows the new one is shorter than.
   vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
   vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buf, ns_marks, 0, -1)
 
   local folds = fold_states(buf)
 
@@ -679,6 +682,32 @@ function M.draw(buf, view)
   span:finish()
 end
 
+--- Mark some of the files of the view `buf` shows, in front of their headers'
+--- labels, replacing the marks there were.
+---
+--- Kept apart from `draw`: a mark says something about the file that can
+--- change while the view does not, and drawing a view of many files again is
+--- costly.
+--- @param buf integer
+--- @param marks table<integer, [string, string]> text and highlight group, by
+---        index into the view's files
+function M.paint_marks(buf, marks)
+  vim.api.nvim_buf_clear_namespace(buf, ns_marks, 0, -1)
+  local view = views[buf]
+  if not view then
+    return
+  end
+  for i, mark in pairs(marks) do
+    local f = view.files[i]
+    if f then
+      vim.api.nvim_buf_set_extmark(buf, ns_marks, f.row - 1, 0, {
+        virt_text = { { mark[1] .. ' ', mark[2] } },
+        virt_text_pos = 'inline',
+      })
+    end
+  end
+end
+
 --- Replace whatever `buf` holds with a single line of text.
 ---
 --- Some things a diff window has to show are not views: a binary file, a change
@@ -696,6 +725,7 @@ function M.notice(buf, text)
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_clear_namespace(buf, ns_syntax, 0, -1)
   vim.api.nvim_buf_clear_namespace(buf, ns_diff, 0, -1)
+  vim.api.nvim_buf_clear_namespace(buf, ns_marks, 0, -1)
   -- before the lines, so that 'foldexpr' does not fold them by the old view
   views[buf] = nil
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, { text })

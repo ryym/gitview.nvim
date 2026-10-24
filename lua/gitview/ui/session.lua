@@ -12,6 +12,7 @@ local list = require('gitview.ui.list')
 local perf = require('gitview.perf')
 local place = require('gitview.diff.place')
 local render = require('gitview.diff.render')
+local review = require('gitview.review')
 local source = require('gitview.diff.source')
 local stage = require('gitview.stage')
 local status = require('gitview.status')
@@ -366,6 +367,49 @@ local function restore_position(s, view)
   end)
 end
 
+--- What marks a file under review as checked off, in the diff as in the list.
+local CHECK_MARK = { '✓', 'GitViewReviewed' }
+
+--- The paths of the files a review lists.
+--- @param r gitview.Review
+--- @return string[]
+local function review_paths(r)
+  return vim.tbl_map(function(c)
+    return c.path
+  end, r.scope.changes)
+end
+
+--- The files of a view, by repository path.
+--- @param s gitview.Session
+--- @param view gitview.View
+--- @return string[]
+local function view_paths(s, view)
+  return vim.tbl_map(function(f)
+    return vim.fs.relpath(s.root, f.path) or f.path
+  end, view.files)
+end
+
+--- Mark the headers of the files checked off, when the diff pane shows files
+--- under review. A view of the same files looked into is left unmarked: it is
+--- not the review's, though it shows the same range.
+--- @param s gitview.Session
+local function paint_checks(s)
+  local r, t = s.review, s.selected
+  -- Mark only a view drawn for what is selected: while a directory waits to be
+  -- read, the pane still holds the view of whatever was selected before.
+  local view = render.view_of(s.diff_buf)
+  if not (r and t and t.review and view and s.drawn and s.drawn.view == view) then
+    return
+  end
+  local marks = {}
+  for i, path in ipairs(view_paths(s, view)) do
+    if review.state(r.checks, path) == 'checked' then
+      marks[i] = CHECK_MARK
+    end
+  end
+  render.paint_marks(s.diff_buf, marks)
+end
+
 --- Draw a view of what is selected. The first one drawn of it puts the cursor
 --- back where it was last left on it.
 --- @param s gitview.Session
@@ -373,6 +417,7 @@ end
 local function draw_view(s, view)
   render.draw(s.diff_buf, view)
   s.drawn = s.shown_key and { key = s.shown_key, view = view } or nil
+  paint_checks(s)
   local restoring = s.restoring
   s.restoring = nil
   if restoring and vim.api.nvim_win_is_valid(s.diff_win) then
@@ -1557,6 +1602,35 @@ local function clamp_cursor(win)
   end
 end
 
+--- What the files pane shows: the uncommitted files, or the review's.
+--- @param s gitview.Session
+--- @return gitview.ListModel
+local function files_model(s)
+  return {
+    pane = 'files',
+    root = s.root,
+    entries = s.entries,
+    review = s.review,
+    notice = s.files_notice,
+    layer = s.layer,
+    tree = config.values.list_style == 'tree',
+  }
+end
+
+--- Draw again what a review's checks change: the files pane, and the marks on
+--- the diff's headers. Nothing is read and the diff is not drawn again, so a
+--- view of many files is not built anew on every check.
+--- @param s gitview.Session
+local function redraw_checks(s)
+  list.draw(s.files_buf, files_model(s))
+  -- The paint went with the lines it was on.
+  if s.selected and s.selected.review then
+    list.paint_cursor(s.files_buf, vim.api.nvim_win_get_cursor(s.files_win)[1])
+  end
+  vim.api.nvim__redraw({ win = s.files_win, winbar = true })
+  paint_checks(s)
+end
+
 --- Draw both panes of the sidebar from the session's state, and put the cursor
 --- on `target`.
 ---
@@ -1568,15 +1642,7 @@ end
 --- @param keep_unchanged boolean? passed on to `show_selected`
 local function redraw_list(s, target, keep_unchanged)
   local as_tree = config.values.list_style == 'tree'
-  list.draw(s.files_buf, {
-    pane = 'files',
-    root = s.root,
-    entries = s.entries,
-    review = s.review,
-    notice = s.files_notice,
-    layer = s.layer,
-    tree = as_tree,
-  })
+  list.draw(s.files_buf, files_model(s))
   list.draw(s.commits_buf, {
     pane = 'commits',
     root = s.root,
@@ -1951,6 +2017,24 @@ function M.leave(s)
   redraw_list(s, target_of_id(s, close_scope(s, scope)))
 end
 
+--- Whether to go on with what throws the review's checks away, asking first
+--- when the review is part way through. A finished one is not asked about: that
+--- is how a review ordinarily ends, and asking there every time would make
+--- answering yes a habit by the time it matters. No is the default, so `<CR>`
+--- and `<Esc>` keep the checks.
+--- @param s gitview.Session
+--- @return boolean
+local function may_discard(s)
+  local r = s.review
+  if not r or next(r.checks) == nil or review.is_done(r.checks, review_paths(r)) then
+    return true
+  end
+  local question = ('Discard %s?'):format(util.counted(vim.tbl_count(r.checks), 'check'))
+  -- Ask with `vim.fn.confirm` rather than `vim.ui.select`, which a plugin may
+  -- replace with something that looks different everywhere.
+  return vim.fn.confirm(question, '&Yes\n&No', 2) == 1
+end
+
 --- Review what the commits pane compares, as `<CR>` would look into it: its
 --- files take the place of the uncommitted ones in the files pane, which gets
 --- the focus. A range being looked into is reviewed instead, and looking into
@@ -1983,6 +2067,9 @@ function M.start_review(s)
       range, label = { old = head.full_sha }, head.sha .. '..working tree'
     end
   end
+  if not may_discard(s) then
+    return
+  end
   local changes, err = git.changed_between(range, s.root, untracked_paths(s))
   if not changes then
     util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
@@ -2006,6 +2093,7 @@ function M.start_review(s)
   s.review = {
     scope = { range = range, label = label, first = first, changes = changes },
     note = note,
+    checks = {},
     before = before,
   }
   s.mark = nil
@@ -2021,16 +2109,20 @@ function M.start_review(s)
 end
 
 --- End the review, and list the uncommitted files again with the cursor where
---- it was before.
+--- it was before. The checks go with it, once it is confirmed; see
+--- `may_discard`.
 --- @param s gitview.Session
---- @return boolean ended false when there was no review
+--- @return boolean handled false when there was no review
 function M.end_review(s)
-  local review = s.review
-  if not review then
+  local r = s.review
+  if not r then
     return false
   end
+  if not may_discard(s) then
+    return true
+  end
   s.review = nil
-  local target = target_of_id(s, review.before)
+  local target = target_of_id(s, r.before)
   if not target and #s.entries > 0 then
     target = { kind = 'file', index = 1 }
   end
@@ -2403,6 +2495,163 @@ local function pressed_rows(visual)
   return math.min(a, b), math.max(a, b)
 end
 
+--- The files a row of the review stands for: its file, or those under its
+--- directory.
+--- @param r gitview.Review
+--- @param t gitview.ListTarget?
+--- @return string[]
+local function review_paths_at(r, t)
+  if not (t and t.review) then
+    return {}
+  end
+  if t.kind == 'commit_dir' then
+    return vim.tbl_map(function(c)
+      return c.path
+    end, (files_in(r.scope.changes, assert(t.path))))
+  end
+  local c = r.scope.changes[t.index]
+  return c and { c.path } or {}
+end
+
+--- Check off the files under the rows of the files pane from `first` to
+--- `last`, or take their checks off when every one is checked already.
+--- @param s gitview.Session
+--- @param first integer 1-based
+--- @param last integer inclusive
+local function check_rows(s, first, last)
+  local r = s.review
+  if not r then
+    util.info('files are checked off during a review')
+    return
+  end
+  local paths, seen = {}, {}
+  for row = first, last do
+    for _, path in ipairs(review_paths_at(r, list.target_at(s.files_buf, row))) do
+      if not seen[path] then
+        seen[path] = true
+        paths[#paths + 1] = path
+      end
+    end
+  end
+  if #paths == 0 then
+    return
+  end
+  review.toggle(r.checks, paths)
+  redraw_checks(s)
+end
+
+--- The files the diff shows under review, in order, and which of them the
+--- cursor is in, or why there are none.
+--- @param s gitview.Session
+--- @return string[]? paths
+--- @return integer|string at the index of the cursor's file into `paths`, 0
+---        above the first; or why there is nothing
+--- @return boolean? many whether the files are those of one view
+local function shown_review_files(s)
+  local r, t = s.review, s.selected
+  if not (r and t and t.review) then
+    return nil, r and 'not a file under review' or 'files are checked off during a review'
+  end
+  if t.kind == 'commit_file' then
+    return review_paths(r), t.index, false
+  end
+  local view = render.view_of(s.diff_buf)
+  if not view or not (s.drawn and s.drawn.view == view) then
+    return nil, 'no file here'
+  end
+  local row = vim.api.nvim_win_get_cursor(s.diff_win)[1]
+  local at = 0
+  for i, f in ipairs(view.files) do
+    if f.row <= row then
+      at = i
+    end
+  end
+  return view_paths(s, view), at, true
+end
+
+--- Go on to the next file still to be read in `dir`, from the file at `at`.
+---
+--- Files of one view are gone through by scrolling to the next one's header.
+--- A file on its own is one of the files pane's, and the cursor goes on there,
+--- as `]f` moves it.
+--- @param s gitview.Session
+--- @param paths string[]
+--- @param at integer
+--- @param many boolean
+--- @param dir 1|-1
+local function go_to_open(s, paths, at, many, dir)
+  local r = assert(s.review)
+  -- Go back from above the first file as from after the last: counting back
+  -- from 0 would come to the last one only after all the others.
+  local from = (at == 0 and dir < 0) and #paths + 1 or at
+  local to = review.next_open(r.checks, paths, from, dir)
+  if not to then
+    util.info('every file is checked')
+    return
+  end
+  if many then
+    local view = assert(render.view_of(s.diff_buf))
+    vim.api.nvim_win_set_cursor(s.diff_win, { view.files[to].row, 0 })
+    return
+  end
+  select_nth(s, assert(s.selected), to)
+end
+
+--- Check off the file the diff's cursor is in, or take its check off, and on
+--- checking go on to the next one to read: read, check, next is how a review
+--- goes. Taking a check off stays, since the file is the one to read again.
+--- @param s gitview.Session
+local function check_shown(s)
+  local paths, at, many = shown_review_files(s)
+  if not paths then
+    util.info(tostring(at))
+    return
+  end
+  --- @cast at integer
+  local path = paths[at]
+  if not path then
+    util.info('no file here')
+    return
+  end
+  local checked = review.toggle(assert(s.review).checks, { path })
+  redraw_checks(s)
+  if checked then
+    go_to_open(s, paths, at, many == true, 1)
+  end
+end
+
+--- Close the session, asking first if that throws a review away part way
+--- through; see `may_discard`. Only `q` asks: closing the tab page some other
+--- way cannot be stopped, since the session is let go of once it is gone, and
+--- `q` is the one pressed by accident.
+--- @param s gitview.Session
+local function close_asked(s)
+  if may_discard(s) then
+    M.close(s)
+  end
+end
+
+--- `x` and `]x`, `[x` in the diff: checking off the file under review being
+--- read, and going to the next one still to be read.
+--- @param s gitview.Session
+local function set_diff_review_keymaps(s)
+  local map = util.buf_mapper(s.diff_buf)
+  map('x', function()
+    check_shown(s)
+  end, 'check off the file under review the cursor is in')
+  for _, dir in ipairs({ 1, -1 }) do
+    map(dir > 0 and ']x' or '[x', function()
+      local paths, at, many = shown_review_files(s)
+      if not paths then
+        util.info(tostring(at))
+        return
+      end
+      --- @cast at integer
+      go_to_open(s, paths, at, many == true, dir)
+    end, dir > 0 and 'next file still to be read' or 'previous file still to be read')
+  end
+end
+
 --- Inside the diff, `s` and `u` work on lines rather than on the whole file:
 --- the rows under the cursor or the visual selection, and with a capital, the
 --- whole change the cursor is in.
@@ -2445,7 +2694,7 @@ local function set_shared_keymaps(s, buf)
     M.refresh(s)
   end, 'refresh')
   map('q', function()
-    M.close(s)
+    close_asked(s)
   end, 'close')
   map('gf', function()
     open_listed(s, vim.api.nvim_get_current_win())
@@ -2472,6 +2721,11 @@ local function set_files_keymaps(s)
   map('gr', function()
     util.info('a review is started from the commits pane')
   end, 'nothing to review here')
+  for _, mode in ipairs({ 'n', 'x' }) do
+    map('x', function()
+      check_rows(s, pressed_rows(mode == 'x'))
+    end, 'check off the files under review selected', { mode })
+  end
   map('s', function()
     apply_to_selected(s, 'stage')
   end, 'stage the file or directory under the cursor')
@@ -2525,6 +2779,10 @@ local function set_commits_keymaps(s)
       util.info('only an uncommitted file can be staged')
     end, 'nothing to stage here')
   end
+  map('x', function()
+    util.info(s.review and 'the files under review are in the files pane'
+      or 'files are checked off during a review')
+  end, 'nothing to check off here')
   set_shared_keymaps(s, s.commits_buf)
 end
 
@@ -2552,7 +2810,7 @@ end
 local function set_diff_keymaps(s)
   keymap.set(s.diff_buf, {
     close = function()
-      M.close(s)
+      close_asked(s)
     end,
     goto_file = function(dir)
       local t = s.selected
@@ -2828,6 +3086,7 @@ function M.open()
   set_commits_keymaps(s)
   set_diff_keymaps(s)
   set_diff_stage_keymaps(s)
+  set_diff_review_keymaps(s)
   set_view_keymaps(s)
 
   for _, buf in ipairs({ s.files_buf, s.commits_buf }) do

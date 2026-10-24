@@ -4,6 +4,7 @@
 --- are drawn rather than written. Here that means the buffer holds paths and
 --- nothing else, so yanking a line gives a path that can be pasted somewhere
 --- useful, while the two status letters are painted by `'statuscolumn'`.
+local review = require('gitview.review')
 local status = require('gitview.status')
 local tree = require('gitview.tree')
 local util = require('gitview.util')
@@ -27,6 +28,7 @@ local M = {}
 --- @field scope gitview.ListScope
 --- @field note string? what the winbar says about the range beyond what it
 ---        compares
+--- @field checks table<string, gitview.Check> the files checked off, by path
 
 --- @class gitview.ListModel what one pane of the sidebar is showing
 --- @field pane 'files'|'commits' which of the two it is
@@ -130,6 +132,9 @@ M.EMPTY_REVIEW_NOTICE = 'nothing changed in the range'
 --- paths stay in one column.
 local BLANK_GUTTER = '   '
 
+--- What marks a file under review as checked off.
+local CHECK_MARK = '✓'
+
 --- What one level of a tree is drawn as: a guide, as indent-blankline draws one,
 --- within the two columns a level takes anyway. Lines joining a directory to
 --- each child (`├`, `└`) would need more width than a narrow sidebar has.
@@ -177,9 +182,9 @@ end
 ---        a rename, `row` what the flat list would show, and `letters` the status
 ---        letters it shows in its gutter
 --- @param dir_kind 'dir'|'commit_dir'
---- @param review true? the files are those of a review
+--- @param in_review true? the files are those of a review
 --- @return gitview.ListRow[]
-local function tree_rows(files, dir_kind, review)
+local function tree_rows(files, dir_kind, in_review)
   local paths = vim.tbl_map(function(f)
     return f.path
   end, files)
@@ -210,9 +215,12 @@ local function tree_rows(files, dir_kind, review)
         spans[2] = { from = new_at, to = new_at + n.col, conceal = true }
         row.subject = n.col
       end
-      row.spans = vim.tbl_filter(function(sp)
-        return sp.to > sp.from
-      end, spans)
+      row.spans = vim.list_extend(
+        vim.tbl_filter(function(sp)
+          return sp.to > sp.from
+        end, spans),
+        row.spans or {}
+      )
       row.gutter = nil
       row.lead = vim.list_extend(vim.deepcopy(f.letters), { { ' ' } })
     else
@@ -223,7 +231,7 @@ local function tree_rows(files, dir_kind, review)
       end
       row = {
         text = text,
-        target = { kind = dir_kind, index = next_file[i], path = n.dir, review = review },
+        target = { kind = dir_kind, index = next_file[i], path = n.dir, review = in_review },
         spans = spans,
         lead = { { DIR_MARK, 'GitViewDirectory' } },
       }
@@ -251,13 +259,13 @@ end
 ---
 --- Padded to the width of two letters and a space, so the paths stay in one
 --- column whichever kind of file the row is.
---- @param letters [string, string][]
+--- @param letters [string, string?][]
 --- @return string
 local function gutter_of(letters)
   local out, width = {}, 0
   for _, l in ipairs(letters) do
-    out[#out + 1] = ('%%#%s#%s'):format(l[2], l[1])
-    width = width + #l[1]
+    out[#out + 1] = l[2] and ('%%#%s#%s'):format(l[2], l[1]) or l[1]
+    width = width + vim.fn.strdisplaywidth(l[1])
   end
   return table.concat(out) .. (' '):rep(#BLANK_GUTTER - width)
 end
@@ -271,28 +279,40 @@ end
 --- Which range that is, is named by the pane's `'winbar'`, so no row of the
 --- buffer has to stand for it.
 ---
+--- A file under review is marked after its status letter once checked off, in
+--- the column a second letter takes elsewhere, and faded: what is left to read
+--- is what stands out.
 --- @param scope gitview.ListScope
 --- @param as_tree boolean?
---- @param review true? the range is under review
+--- @param under gitview.ListReview? the review the range is under, if any
 --- @return gitview.ListRow[]
-local function scope_rows(scope, as_tree, review)
+local function scope_rows(scope, as_tree, under)
   if #scope.changes == 0 then
-    return { { text = review and M.EMPTY_REVIEW_NOTICE or M.EMPTY_COMMIT_NOTICE } }
+    return { { text = under and M.EMPTY_REVIEW_NOTICE or M.EMPTY_COMMIT_NOTICE } }
   end
+  local in_review = under and true or nil
   local rows, files = {}, {}
   for i, c in ipairs(scope.changes) do
     -- One letter, in the color the list already uses for a settled change.
     local letters = { { c.status, 'GitViewStatusStaged' } }
+    local text = status.change_label(c)
+    local spans
+    if under then
+      local checked = review.state(under.checks, c.path) == 'checked'
+      letters[2] = checked and { CHECK_MARK, 'GitViewReviewed' } or { ' ' }
+      spans = checked and { { from = 0, to = #text, group = 'GitViewReviewed' } } or nil
+    end
     rows[i] = {
-      text = status.change_label(c),
+      text = text,
       gutter = gutter_of(letters),
-      target = { kind = 'commit_file', index = i, review = review },
+      target = { kind = 'commit_file', index = i, review = in_review },
+      spans = spans,
       subject = 0,
     }
     local renamed = (c.status == 'R' or c.status == 'C') and c.old_path or nil
     files[i] = { path = c.path, old = renamed, row = rows[i], letters = letters }
   end
-  return as_tree and tree_rows(files, 'commit_dir', review) or rows
+  return as_tree and tree_rows(files, 'commit_dir', in_review) or rows
 end
 
 --- What hides the tail of a sha at the start of a row. `%h` is never shorter
@@ -311,7 +331,7 @@ end
 function M.content(model)
   if model.pane == 'files' then
     if model.review then
-      return scope_rows(model.review.scope, model.tree, true)
+      return scope_rows(model.review.scope, model.tree, model.review)
     end
     if model.notice then
       return { { text = model.notice } }
@@ -397,6 +417,9 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.
   set('GitViewRange', { link = 'Visual' })
+  -- A file checked off in a review has been read, and steps back as a pushed
+  -- commit does.
+  set('GitViewReviewed', { link = 'Comment' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -456,6 +479,12 @@ function M.winbar()
   if state.review then
     -- The range has no row of its own, as one looked into has none.
     text = ' review ' .. state.review.scope.label
+    local paths = vim.tbl_map(function(c)
+      return c.path
+    end, state.review.scope.changes)
+    if #paths > 0 then
+      text = ('%s   %d/%d'):format(text, review.progress(state.review.checks, paths), #paths)
+    end
     if state.review.note then
       text = ('%s   %s'):format(text, state.review.note)
     end
