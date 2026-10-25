@@ -163,13 +163,10 @@ local highlights = util.highlights('gitview.highlights', function(set)
   -- the background: of a kind with it, yet not to be taken for it.
   set('GitViewFileHeaderBg', scale(bg_only('CursorLine', '#2c313a'), 1.4))
   -- The cursor line's background is painted under the diff colors, so on a
-  -- changed line it would not show. An underline survives them. Its color is
-  -- given, or it would take each character's syntax color.
+  -- changed line it would not show. An underline drawn over them does. Its
+  -- color is given, or it would take each character's syntax color.
   local lnum = vim.api.nvim_get_hl(0, { name = 'LineNr', link = false })
-  set(
-    'GitViewCursorLine',
-    vim.tbl_extend('force', bg_only('CursorLine', '#2c313a'), { underline = true, sp = lnum.fg })
-  )
+  set('GitViewCursorLine', { underline = true, sp = lnum.fg })
   -- Also defined by `ui.list`, alike, so a sha has one color in both panes
   -- whichever module is drawn first.
   set('GitViewCommitSha', { link = 'Identifier' })
@@ -254,6 +251,45 @@ end
 local function text_hl_of(view, l)
   return blended(view, l) and STAGED_TEXT_HL[l.kind] or TEXT_HL[l.kind]
 end
+
+local ns_cursor = vim.api.nvim_create_namespace('gitview.diff.cursor')
+
+--- The cursor's row in the window being redrawn, 0-based, while that window
+--- shows a view and its cursor line.
+--- @type integer?
+local cursor_row
+
+-- The cursor line's underline. It is a mark over everything else on the row
+-- rather than a part of `CursorLine`, which is combined under the syntax: a
+-- colorscheme that gives its syntax groups `nocombine` would leave the text
+-- without it.
+--
+-- It is drawn as the screen is, rather than kept as a mark moved from
+-- `CursorMoved`: a buffer shown in two windows has a cursor line in each, and a
+-- mark would have to be put back after every draw. 'cursorline' already redraws
+-- the rows the cursor leaves and enters.
+vim.api.nvim_set_decoration_provider(ns_cursor, {
+  on_win = function(_, win, buf)
+    cursor_row = nil
+    if not views[buf] or not vim.wo[win].cursorline or vim.wo[win].cursorlineopt == 'number' then
+      return false
+    end
+    cursor_row = vim.api.nvim_win_get_cursor(win)[1] - 1
+  end,
+  on_line = function(_, _, buf, row)
+    if row == cursor_row then
+      vim.api.nvim_buf_set_extmark(buf, ns_cursor, row, 0, {
+        end_row = row + 1,
+        end_col = 0,
+        hl_group = 'GitViewCursorLine',
+        hl_eol = true,
+        ephemeral = true,
+        -- over the changed words too: it leaves their colors alone
+        priority = 300,
+      })
+    end
+  end,
+})
 
 --- How many lines each file adds and deletes, from HEAD to the working tree in
 --- a mixed view: a row only the index has is in neither.
@@ -1309,7 +1345,6 @@ function M.configure_window(win, buf)
     signcolumn = 'no',
     wrap = false,
     cursorline = true,
-    winhighlight = 'CursorLine:GitViewCursorLine',
     foldmethod = 'expr',
     foldexpr = 'v:lua.require("gitview.diff.render").foldexpr()',
     foldtext = 'v:lua.require("gitview.diff.render").foldtext()',
