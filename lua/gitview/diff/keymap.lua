@@ -264,7 +264,8 @@ local function copy_references(buf, root, visual)
   util.info(#refs == 1 and ('copied %s'):format(refs[1]) or ('copied %d files'):format(#refs))
 end
 
---- Edit a file in the current window and put the cursor on a line of it.
+--- Edit a file in the current window and put the cursor on a line of it, in
+--- the middle of the window so that what is around it shows either way.
 ---
 --- The line is clamped to the file: a line number taken from a commit can be
 --- past the end of the file as it is now.
@@ -278,6 +279,7 @@ function M.edit_at(path, lnum)
   vim.cmd("normal! m'")
   local last = vim.api.nvim_buf_line_count(0)
   vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(lnum, last)), 0 })
+  vim.cmd('normal! zz')
 end
 
 --- Whether the fold over `first`..`last` is the run of unchanged lines a file

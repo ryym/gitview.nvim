@@ -1409,6 +1409,32 @@ test('session: `gf` in the diff opens the file at the line under the cursor', fu
   end)
 end)
 
+-- Left to itself, the window would scroll only as far as it must, which puts a
+-- line just past the first screenful at the bottom.
+test('session: `gf` in the diff puts the line in the middle of the window', function()
+  local lines = {}
+  for i = 1, 100 do
+    lines[i] = 'l' .. i
+  end
+  with_session(function(repo)
+    repo.write('f.txt', lines)
+    repo.commit('init')
+    lines[30] = 'x'
+    repo.write('f.txt', lines)
+  end, function(s)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'x', 'add'), 0 })
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal('gf')
+    local lnum = vim.api.nvim_win_get_cursor(0)[1]
+    local height = vim.api.nvim_win_get_height(0)
+    local row = vim.fn.winline()
+    wipe_opened()
+    eq(30, lnum)
+    assert(height < 30, 'the window should not show the line from the top')
+    assert(math.abs(row - (height + 1) / 2) <= 1, ('line %d of %d rows'):format(row, height))
+  end)
+end)
+
 -- A deleted line is in no version the working tree has; what stands where it
 -- was is the line after the one above it.
 test('session: `gf` on a deleted line opens the line now in its place', function()
