@@ -132,6 +132,20 @@ function M.has_head(cwd)
   return M.run({ 'git', 'rev-parse', '--verify', '--quiet', 'HEAD' }, cwd).ok
 end
 
+--- The commit HEAD is on, by sha: in full, and abbreviated as `log` writes it.
+---
+--- For something that has to go on naming the commit HEAD is on now, after
+--- HEAD itself has moved.
+--- @param cwd string
+--- @return {full_sha:string, sha:string}?
+function M.head(cwd)
+  -- Both forms in one call, which rules out `--verify`: it takes one revision
+  -- only.
+  local res = M.run({ 'git', 'rev-parse', 'HEAD', '--short', 'HEAD' }, cwd)
+  local full, short = (res.ok and res.stdout or ''):match('^(%x+)\n(%x+)')
+  return full and { full_sha = full, sha = short } or nil
+end
+
 --- Parse the stream `git cat-file --batch` writes.
 ---
 --- Each object is a header line `<sha> <type> <size>` followed by exactly
@@ -586,11 +600,20 @@ local function changed_since(old, untracked, cwd)
     return nil, 'the git directory could not be found'
   end
   local index = vim.fn.tempname()
+  local real = vim.fs.joinpath(dir, 'index')
   -- git replaces the index by renaming a finished one over it, so a copy is of
   -- one whole version or another, never of a write under way.
-  local copied, copy_err = vim.uv.fs_copyfile(vim.fs.joinpath(dir, 'index'), index)
+  local copied, copy_err = vim.uv.fs_copyfile(real, index)
   if not copied then
     return nil, 'could not copy the index: ' .. tostring(copy_err)
+  end
+  -- The copy keeps the index's own time. git takes an entry whose file is no
+  -- older than the index as possibly changed, and reads it; a copy made just
+  -- now would be newer than every file, and a file rewritten to the same size
+  -- within the second the index was written would pass for unchanged.
+  local stat = vim.uv.fs_stat(real)
+  if stat then
+    vim.uv.fs_utime(index, stat.atime.sec, stat.mtime.sec + stat.mtime.nsec / 1e9)
   end
   local opts = { env = { GIT_INDEX_FILE = index } }
   -- The paths go in on stdin, since a working tree can hold more of them than a

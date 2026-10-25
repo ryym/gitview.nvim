@@ -4,24 +4,38 @@
 --- are drawn rather than written. Here that means the buffer holds paths and
 --- nothing else, so yanking a line gives a path that can be pasted somewhere
 --- useful, while the two status letters are painted by `'statuscolumn'`.
+local review = require('gitview.review')
 local status = require('gitview.status')
 local tree = require('gitview.tree')
 local util = require('gitview.util')
 
 local M = {}
 
---- @class gitview.ListScope what the commits pane is looking into, in place of
---- the commits themselves
+--- @class gitview.ListScope a range whose files are listed: what the commits
+--- pane is looking into, in place of the commits themselves, or what the files
+--- pane is reviewing, in place of the uncommitted files
 --- @field range gitview.Range the two revisions being compared
 --- @field label string what to call it
---- @field at string sha of the commit to put the cursor back on when backing out,
----        or `WORKTREE` for the working-tree row
+--- @field at string? sha of the commit to put the cursor back on when backing
+---        out, or `WORKTREE` for the working-tree row; nil for a review, which
+---        backs out in the files pane
+--- @field first string? sha of the commit at the older end, the one the range
+---        starts at the parent of; nil when the range starts at a commit as it
+---        stands, as a review of the working tree alone does
 --- @field changes gitview.Change[] what the range changed
+
+--- @class gitview.ListReview what the files pane is reviewing
+--- @field scope gitview.ListScope
+--- @field note string? what the winbar says about the range beyond what it
+---        compares
+--- @field checks table<string, gitview.Check> the files checked off, by path
 
 --- @class gitview.ListModel what one pane of the sidebar is showing
 --- @field pane 'files'|'commits' which of the two it is
 --- @field root string repository root
 --- @field entries gitview.StatusEntry[]? the files pane
+--- @field review gitview.ListReview? the files pane, reviewing a range in place
+---        of listing the entries
 --- @field notice string? the files pane, shown in place of the entries while
 ---        there are none to show yet
 --- @field layer gitview.Layer? the files pane, which changes the entries are
@@ -44,6 +58,9 @@ local M = {}
 --- @field path string? the directory, without a trailing slash; `''` for the
 ---        root. A directory and the first file in it share an index, and so
 ---        may a directory and the one it is in
+--- @field review true? a file or directory of the range under review, in the
+---        files pane, rather than of the range looked into. The two can be the
+---        same range, and are still two lists
 
 --- @class gitview.ListSpan a stretch of a row drawn differently from its text
 --- @field from integer 0-based byte column
@@ -65,6 +82,9 @@ local M = {}
 --- @field lead [string, string?][]? drawn after the indent, in front of the
 ---        name, as `virt_text` chunks: a directory's mark, or in a tree a file's
 ---        status letters
+--- @field check [string, string]? in a review, the mark in the column of its
+---        own at the left edge, with its highlight group; nil for a row with
+---        none
 
 --- Shown instead of the list when there is nothing uncommitted. It is a row of
 --- the buffer, so it has no entry and no status letters.
@@ -106,9 +126,28 @@ local SHA_SHOWN = 4
 --- `git commit --allow-empty` makes.
 M.EMPTY_COMMIT_NOTICE = 'this commit changed nothing'
 
+--- Shown in place of the files of a review that has none. A review ending at
+--- the working tree can be started before anything is edited, and its files
+--- come in as they are.
+M.EMPTY_REVIEW_NOTICE = 'nothing changed in the range'
+
 --- Two status letters and a space. A row with no entry keeps the width so the
 --- paths stay in one column.
 local BLANK_GUTTER = '   '
+
+--- What marks a file under review as checked off, and as changed since.
+local CHECK_MARK = '✓'
+local CHANGED_MARK = '!'
+
+--- The marks by state, as the column at the left edge draws them.
+--- @type table<string, [string, string]>
+local CHECK_MARKS = {
+  checked = { CHECK_MARK, 'GitViewReviewedMark' },
+  changed = { CHANGED_MARK, 'GitViewReviewChanged' },
+}
+
+--- A mark and a space: the column a review adds at the left edge.
+local BLANK_CHECK = '  '
 
 --- What one level of a tree is drawn as: a guide, as indent-blankline draws one,
 --- within the two columns a level takes anyway. Lines joining a directory to
@@ -157,8 +196,9 @@ end
 ---        a rename, `row` what the flat list would show, and `letters` the status
 ---        letters it shows in its gutter
 --- @param dir_kind 'dir'|'commit_dir'
+--- @param in_review true? the files are those of a review
 --- @return gitview.ListRow[]
-local function tree_rows(files, dir_kind)
+local function tree_rows(files, dir_kind, in_review)
   local paths = vim.tbl_map(function(f)
     return f.path
   end, files)
@@ -189,9 +229,12 @@ local function tree_rows(files, dir_kind)
         spans[2] = { from = new_at, to = new_at + n.col, conceal = true }
         row.subject = n.col
       end
-      row.spans = vim.tbl_filter(function(sp)
-        return sp.to > sp.from
-      end, spans)
+      row.spans = vim.list_extend(
+        vim.tbl_filter(function(sp)
+          return sp.to > sp.from
+        end, spans),
+        row.spans or {}
+      )
       row.gutter = nil
       row.lead = vim.list_extend(vim.deepcopy(f.letters), { { ' ' } })
     else
@@ -202,7 +245,7 @@ local function tree_rows(files, dir_kind)
       end
       row = {
         text = text,
-        target = { kind = dir_kind, index = next_file[i], path = n.dir },
+        target = { kind = dir_kind, index = next_file[i], path = n.dir, review = in_review },
         spans = spans,
         lead = { { DIR_MARK, 'GitViewDirectory' } },
       }
@@ -230,46 +273,117 @@ end
 ---
 --- Padded to the width of two letters and a space, so the paths stay in one
 --- column whichever kind of file the row is.
---- @param letters [string, string][]
+--- @param letters [string, string?][]
 --- @return string
 local function gutter_of(letters)
   local out, width = {}, 0
   for _, l in ipairs(letters) do
-    out[#out + 1] = ('%%#%s#%s'):format(l[2], l[1])
-    width = width + #l[1]
+    out[#out + 1] = l[2] and ('%%#%s#%s'):format(l[2], l[1]) or l[1]
+    width = width + vim.fn.strdisplaywidth(l[1])
   end
   return table.concat(out) .. (' '):rep(#BLANK_GUTTER - width)
 end
 
---- The files one commit changed, shown in the commits pane in place of the
---- commits themselves.
+--- Draw a row in the faded color of what has been read, wherever it has a color
+--- of its own.
+--- @param row gitview.ListRow
+local function fade(row)
+  for _, span in ipairs(row.spans or {}) do
+    if span.group then
+      span.group = 'GitViewReviewed'
+    end
+  end
+  for _, chunk in ipairs(row.lead or {}) do
+    if chunk[2] then
+      chunk[2] = 'GitViewReviewed'
+    end
+  end
+end
+
+--- The mark of a directory under review, from the files in it: changed while
+--- any is, checked once every one is.
+--- @param checks table<string, gitview.Check>
+--- @param changes gitview.Change[]
+--- @param dir string without a trailing slash; `''` for the root
+--- @return [string, string]?
+local function dir_check(checks, changes, dir)
+  local prefix = dir == '' and '' or dir .. '/'
+  local all = true
+  for _, c in ipairs(changes) do
+    if c.path:sub(1, #prefix) == prefix then
+      local state = review.state(checks, c.path)
+      if state == 'changed' then
+        return CHECK_MARKS.changed
+      end
+      all = all and state == 'checked'
+    end
+  end
+  return all and CHECK_MARKS.checked or nil
+end
+
+--- The files a range changed, shown in place of what the pane otherwise lists:
+--- the commits, for a range looked into, or the uncommitted files, for one
+--- under review.
 ---
---- A commit's changes and the uncommitted entries are different shapes, so they
---- are never mixed into one buffer: looking into a commit replaces what the
---- pane holds. Which commit that is, is named by the pane's `'winbar'`, so no
---- row of the buffer has to stand for it.
+--- A range's changes and the uncommitted entries are different shapes, so they
+--- are never mixed into one buffer: the range replaces what the pane holds.
+--- Which range that is, is named by the pane's `'winbar'`, so no row of the
+--- buffer has to stand for it.
 ---
+--- A file under review is marked in a column of its own at the left edge once
+--- checked off, and faded: what is left to read is what stands out. At the
+--- edge rather than beside the name, the marks line up however deep a tree
+--- nests the file, and the column itself says the pane is a review. One changed
+--- since it was checked is marked apart, and left as bright as one not read
+--- yet. A directory is marked as checked once every file in it is, and as
+--- changed while any file in it is.
 --- @param scope gitview.ListScope
 --- @param as_tree boolean?
+--- @param under gitview.ListReview? the review the range is under, if any
 --- @return gitview.ListRow[]
-local function scope_rows(scope, as_tree)
+local function scope_rows(scope, as_tree, under)
   if #scope.changes == 0 then
-    return { { text = M.EMPTY_COMMIT_NOTICE } }
+    return { { text = under and M.EMPTY_REVIEW_NOTICE or M.EMPTY_COMMIT_NOTICE } }
   end
+  local in_review = under and true or nil
   local rows, files = {}, {}
   for i, c in ipairs(scope.changes) do
+    local text = status.change_label(c)
+    local state = under and review.state(under.checks, c.path)
+    -- A changed file is not faded: it is to be read again. The letter fades with
+    -- the rest of a checked row, which would otherwise still catch the eye.
+    local faded = state == 'checked'
+    local spans = faded and { { from = 0, to = #text, group = 'GitViewReviewed' } } or nil
     -- One letter, in the color the list already uses for a settled change.
-    local letters = { { c.status, 'GitViewStatusStaged' } }
+    local letters = { { c.status, faded and 'GitViewReviewed' or 'GitViewStatusStaged' } }
     rows[i] = {
-      text = status.change_label(c),
+      text = text,
       gutter = gutter_of(letters),
-      target = { kind = 'commit_file', index = i },
+      target = { kind = 'commit_file', index = i, review = in_review },
+      spans = spans,
       subject = 0,
+      check = state and CHECK_MARKS[state] or nil,
     }
     local renamed = (c.status == 'R' or c.status == 'C') and c.old_path or nil
     files[i] = { path = c.path, old = renamed, row = rows[i], letters = letters }
   end
-  return as_tree and tree_rows(files, 'commit_dir') or rows
+  if not as_tree then
+    return rows
+  end
+  rows = tree_rows(files, 'commit_dir', in_review)
+  if under then
+    for _, r in ipairs(rows) do
+      if r.target and r.target.kind == 'commit_dir' then
+        r.check = dir_check(under.checks, scope.changes, r.target.path)
+        -- Faded with its files once they are all read, so that what is left of
+        -- a tree to read stands out from it.
+        if r.check == CHECK_MARKS.checked then
+          fade(r)
+        end
+      end
+    end
+  end
+  return rows
 end
 
 --- What hides the tail of a sha at the start of a row. `%h` is never shorter
@@ -287,6 +401,9 @@ end
 --- @return gitview.ListRow[]
 function M.content(model)
   if model.pane == 'files' then
+    if model.review then
+      return scope_rows(model.review.scope, model.tree, model.review)
+    end
     if model.notice then
       return { { text = model.notice } }
     end
@@ -371,6 +488,14 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.
   set('GitViewRange', { link = 'Visual' })
+  -- A file checked off in a review has been read, and steps back as a pushed
+  -- commit does.
+  set('GitViewReviewed', { link = 'Comment' })
+  -- The mark itself is not faded with the row: it is what says the file is
+  -- done, and a faded one would be hard to pick out.
+  set('GitViewReviewedMark', { link = 'DiagnosticOk' })
+  -- A file to read again, which is something to act on.
+  set('GitViewReviewChanged', { link = 'DiagnosticWarn' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -405,15 +530,17 @@ function M.statuscolumn()
   if state.pane == 'commits' and not state.scope then
     return ''
   end
+  local row = vim.v.virtnum == 0 and state.rows[vim.v.lnum] or nil
+  -- A review's marks come first, at the left edge, tree or not.
+  local check = ''
+  if state.review then
+    check = row and row.check and ('%%#%s#%s '):format(row.check[2], row.check[1]) or BLANK_CHECK
+  end
   -- A tree draws the status letters in front of each name instead.
   if state.tree then
-    return ''
+    return check
   end
-  if vim.v.virtnum ~= 0 then
-    return BLANK_GUTTER
-  end
-  local row = state.rows[vim.v.lnum]
-  return row and row.gutter or BLANK_GUTTER
+  return check .. (row and row.gutter or BLANK_GUTTER)
 end
 
 --- What the pane is showing. The repository is named by the files pane alone,
@@ -427,7 +554,27 @@ function M.winbar()
     return ''
   end
   local text
-  if state.pane == 'files' then
+  if state.review then
+    -- The range has no row of its own, as one looked into has none.
+    text = ' review ' .. state.review.scope.label
+    local paths = vim.tbl_map(function(c)
+      return c.path
+    end, state.review.scope.changes)
+    if #paths > 0 then
+      text = ('%s   %d/%d'):format(text, review.progress(state.review.checks, paths), #paths)
+      -- Changed files count as not checked, so the count alone would not say
+      -- there are files to read again.
+      local changed = #vim.tbl_filter(function(path)
+        return review.state(state.review.checks, path) == 'changed'
+      end, paths)
+      if changed > 0 then
+        text = ('%s %s%d'):format(text, CHANGED_MARK, changed)
+      end
+    end
+    if state.review.note then
+      text = ('%s   %s'):format(text, state.review.note)
+    end
+  elseif state.pane == 'files' then
     text = ' ' .. vim.fs.basename(state.root)
     -- Zero files would be a claim about a list that has not been read.
     if not state.notice then
@@ -512,6 +659,7 @@ function M.draw(buf, model)
     pane = model.pane,
     root = model.root,
     entries = model.entries or {},
+    review = model.review,
     notice = model.notice,
     layer = model.layer,
     commits = model.commits or {},
@@ -699,7 +847,7 @@ function M.same_target(a, b)
   if not a or not b then
     return a == nil and b == nil
   end
-  return a.kind == b.kind and a.index == b.index and a.path == b.path
+  return a.kind == b.kind and a.index == b.index and a.path == b.path and a.review == b.review
 end
 
 return M

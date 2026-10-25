@@ -271,11 +271,48 @@ compared too, as additions, which `git diff` itself would leave out. The row is
 there even when nothing is uncommitted, so such a range can be set up first and
 then follows the edits as they are made.
 
+#### Reviewing a range
+
+`gr` in the commits pane reviews what `<CR>` would look into: one commit, a
+range from the mark, or the working tree. Its files take the place of the
+uncommitted ones in the files pane, and each can be checked off once read, so
+that what is left to read is plain however many commits and edits the range
+takes in. The commits pane stays as it is, and other commits can be looked into
+meanwhile. `gr` while looking into a range reviews that range instead.
+
+- **The range is fixed when the review starts.** The working tree on its own is
+  reviewed from the commit HEAD is on at that moment, which the winbar names by
+  its sha: what is committed during the review stays in it.
+- **`x` checks off a file**, or every file of a directory or a selection, and
+  takes the checks off again once all of them are checked. In the diff it checks
+  off the file being read and goes on to the next one still to be read. `]x`
+  and `[x` go to the next and previous one, round from the other end.
+- **A file checked off is marked `✓` and faded**, in the list and on its header
+  in the diff. In the list the marks have a column of their own at the left
+  edge, which lines them up however deep a tree nests a file. A directory is
+  marked and faded once every file in it is. The files pane's winbar counts them, as
+  `3/12`.
+- **A file that changes after it was checked off is marked `!`**, rather than
+  unchecked, and counted apart, as `3/12 !1`. It is read again, and checked
+  again with `x`, and a directory with such a file in it is marked `!` too. Only
+  a range ending at the working tree can change. What a
+  check records is what the diff showed, so a file rewritten while it was being
+  read is not taken as read.
+- **`<BS>` in the files pane ends the review**, and the checks go with it. A
+  review only part way through asks first, and so do `gr` starting another and
+  `q`; a finished one does not.
+
+Nothing is staged during a review, and `gs` does not switch the layer: a range
+compares two trees, with no index between them.
+
 | key         | in the files pane  | in the commits pane  | in the diff                   |
 | ----------- | ------------------ | -------------------- | ----------------------------- |
 | `<CR>`      | focus the diff     | look into the commit |                               |
-| `<BS>`      |                    | back out of it       |                               |
+| `<BS>`      | end the review     | back out of it       |                               |
 | `m`         |                    | mark, for a range    |                               |
+| `gr`        |                    | review the commit    |                               |
+| `x`         | check off file/dir |                      | check off this file           |
+| `]x` / `[x` |                    |                      | next / previous file to read  |
 | `<Esc>`     |                    | clear the mark       |                               |
 | `gw`        | ignore whitespace  | ignore whitespace    | ignore whitespace             |
 | `gs`        | staged / unstaged  | staged / unstaged    | staged / unstaged             |
@@ -453,7 +490,10 @@ a conflicted file. A commit's header uses
 The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
 `GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,
 `GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
-`GitViewIndent`. Where the branch has an upstream, a pushed sha is in
+`GitViewIndent`. A review marks the files checked off with
+`GitViewReviewedMark`, in the list and on their headers in the diff, and fades
+their rows with `GitViewReviewed`; those changed since are marked with
+`GitViewReviewChanged`. Where the branch has an upstream, a pushed sha is in
 `GitViewCommitShaPushed` instead of `GitViewCommitSha`, and the line naming
 the upstream has the name in `GitViewUpstream` and the rule in
 `GitViewUpstreamRule`.
