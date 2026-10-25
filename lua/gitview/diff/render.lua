@@ -162,6 +162,14 @@ local highlights = util.highlights('gitview.highlights', function(set)
   -- file starts stands out. It is the cursor line's color pushed further from
   -- the background: of a kind with it, yet not to be taken for it.
   set('GitViewFileHeaderBg', scale(bg_only('CursorLine', '#2c313a'), 1.4))
+  -- The cursor line's background is painted under the diff colors, so on a
+  -- changed line it would not show. An underline survives them. Its color is
+  -- given, or it would take each character's syntax color.
+  local lnum = vim.api.nvim_get_hl(0, { name = 'LineNr', link = false })
+  set(
+    'GitViewCursorLine',
+    vim.tbl_extend('force', bg_only('CursorLine', '#2c313a'), { underline = true, sp = lnum.fg })
+  )
   -- Also defined by `ui.list`, alike, so a sha has one color in both panes
   -- whichever module is drawn first.
   set('GitViewCommitSha', { link = 'Identifier' })
@@ -1301,6 +1309,7 @@ function M.configure_window(win, buf)
     signcolumn = 'no',
     wrap = false,
     cursorline = true,
+    winhighlight = 'CursorLine:GitViewCursorLine',
     foldmethod = 'expr',
     foldexpr = 'v:lua.require("gitview.diff.render").foldexpr()',
     foldtext = 'v:lua.require("gitview.diff.render").foldtext()',
