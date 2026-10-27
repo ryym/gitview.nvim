@@ -72,6 +72,23 @@ local highlights = util.highlights('gitview.highlights', function(set)
     return { bg = h.bg or tonumber(fallback:sub(2), 16), ctermbg = h.ctermbg }
   end
 
+  --- The text color of the first of `names` that colors its text, taken
+  --- foreground-only. A group with a background of its own carries its meaning
+  --- there, and its foreground is only what reads on it, often the normal text
+  --- color: such a group is passed over. So is one drawn reversed, whose
+  --- foreground is shown as the background.
+  --- @param names string[]
+  --- @param fallback {fg: integer, ctermfg: integer}
+  local function fg_only(names, fallback)
+    for _, name in ipairs(names) do
+      local h = vim.api.nvim_get_hl(0, { name = name, link = false })
+      if (h.fg or h.ctermfg) and not (h.bg or h.ctermbg or h.reverse) then
+        return { fg = h.fg or fallback.fg, ctermfg = h.ctermfg or fallback.ctermfg }
+      end
+    end
+    return fallback
+  end
+
   --- `Normal` carries no background of its own when the colorscheme lets the
   --- terminal's background show through, and that color cannot be read back, so
   --- 'background' picks which end of the range to push away from. Falling back
@@ -176,8 +193,18 @@ local highlights = util.highlights('gitview.highlights', function(set)
   -- drops its attributes, the bold among them.
   set('GitViewWinBarText', { nocombine = true })
   set('GitViewSkipped', { link = 'Comment' })
-  set('GitViewStatAdd', { link = 'Added' })
-  set('GitViewStatDelete', { link = 'Removed' })
+  -- A count is text to read, so its color goes on the text, and it has to keep
+  -- it on the header's band, which replaces any background. Colorschemes that
+  -- mark changes with a background leave `Added` no green text to take, hence
+  -- the other groups that commonly color added and removed text.
+  set('GitViewStatAdd', fg_only({ 'Added', 'diffAdded', 'GitSignsAdd' }, {
+    fg = light and 0x005523 or 0xb3f6c0,
+    ctermfg = light and 2 or 10,
+  }))
+  set('GitViewStatDelete', fg_only({ 'Removed', 'diffRemoved', 'GitSignsDelete' }, {
+    fg = light and 0x590008 or 0xffc0b9,
+    ctermfg = light and 1 or 9,
+  }))
 
   -- 'statuscolumn' cannot stack groups as extmarks do, so the header's gutter
   -- gets each of its colors with the band's background already in it.

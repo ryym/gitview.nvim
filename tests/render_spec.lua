@@ -607,6 +607,63 @@ test('word colors stand out from a faint diff color', function()
   assert(ok, err)
 end)
 
+-- Colorschemes that mark changes with a background give `Added` the normal text
+-- color as its foreground. Taken as the count's color, it showed no green at
+-- all on a file header's band, which replaces the background.
+test('counts take their color from a group that colors its text', function()
+  local names = { 'Added', 'Removed', 'diffAdded', 'diffRemoved', 'GitSignsAdd', 'GitSignsDelete' }
+  local saved = {}
+  for _, name in ipairs(names) do
+    saved[name] = vim.api.nvim_get_hl(0, { name = name, link = false })
+  end
+  local counts = {
+    'GitViewStatAdd',
+    'GitViewStatDelete',
+    'GitViewFileHeaderStatAdd',
+    'GitViewFileHeaderStatDelete',
+  }
+  local function clear()
+    for _, name in ipairs(counts) do
+      vim.cmd('hi clear ' .. name)
+    end
+  end
+  local function get(name)
+    return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false })
+  end
+  local ok, err = pcall(function()
+    vim.api.nvim_set_hl(0, 'Added', { fg = 0xffffff, bg = 0x20301e })
+    vim.api.nvim_set_hl(0, 'Removed', { fg = 0xffffff, bg = 0x3a1f1c })
+    vim.api.nvim_set_hl(0, 'diffAdded', { fg = 0x00ff00, reverse = true })
+    vim.api.nvim_set_hl(0, 'diffRemoved', { fg = 0xff0000, ctermfg = 1 })
+    vim.api.nvim_set_hl(0, 'GitSignsAdd', { fg = 0x00aa00 })
+    clear()
+    render.setup_highlights()
+    eq(0x00aa00, get('GitViewStatAdd').fg, 'passes over a background and a reversed group')
+    eq(nil, get('GitViewStatAdd').bg)
+    eq(0xff0000, get('GitViewStatDelete').fg, 'takes the first group that colors its text')
+    eq(1, get('GitViewStatDelete').ctermfg)
+    eq(0x00aa00, get('GitViewFileHeaderStatAdd').fg, 'keeps the color on the band')
+    eq(0xff0000, get('GitViewFileHeaderStatDelete').fg, 'keeps the color on the band')
+
+    for _, name in ipairs({ 'diffAdded', 'diffRemoved', 'GitSignsAdd' }) do
+      vim.api.nvim_set_hl(0, name, {})
+    end
+    clear()
+    render.setup_highlights()
+    for _, name in ipairs({ 'GitViewStatAdd', 'GitViewStatDelete' }) do
+      local h = get(name)
+      assert(h.fg and h.fg ~= 0xffffff, name .. ' should fall back to a color of its own')
+    end
+    assert(get('GitViewStatAdd').fg ~= get('GitViewStatDelete').fg, 'add and delete must differ')
+  end)
+  for name, h in pairs(saved) do
+    vim.api.nvim_set_hl(0, name, h)
+  end
+  clear()
+  render.setup_highlights()
+  assert(ok, err)
+end)
+
 test('a colorscheme change puts the groups back', function()
   render.setup_highlights()
   vim.cmd.colorscheme('default')
