@@ -188,6 +188,12 @@ the current tab page and the pane by the current buffer. Keys are not mapped
 in `actions` itself but in `keymaps`, so that a user can map the same functions
 to keys of their own.
 
+A session opens its panes in an order that lets a user's configuration win
+where it can: the default keys are mapped, the window options a user may change
+are set, then the filetype, and last the options the panes are drawn with. The
+filetype is set once each buffer is in its window, since `FileType` runs in a
+window showing the buffer and an ftplugin's `:setlocal` lands there.
+
 Several keys in the diff act on the session rather than on the buffer: `q`
 gives up the whole session, `gf` opens the file as described below, `]f` moves
 the list's cursor — except in the diff of a commit, the working tree or a

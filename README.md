@@ -15,8 +15,9 @@ works.
 :GitView    " open a tab page with the sidebar and the diff
 ```
 
-`:GitView` is the only command; everything else is done inside the tab page it
-opens, described under [The tab page](#the-tab-page) below.
+Everything else is done inside the tab page it opens, described under
+[The tab page](#the-tab-page) below. The keys there can be changed, as described
+under [Customizing](#customizing).
 
 ```lua
 require('gitview').setup({
@@ -285,8 +286,9 @@ meanwhile. `gr` while looking into a range reviews that range instead.
   its sha: what is committed during the review stays in it.
 - **`x` checks off a file**, or every file of a directory or a selection, and
   takes the checks off again once all of them are checked. In the diff it checks
-  off the file being read and goes on to the next one still to be read. `]x`
-  and `[x` go to the next and previous one, round from the other end.
+  off the file being read, or every file a selection touches, and goes on to the
+  next one still to be read. `]x` and `[x` go to the next and previous one,
+  round from the other end, in the diff and in the files pane alike.
 - **A file checked off is marked `✓` and faded**, in the list and on its header
   in the diff. In the list the marks have a column of their own at the left
   edge, which lines them up however deep a tree nests a file. A directory is
@@ -305,27 +307,33 @@ meanwhile. `gr` while looking into a range reviews that range instead.
 Nothing is staged during a review, and `gs` does not switch the layer: a range
 compares two trees, with no index between them.
 
-| key         | in the files pane  | in the commits pane  | in the diff                   |
-| ----------- | ------------------ | -------------------- | ----------------------------- |
-| `<CR>`      | focus the diff     | look into the commit |                               |
-| `<BS>`      | end the review     | back out of it       |                               |
-| `m`         |                    | mark, for a range    |                               |
-| `gr`        |                    | review the commit    |                               |
-| `x`         | check off file/dir |                      | check off this file           |
-| `]x` / `[x` |                    |                      | next / previous file to read  |
-| `<Esc>`     |                    | clear the mark       |                               |
-| `gw`        | ignore whitespace  | ignore whitespace    | ignore whitespace             |
-| `gs`        | staged / unstaged  | staged / unstaged    | staged / unstaged             |
-| `s`         | stage file / dir   |                      | stage the line or selection   |
-| `u`         | unstage file / dir |                      | unstage the line or selection |
-| `S` / `U`   |                    |                      | stage / unstage this hunk     |
-| `]f` / `[f` |                    |                      | next / previous file          |
-| `]r` / `[r` |                    |                      | next / previous commit        |
-| `]c` / `[c` |                    |                      | next / previous hunk          |
-| `gf`        | open the file      | open the file        | open the file at this line    |
-| `gy`        |                    |                      | copy the file and line(s)     |
-| `R`         | re-read            | re-read              |                               |
-| `q`         | close              | close                | close                         |
+| key         | in the files pane   | in the commits pane  | in the diff             |
+| ----------- | ------------------- | -------------------- | ----------------------- |
+| `<CR>`      | focus the diff      | look into the commit |                         |
+| `<BS>`      | end the review      | back out of it       |                         |
+| `m`         |                     | mark, for a range    |                         |
+| `gr`        |                     | review the commit    |                         |
+| `x`         | check off rows      |                      | check off files         |
+| `]x` / `[x` | next file to read   |                      | next file to read       |
+| `<Esc>`     |                     | clear the mark       |                         |
+| `gw`        | ignore whitespace   | ignore whitespace    | ignore whitespace       |
+| `gs`        | staged / unstaged   | staged / unstaged    | staged / unstaged       |
+| `s`         | stage rows          |                      | stage lines             |
+| `u`         | unstage rows        |                      | unstage lines           |
+| `S` / `U`   |                     |                      | stage / unstage a hunk  |
+| `]f` / `[f` | next / prev file    | next / prev file     | next / prev file        |
+| `]r` / `[r` |                     |                      | next / prev commit      |
+| `]c` / `[c` |                     |                      | next / prev hunk        |
+| `gf`        | open the file       | open the file        | open it at this line    |
+| `gy`        |                     |                      | copy the file and lines |
+| `R`         | re-read             | re-read              | re-read                 |
+| `q`         | close               | close                | close                   |
+
+`x`, `s`, `u` and `gy` take the row under the cursor, or every row a visual
+selection covers. `]f` and `[f` in a list move its cursor to the next file's
+row, passing over directories, and in the commits pane only among the files of
+a commit looked into. In the diff they move to the next file's header, or, when
+it shows one file, the list's cursor to the next file.
 
 `gf` opens the file in the tab page `:GitView` was first run from, and leaves the
 session open to come back to. From the diff it lands on the line under the
@@ -353,9 +361,10 @@ the index and in the working tree both has no obvious sense in which it is
 staged or not, and a row here states that state rather than hiding it.
 
 Where the key is pressed decides what it acts on. In the list, `s` and `u` take
-the whole file, or every file of a directory in a tree. In the diff they take
-the row under the cursor, or the rows a visual selection covers, and `S` and `U`
-take the whole change the cursor is in.
+the whole file, or every file of a directory in a tree, or of the rows a visual
+selection covers. A selection holding an unresolved conflict is refused, as a
+directory is. In the diff they take the row under the cursor, or the rows a
+visual selection covers, and `S` and `U` take the whole change the cursor is in.
 Both panes are re-read from git afterwards.
 
 Because the diff is a mixed view, the two directions are never ambiguous even
@@ -510,6 +519,186 @@ colors without its bold, and the rest link to standard groups. All are defined t
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
 carries configuration, and the colors do not depend on it.
+
+## Customizing
+
+Everything a key does in the tab page is a Lua function, an action, and each
+pane has a filetype of its own. Keys are changed the way they are in any other
+buffer: mapped from a `FileType` autocommand or an ftplugin. There is no table
+of keys in `setup()`.
+
+The actions, the subcommands and the filetypes may still change in name or
+arguments until the plugin is stable.
+
+### Commands
+
+`:GitView` with no argument opens a tab page. The rest act on the tab page of
+the current one, and say so when it has none.
+
+| command                    | what it does                          |
+| -------------------------- | ------------------------------------- |
+| `:GitView open`            | the same as `:GitView`                |
+| `:GitView close`           | close, asking about a review part way |
+| `:GitView refresh`         | re-read the repository                |
+| `:GitView layer`           | show the next layer, as `gs` does     |
+| `:GitView layer {layer}`   | `both`, `staged` or `unstaged`        |
+| `:GitView whitespace`      | toggle ignoring whitespace, as `gw`   |
+| `:GitView whitespace on`   | ignore whitespace; `off` to stop      |
+
+### Actions
+
+The actions are the functions of `require('gitview.actions')`. Each acts on the
+tab page of the current one, in the pane the cursor is in.
+
+| action                        | panes           | default key |
+| ----------------------------- | --------------- | ----------- |
+| `focus_diff`                  | files, commits  | `<CR>`      |
+| `look_into`                   | commits         | `<CR>`      |
+| `back_out`                    | commits         | `<BS>`      |
+| `start_review`                | commits         | `gr`        |
+| `end_review`                  | files           | `<BS>`      |
+| `start_range`                 | commits         | `m`         |
+| `clear_range`                 | commits         | `<Esc>`     |
+| `toggle_check`                | files, diff     | `x`         |
+| `next_unread` / `prev_unread` | files, diff     | `]x` / `[x` |
+| `stage` / `unstage`           | files, diff     | `s` / `u`   |
+| `stage_hunk` / `unstage_hunk` | diff            | `S` / `U`   |
+| `next_file` / `prev_file`     | all three       | `]f` / `[f` |
+| `next_commit` / `prev_commit` | diff            | `]r` / `[r` |
+| `next_hunk` / `prev_hunk`     | diff            | `]c` / `[c` |
+| `open_file`                   | all three       | `gf`        |
+| `copy_location`               | diff            | `gy`        |
+| `toggle_ignore_whitespace`    | any window      | `gw`        |
+| `set_ignore_whitespace(bool)` | any window      |             |
+| `cycle_layer`                 | any window      | `gs`        |
+| `set_layer(layer)`            | any window      |             |
+| `refresh`                     | any window      | `R`         |
+| `close(opts?)`                | any window      | `q`         |
+
+- **`close()` asks first** if a review is part way through, as `q` does.
+  `close({ force = true })` does not.
+- **"Any window" is any window of the tab page**, such as help opened there,
+  as well as the panes. The other actions do nothing outside their panes.
+- **`look_into` on the working tree** focuses the files pane, as `<CR>` does.
+- **`start_review`, `toggle_check`, `stage` and `unstage` say why they do
+  nothing** in a pane where they mean nothing, as the default keys do in the
+  commits pane.
+
+Every action returns whether it did anything. `true` covers a message saying why
+it could not; `false` means nothing happened and nothing was said, so the key
+is free for something else. That is the case with no tab page, outside the
+panes the action works in, and where there is nothing to do: `clear_range` with
+no range, `back_out` with nothing looked into, `end_review` with no review,
+`look_into` while looking into a commit already, a move with nowhere to go, or
+a setter given the value already set.
+
+What an action sets off may not be over when it returns. The action itself is:
+the cursor has moved, or the index has been written, or the file checked off.
+Re-reading the status and drawing the diff can come later. After `stage()`, for
+one, the index has changed but the panes have not, and another `stage()` is
+refused until they have. `refresh()` is all of it later.
+
+### Filetypes
+
+| pane             | filetype          |
+| ---------------- | ----------------- |
+| the files pane   | `gitview-files`   |
+| the commits pane | `gitview-commits` |
+| the diff         | `gitview-diff`    |
+
+`FileType` runs in the pane's window, once its default keys are mapped. A key
+mapped from there replaces the default one, and a window option set there is
+the pane's.
+
+### Mapping keys
+
+```lua
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = { 'gitview-files', 'gitview-commits', 'gitview-diff' },
+  callback = function(ev)
+    local a = require('gitview.actions')
+    local opts = { buffer = ev.buf, nowait = true }
+    -- move s to <C-s>
+    vim.keymap.del({ 'n', 'x' }, 's', { buffer = ev.buf })
+    vim.keymap.set({ 'n', 'x' }, '<C-s>', a.stage, opts)
+
+    -- go on to the next file after the last change
+    if ev.match == 'gitview-diff' then
+      vim.keymap.set('n', ']c', function()
+        if not a.next_hunk() then
+          a.next_file()
+        end
+      end, opts)
+    end
+  end,
+})
+```
+
+- **Give the mapping `nowait`.** Without it, a key that begins a global mapping
+  waits for the rest of it, and runs that mapping when the next key comes soon
+  enough: `m` and then `d` would be someone's `md`.
+- **Map to the function, or to `<Cmd>`**, for an action taking a visual
+  selection. A mapping going through the command line, as `:<C-u>lua ...<CR>`
+  does, has left visual mode before the action runs.
+- **Look at the return value to pass a key on.** The default `<BS>` and `<Esc>`
+  do what they are mapped to elsewhere when the action does nothing:
+
+  ```lua
+  vim.keymap.set('n', '<Esc>', function()
+    if not a.clear_range() then
+      vim.cmd.nohlsearch()
+    end
+  end, opts)
+  ```
+
+- **`vim.keymap.del` fails on a key the pane does not map.** The panes map
+  different keys; see the table under [Reviewing a range](#reviewing-a-range).
+- **`<CR>` and `<BS>` are different actions by pane.** A key mapped in more than
+  one pane picks its action by `ev.match`. The default `<CR>` of the commits
+  pane is `a.look_into() or a.focus_diff()`.
+
+To map every key yourself, turn the default ones off:
+
+```lua
+require('gitview').setup({ default_keymaps = false })
+```
+
+That takes the diff's `zo`, `zO`, `za` and `zA` with them. They open folds as
+usual, except a file's first fold, the unchanged lines above its first change,
+which they open upwards so that the change stays where it is on the screen.
+They hide a global mapping of those keys in the diff, and `zv`, `zR`, a fold
+opened by a search or the mouse, or another key mapped to `za` opens a file's
+first fold as Neovim does. With `'wrap'` on, the change can move by a row or
+two.
+
+### Window options
+
+The panes are given some window options before their filetype is set, which an
+ftplugin can change:
+
+| pane    | options                                           |
+| ------- | ------------------------------------------------- |
+| files   | `'wrap'`, `'cursorline'`                          |
+| commits | `'wrap'`                                          |
+| diff    | `'wrap'`, `'cursorline'`, line numbers; see below |
+
+The rest of the options they are drawn with are set after it, over whatever an
+ftplugin set:
+
+- **Both lists**: `'statuscolumn'`, `'winbar'`, `'number'`,
+  `'relativenumber'`, `'signcolumn'`, `'conceallevel'`, `'concealcursor'`,
+  `'winfixwidth'` and `'winfixbuf'`.
+- **The commits pane**, as well: `'cursorline'`, which is off while a range is
+  shown, and `'winfixheight'`.
+- **The diff**: `'statuscolumn'`, `'winbar'`, `'signcolumn'`, `'foldcolumn'`,
+  `'foldmethod'`, `'foldexpr'`, `'foldtext'`, `'foldenable'`, `'foldlevel'`,
+  `'foldminlines'` and `'winfixbuf'`.
+
+The gutter is drawn by `'statuscolumn'`, so `'signcolumn'`, `'foldcolumn'` and,
+in the lists, the line numbers would only take room beside it. Options the panes
+are not given, such as `'scrolloff'` or `'colorcolumn'`, are yours as they would
+be in any other window. `:setlocal` once a pane is open is not stopped, though
+changing an option it is drawn with can leave it drawn wrong.
 
 ## Known limitations
 
