@@ -5,6 +5,7 @@
 --- filetype is set, so that a user mapping the same key from a `FileType`
 --- autocommand or an ftplugin always does so after, and wins.
 local actions = require('gitview.actions')
+local config = require('gitview.config')
 local keymap = require('gitview.diff.keymap')
 local util = require('gitview.util')
 
@@ -136,9 +137,12 @@ local function map_all(buf, keys)
   end
 end
 
---- Map the default keys in each pane of a session.
+--- Map the default keys in each pane of a session, unless they are turned off.
 --- @param s gitview.Session
 function M.set(s)
+  if not config.values.default_keymaps then
+    return
+  end
   for pane, buf in pairs({ files = s.files_buf, commits = s.commits_buf, diff = s.diff_buf }) do
     map_all(buf, SHARED)
     map_all(buf, PANES[pane])

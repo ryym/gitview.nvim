@@ -393,6 +393,22 @@ test('session: a key mapped from FileType replaces the default one', function()
   end)
 end)
 
+test('session: default_keymaps = false maps no key of its own', function()
+  local config = require('gitview.config')
+  config.values.default_keymaps = false
+  local ok, err = pcall(with_session, base, function(s)
+    for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
+      for _, mode in ipairs({ 'n', 'x' }) do
+        for _, m in ipairs(vim.api.nvim_buf_get_keymap(buf, mode)) do
+          assert(not vim.startswith(m.desc or '', 'gitview: '), 'mapped ' .. m.lhs)
+        end
+      end
+    end
+  end)
+  config.values.default_keymaps = true
+  assert(ok, err)
+end)
+
 -- `FileType` runs in a window showing the buffer when the tab page has one,
 -- which is what makes `:setlocal` there reach the pane.
 test('session: FileType sets the options a user may set, and no others', function()

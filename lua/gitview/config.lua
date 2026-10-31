@@ -16,6 +16,8 @@ local M = {}
 --- @field no_highlight string[] filetypes shown without syntax highlighting
 --- @field list_style 'flat'|'tree' whether the sidebar lists files by their
 ---        paths alone or as a tree of directories
+--- @field default_keymaps boolean whether a session's panes are given the
+---        default keys; without them every key is the user's to map
 
 --- @type gitview.Config
 M.values = {
@@ -29,6 +31,7 @@ M.values = {
   commit_ratio = 0.4,
   no_highlight = {},
   list_style = 'flat',
+  default_keymaps = true,
 }
 
 --- @param opts? gitview.Config
