@@ -546,6 +546,70 @@ test('review: `x` over rows of several files in the diff checks each off', funct
   end, { tree = true })
 end)
 
+--- The row of the files pane its cursor is on.
+--- @param s gitview.Session
+--- @return integer
+local function files_cursor(s)
+  return vim.api.nvim_win_get_cursor(s.files_win)[1]
+end
+
+test('review: `]f` in the files pane goes from file to file, passing over directories', function()
+  with_session(history, function(s)
+    review_second(s)
+    vim.api.nvim_win_set_cursor(s.files_win, { 1, 0 })
+    press(s, ']f')
+    eq(2, files_cursor(s))
+    eq(s.files_win, vim.api.nvim_get_current_win())
+    eq({ kind = 'commit_file', index = 1, review = true }, s.selected)
+    press(s, ']f')
+    eq(3, files_cursor(s))
+    eq(2, s.selected.index)
+    press(s, ']f')
+    eq(3, files_cursor(s))
+    press(s, '[f')
+    press(s, '[f')
+    eq(2, files_cursor(s), 'the directory above is passed over')
+  end, { tree = true })
+end)
+
+test('review: `]f` in the commits pane goes through the files of a commit looked into', function()
+  with_session(history, function(s)
+    goto_commit(s, 2)
+    local row = vim.api.nvim_win_get_cursor(s.commits_win)[1]
+    press(s, ']f', s.commits_win)
+    eq(row, vim.api.nvim_win_get_cursor(s.commits_win)[1], 'a commit is no file')
+    press(s, '<CR>', s.commits_win)
+    press(s, ']f', s.commits_win)
+    eq(2, vim.api.nvim_win_get_cursor(s.commits_win)[1])
+    eq({ kind = 'commit_file', index = 2 }, s.selected)
+  end)
+end)
+
+test('review: `]x` in the files pane goes to the next file still to be read', function()
+  with_session(history, function(s)
+    review_second(s)
+    vim.api.nvim_win_set_cursor(s.files_win, { 2, 0 })
+    press(s, 'x')
+    -- from the directory's row, which stands before its first file
+    vim.api.nvim_win_set_cursor(s.files_win, { 1, 0 })
+    press(s, ']x')
+    eq(3, files_cursor(s))
+    eq(s.files_win, vim.api.nvim_get_current_win())
+    press(s, 'x')
+    eq({ 'every file is checked' }, notified(function()
+      press(s, '[x')
+    end))
+  end, { tree = true })
+end)
+
+test('review: `]x` in the files pane says why outside a review', function()
+  with_session(history, function(s)
+    eq({ 'files are checked off during a review' }, notified(function()
+      press(s, ']x')
+    end))
+  end)
+end)
+
 test('review: the same file looked into is not marked', function()
   with_session(history, function(s)
     review_second(s)

@@ -2856,6 +2856,60 @@ function M.step_open(s, dir)
   go_to_open(s, paths, at, many == true, dir)
 end
 
+--- Go on to the next file still to be read in `dir`, from the row the files
+--- pane's cursor is on; see `go_to_open`. A directory's row stands just before
+--- its first file.
+--- @param s gitview.Session
+--- @param win integer the files pane, or a window split off from it
+--- @param dir 1|-1
+function M.step_listed_open(s, win, dir)
+  local r = s.review
+  if not r then
+    util.info('files are checked off during a review')
+    return
+  end
+  local paths = review_paths(r)
+  local t = list.target_at(s.files_buf, vim.api.nvim_win_get_cursor(win)[1])
+  local from = dir > 0 and 0 or #paths + 1
+  if t and t.review and t.kind == 'commit_file' then
+    from = t.index
+  elseif t and t.review and t.kind == 'commit_dir' then
+    local _, indices = files_in(r.scope.changes, assert(t.path))
+    if indices[1] then
+      from = dir > 0 and indices[1] - 1 or indices[1]
+    end
+  end
+  local to = review.next_open(r.checks, paths, from, dir)
+  if not to then
+    util.info('every file is checked')
+    return
+  end
+  select_nth(s, { kind = 'commit_file', index = to, review = true }, to)
+end
+
+--- Move a list's cursor to the next row of a file in `dir`, passing over the
+--- rows of directories, and show it. The focus stays in the list.
+--- @param s gitview.Session
+--- @param win integer a list pane, or a window split off from one
+--- @param dir 1|-1
+--- @return boolean moved false when no file's row is that way, as in the
+---         commits pane while no commit is being looked into
+function M.step_listed_file(s, win, dir)
+  local buf = vim.api.nvim_win_get_buf(win)
+  local count = vim.api.nvim_buf_line_count(buf)
+  local row = vim.api.nvim_win_get_cursor(win)[1] + dir
+  while row >= 1 and row <= count do
+    local t = list.target_at(buf, row)
+    if t and (t.kind == 'file' or t.kind == 'commit_file') then
+      vim.api.nvim_win_set_cursor(win, { row, 0 })
+      M.follow_cursor(s, win)
+      return true
+    end
+    row = row + dir
+  end
+  return false
+end
+
 --- Move to the next file in `dir` from the one the diff shows.
 ---
 --- A commit's or a directory's diff is many files in one buffer, so moving

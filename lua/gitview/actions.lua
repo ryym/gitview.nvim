@@ -196,15 +196,22 @@ end
 --- @param dir 1|-1
 --- @return boolean
 local function step_unread(dir)
-  local s = at_cursor({ diff = true })
+  local s, pane = at_cursor({ files = true, diff = true })
   if not s then
     return false
   end
-  require('gitview.ui.session').step_open(s, dir)
+  local session = require('gitview.ui.session')
+  if pane == 'files' then
+    session.step_listed_open(s, vim.api.nvim_get_current_win(), dir)
+  else
+    session.step_open(s, dir)
+  end
   return true
 end
 
---- Go to the next file under review still to be read.
+--- Go to the next file under review still to be read, going round from the
+--- other end. In the files pane, the list's cursor moves there and the focus
+--- stays.
 --- @return boolean
 function M.next_unread()
   return step_unread(1)
@@ -267,12 +274,22 @@ end
 --- @param dir 1|-1
 --- @return boolean
 local function step_file(dir)
-  local s = at_cursor({ diff = true })
-  return s ~= nil and require('gitview.ui.session').step_file(s, dir)
+  local s, pane = at_cursor(ALL)
+  if not s then
+    return false
+  end
+  local session = require('gitview.ui.session')
+  if pane == 'diff' then
+    return session.step_file(s, dir)
+  end
+  return session.step_listed_file(s, vim.api.nvim_get_current_win(), dir)
 end
 
---- Go to the next file: in a diff of many files, its header; otherwise the
---- next file of the list, shown in the diff.
+--- Go to the next file. In a list, the cursor moves to the next row of a file,
+--- passing over directories; in the commits pane, only among the files of a
+--- commit being looked into. In the diff, a diff of many files moves to the
+--- next one's header, and any other the list's cursor to the next file, shown
+--- in the diff.
 --- @return boolean false when there is no next file
 function M.next_file()
   return step_file(1)
