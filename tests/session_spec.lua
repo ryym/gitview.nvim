@@ -402,6 +402,7 @@ test('session: FileType sets the options a user may set, and no others', functio
     vim.wo.signcolumn = 'yes'
     vim.wo.foldenable = false
     vim.wo.scrolloff = 7
+    vim.wo.number = true
   end, function()
     with_session(base, function(s)
       for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
@@ -414,10 +415,13 @@ test('session: FileType sets the options a user may set, and no others', functio
       -- the session turns it off and on itself
       eq(true, vim.wo[s.commits_win].cursorline)
       eq(true, vim.wo[s.diff_win].foldenable)
+      -- the diff's own numbers, which the lists have none of
+      eq(true, vim.wo[s.diff_win].number)
+      eq(false, vim.wo[s.files_win].number)
     end)
   end)
   vim.o.wrap, vim.o.cursorline, vim.o.signcolumn = false, false, 'auto'
-  vim.o.foldenable, vim.o.scrolloff = true, 0
+  vim.o.foldenable, vim.o.scrolloff, vim.o.number = true, 0, false
 end)
 
 --- @param s gitview.Session

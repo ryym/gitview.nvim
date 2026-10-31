@@ -203,8 +203,10 @@ end)
 --- What the gutter shows on `row` of `buf`, as 'statuscolumn' draws it.
 --- @param buf integer
 --- @param row integer
+--- @param options? table<string, any> window options set over the defaults,
+---        as an ftplugin would
 --- @return string
-local function gutter_at(buf, row)
+local function gutter_at(buf, row, options)
   local win = vim.api.nvim_open_win(buf, false, {
     relative = 'editor',
     width = 60,
@@ -213,6 +215,9 @@ local function gutter_at(buf, row)
     col = 1,
   })
   render.set_window_defaults(win)
+  for name, value in pairs(options or {}) do
+    vim.api.nvim_set_option_value(name, value, { scope = 'local', win = win })
+  end
   render.fix_window(win)
   vim.g.statusline_winid = win
   vim.v.lnum = row
@@ -228,28 +233,27 @@ test("each header's gutter carries its background", function()
   eq((' '):rep(12), gutter_at(buf, view.files[2].row - 1), 'the blank line in front is left blank')
 end)
 
-test('buffer_lnum puts the rows own numbers before the gutter', function()
-  local config = require('gitview.config')
+test("'number' puts the rows own numbers before the gutter", function()
   local buf, view = build({ LUA, PERL })
   local header = view.files[2].row
   local plain_header, plain_blank = gutter_at(buf, header), gutter_at(buf, header - 1)
-  config.values.buffer_lnum = true
-  local ok, err = pcall(function()
-    eq('%#GitViewFileHeaderBg#%l ' .. plain_header, gutter_at(buf, header), 'the band runs through it')
-    eq('%l ' .. plain_blank, gutter_at(buf, header - 1))
-  end)
-  config.values.buffer_lnum = false
-  assert(ok, err)
+  for _, options in ipairs({ { number = true }, { relativenumber = true } }) do
+    eq(
+      '%#GitViewFileHeaderBg#%l ' .. plain_header,
+      gutter_at(buf, header, options),
+      'the band runs through it'
+    )
+    eq('%l ' .. plain_blank, gutter_at(buf, header - 1, options))
+  end
 end)
 
-test("buffer_lnum numbers rows as the user's 'number' and 'relativenumber' say", function()
-  local config = require('gitview.config')
+-- A window takes the global values when it is opened, and the files' line
+-- numbers are in the gutter already.
+test("a diff window shows no numbers of its own, whatever 'number' is elsewhere", function()
   local buf = build({ LUA })
-  --- @param number boolean
-  --- @param relative boolean
-  --- @return {number: boolean, relativenumber: boolean}
-  local function configured(number, relative)
-    vim.go.number, vim.go.relativenumber = number, relative
+  local kept = { vim.go.number, vim.go.relativenumber }
+  vim.go.number, vim.go.relativenumber = true, true
+  local ok, err = pcall(function()
     local win = vim.api.nvim_open_win(buf, false, {
       relative = 'editor',
       width = 60,
@@ -259,20 +263,9 @@ test("buffer_lnum numbers rows as the user's 'number' and 'relativenumber' say",
     })
     render.set_window_defaults(win)
     render.fix_window(win)
-    local got = { number = vim.wo[win].number, relativenumber = vim.wo[win].relativenumber }
+    eq({ false, false }, { vim.wo[win].number, vim.wo[win].relativenumber })
     vim.api.nvim_win_close(win, true)
-    return got
-  end
-  local kept = { vim.go.number, vim.go.relativenumber }
-  config.values.buffer_lnum = true
-  local ok, err = pcall(function()
-    eq({ number = false, relativenumber = true }, configured(false, true))
-    eq({ number = true, relativenumber = true }, configured(true, true))
-    eq({ number = true, relativenumber = false }, configured(false, false), 'both off would show nothing')
-    config.values.buffer_lnum = false
-    eq({ number = false, relativenumber = false }, configured(true, true), 'off, they are not shown')
   end)
-  config.values.buffer_lnum = false
   vim.go.number, vim.go.relativenumber = kept[1], kept[2]
   assert(ok, err)
 end)

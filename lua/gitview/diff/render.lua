@@ -1,5 +1,4 @@
 local color = require('gitview.diff.color')
-local config = require('gitview.config')
 local hl = require('gitview.diff.highlight')
 local util = require('gitview.util')
 local worddiff = require('gitview.diff.worddiff')
@@ -1078,8 +1077,9 @@ end
 --- Gutter is drawn through 'statuscolumn' rather than written into the buffer so
 --- that the line numbers stay out of a yank.
 ---
---- With `buffer_lnum`, the row's own number comes first, the one `G` and `:N`
---- count in. A header's band runs through it too.
+--- With 'number' or 'relativenumber' on, the row's own number comes first, the
+--- one `G` and `:N` count in, drawn as they say. A header's band runs through it
+--- too.
 --- @return string
 function M.statuscolumn()
   local win = vim.g.statusline_winid
@@ -1090,7 +1090,7 @@ function M.statuscolumn()
     return ''
   end
   local g = gutter(win, view)
-  if not config.values.buffer_lnum then
+  if not (vim.wo[win].number or vim.wo[win].relativenumber) then
     return g
   end
   local l = view.lines[vim.v.lnum]
@@ -1344,31 +1344,16 @@ function M.foldtext()
   return { { text .. ' ', 'GitViewCommitAuthor' } }
 end
 
---- 'number' and 'relativenumber' for a diff window. They decide what the `%l`
---- of 'statuscolumn' shows, and it is left empty with both off. With
---- `buffer_lnum` they are the user's own, relative numbers included, but for
---- both being off, which would leave nothing to show. The global values are
---- the ones set up for every window, where the window's may be those of
---- whatever it was split from.
---- @return {number: boolean, relativenumber: boolean}
-local function lnum_options()
-  if not config.values.buffer_lnum then
-    return { number = false, relativenumber = false }
-  end
-  local function global(name)
-    return vim.api.nvim_get_option_value(name, { scope = 'global' })
-  end
-  local number, relative = global('number'), global('relativenumber')
-  return { number = number or not relative, relativenumber = relative }
-end
-
 --- Give a diff window the options a user may set otherwise, from an ftplugin
 --- of `gitview-diff` among other ways. Set before the filetype, so that one
 --- set there wins.
 --- @param win integer
 function M.set_window_defaults(win)
-  util.configure_window_options(win, lnum_options())
   util.configure_window_options(win, {
+    -- The files' own line numbers are in the gutter already, and the diff
+    -- buffer's would make a third column of them.
+    number = false,
+    relativenumber = false,
     wrap = false,
     cursorline = true,
   })

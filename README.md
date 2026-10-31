@@ -454,15 +454,16 @@ Both sides of the trade-off are measured in
 ### The diff's own line numbers
 
 The numbers in a diff's gutter are the files' lines, while `G` and `:N` go by
-the rows of the diff buffer. Its own numbers can be shown before the gutter too,
-at the cost of a third column of numbers:
+the rows of the diff buffer. Its own numbers are shown before the gutter, at the
+cost of a third column of numbers, when `'number'` or `'relativenumber'` is on
+in the diff's window. Both are off there to begin with, whatever they are
+elsewhere. To turn them on, set them in an ftplugin of the `gitview-diff`
+filetype, such as `after/ftplugin/gitview-diff.lua`:
 
 ```lua
-require('gitview').setup({ buffer_lnum = true })
+vim.opt_local.number = true
+vim.opt_local.relativenumber = true
 ```
-
-They are drawn as `'number'` and `'relativenumber'` say, so relative numbers
-are relative here too. With both off they are absolute.
 
 ### Highlight groups
 
