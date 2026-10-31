@@ -89,6 +89,21 @@ test('actions: a setter says nothing changed when it is set already', function()
   end)
 end)
 
+test('actions: neither gitview nor its actions load the rest when required', function()
+  local script = table.concat({
+    "require('gitview').setup({})",
+    "require('gitview.actions')",
+    "io.write(tostring(package.loaded['gitview.ui.session'] ~= nil))",
+  }, '; ')
+  local out = vim
+    .system({ 'nvim', '--headless', '--clean', '--cmd', 'set rtp+=.', '-l', '-' }, {
+      stdin = script,
+      text = true,
+    })
+    :wait()
+  eq('false', out.stdout, out.stderr)
+end)
+
 test('actions: a window that is no pane takes only the actions on the session', function()
   with_session(history, function(s)
     vim.cmd.new()
