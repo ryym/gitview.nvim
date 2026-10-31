@@ -143,7 +143,8 @@ test('the winbar names the file the top of the window is in', function()
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
   vim.g.statusline_winid = win
   local function scroll_to(top)
     vim.api.nvim_win_call(win, function()
@@ -183,7 +184,8 @@ test('the winbar leaves only the file bold', function()
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
   vim.g.statusline_winid = win
   vim.api.nvim_win_call(win, function()
     vim.wo.foldenable = false
@@ -210,7 +212,8 @@ local function gutter_at(buf, row)
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
   vim.g.statusline_winid = win
   vim.v.lnum = row
   local gutter = render.statuscolumn()
@@ -254,7 +257,8 @@ test("buffer_lnum numbers rows as the user's 'number' and 'relativenumber' say",
       row = 1,
       col = 1,
     })
-    render.configure_window(win, buf)
+    render.set_window_defaults(win)
+    render.fix_window(win)
     local got = { number = vim.wo[win].number, relativenumber = vim.wo[win].relativenumber }
     vim.api.nvim_win_close(win, true)
     return got
@@ -453,7 +457,8 @@ test('a fold of the staged layer alone stays open across a redraw', function()
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
   eq(nil, view.lines[2].new_lnum)
   assert(view.lines[2].folded, 'expected the run to fold from its first row')
   vim.api.nvim_win_call(win, function()

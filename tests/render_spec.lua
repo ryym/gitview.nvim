@@ -195,7 +195,8 @@ test('the gutter is numbered for source lines and blank for the rest', function(
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
   vim.g.statusline_winid = win
 
   local source_row, folded_row
@@ -246,7 +247,8 @@ test('the bar of an opened fold bends at its first and last rows', function()
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
   vim.g.statusline_winid = win
 
   local first, last
@@ -306,7 +308,8 @@ test('each run of unchanged lines away from a change is a closed fold', function
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
 
   local runs = {}
   for i, l in ipairs(view.lines) do
@@ -341,7 +344,8 @@ local function foldtext_of(buf, width, first, last)
     row = 1,
     col = 1,
   })
-  render.configure_window(win, buf)
+  render.set_window_defaults(win)
+  render.fix_window(win)
   local chunks = vim.api.nvim_win_call(win, function()
     vim.v.foldstart, vim.v.foldend = first, last
     return render.foldtext()

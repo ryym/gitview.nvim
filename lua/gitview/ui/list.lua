@@ -617,7 +617,7 @@ local CURSOR_PRIORITY = vim.hl.priorities.user + 1
 --- @return integer bufnr
 function M.create_buffer()
   M.setup_highlights()
-  return util.scratch_buffer('gitview-list', states)
+  return util.scratch_buffer(states)
 end
 
 --- @param buf integer from `create_buffer`
@@ -777,16 +777,32 @@ function M.paint_upstream(buf, upstream, unpushed)
   end
 end
 
+--- Give a sidebar window the options a user may set otherwise, from an
+--- ftplugin among other ways. Set before the filetype, so that one set there
+--- wins.
 --- @param win integer
-function M.configure_window(win)
+function M.set_window_defaults(win)
+  util.configure_window_options(win, {
+    wrap = false,
+    cursorline = true,
+  })
+end
+
+--- Give a sidebar window the options it is drawn with. Set after the
+--- filetype, so that these win over one set by an ftplugin: what the window
+--- shows depends on them.
+---
+--- 'number', 'relativenumber' and 'signcolumn' are among them because
+--- 'statuscolumn' draws the whole gutter, which has no line numbers, and they
+--- would only take room beside it.
+--- @param win integer
+function M.fix_window(win)
   util.configure_window_options(win, {
     winbar = '%!v:lua.require("gitview.ui.list").winbar()',
     statuscolumn = '%!v:lua.require("gitview.ui.list").statuscolumn()',
     number = false,
     relativenumber = false,
     signcolumn = 'no',
-    wrap = false,
-    cursorline = true,
     -- What a span conceals stays hidden on the cursor line too, or the row under
     -- the cursor would be the one whose subject is out of line with the rest.
     -- `c` covers the line 'incsearch' moves the cursor to while a search is typed.

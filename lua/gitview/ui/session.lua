@@ -3043,9 +3043,30 @@ function M.open()
     win = s.files_win,
   })
 
-  list.configure_window(s.files_win)
-  list.configure_window(s.commits_win)
-  render.configure_window(s.diff_win, s.diff_buf)
+  -- The order is what lets a user's configuration of a pane win where it can
+  -- and not where it cannot. The filetype comes once the panes are in their
+  -- windows, so that `FileType` runs in each pane's window and an ftplugin
+  -- setting window options sets them there. It comes after the default keys,
+  -- so that a user mapping the same key from there replaces them, and after
+  -- the options a user may change, so that a value set there is kept. The
+  -- options the panes are drawn with come last, over any set there.
+  keymaps.set(s)
+  list.set_window_defaults(s.files_win)
+  list.set_window_defaults(s.commits_win)
+  render.set_window_defaults(s.diff_win)
+  vim.bo[s.files_buf].filetype = 'gitview-files'
+  vim.bo[s.commits_buf].filetype = 'gitview-commits'
+  vim.bo[s.diff_buf].filetype = 'gitview-diff'
+  list.fix_window(s.files_win)
+  list.fix_window(s.commits_win)
+  render.fix_window(s.diff_win)
+  util.configure_window_options(s.commits_win, {
+    -- Turned off while a range is shown, which is painted instead.
+    cursorline = true,
+    -- Pinned so that a window opened or closed in the sidebar leaves the
+    -- commits pane as it is; a resize of the screen sets it again by its share.
+    winfixheight = true,
+  })
   -- Each pane is only ever drawn with its own buffer, so `:edit` or `:bnext`
   -- there is refused rather than leaving a pane the session goes on drawing
   -- into blind. A window split off from a pane does not inherit it, which
@@ -3053,12 +3074,7 @@ function M.open()
   for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
     util.configure_window_options(win, { winfixbuf = true })
   end
-  -- Pinned so that a window opened or closed in the sidebar leaves the commits
-  -- pane as it is; a resize of the screen sets it again by its share.
-  vim.wo[s.commits_win].winfixheight = true
   lay_out(s)
-
-  keymaps.set(s)
 
   for _, buf in ipairs({ s.files_buf, s.commits_buf }) do
     vim.api.nvim_create_autocmd({ 'CursorMoved', 'WinEnter' }, {

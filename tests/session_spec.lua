@@ -352,6 +352,74 @@ test('session: the list buffer carries its keymaps', function()
   end)
 end)
 
+test('session: each pane has a filetype of its own', function()
+  with_session(base, function(s)
+    eq('gitview-files', vim.bo[s.files_buf].filetype)
+    eq('gitview-commits', vim.bo[s.commits_buf].filetype)
+    eq('gitview-diff', vim.bo[s.diff_buf].filetype)
+  end)
+end)
+
+--- Run `fn` with a `FileType` autocommand for the panes, as a user's
+--- configuration would have, calling `callback` with the event.
+--- @param callback fun(ev: table)
+--- @param fn fun()
+local function with_filetype_autocmd(callback, fn)
+  local group = vim.api.nvim_create_augroup('gitview.test.filetype', { clear = true })
+  vim.api.nvim_create_autocmd('FileType', {
+    group = group,
+    pattern = { 'gitview-files', 'gitview-commits', 'gitview-diff' },
+    callback = callback,
+  })
+  local ok, err = pcall(fn)
+  vim.api.nvim_del_augroup_by_id(group)
+  assert(ok, err)
+end
+
+test('session: a key mapped from FileType replaces the default one', function()
+  local pressed = 0
+  with_filetype_autocmd(function(ev)
+    vim.keymap.set('n', 's', function()
+      pressed = pressed + 1
+    end, { buffer = ev.buf })
+  end, function()
+    with_session(base, function(s, repo)
+      session.select(s, 1)
+      vim.api.nvim_set_current_win(s.files_win)
+      vim.cmd.normal('s')
+      eq(1, pressed)
+      eq(' M edit.txt\n?? loose.txt\n', repo.git('status', '--short'))
+    end)
+  end)
+end)
+
+-- `FileType` runs in a window showing the buffer when the tab page has one,
+-- which is what makes `:setlocal` there reach the pane.
+test('session: FileType sets the options a user may set, and no others', function()
+  with_filetype_autocmd(function()
+    vim.wo.wrap = true
+    vim.wo.cursorline = false
+    vim.wo.signcolumn = 'yes'
+    vim.wo.foldenable = false
+    vim.wo.scrolloff = 7
+  end, function()
+    with_session(base, function(s)
+      for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
+        eq(true, vim.wo[win].wrap)
+        eq(7, vim.wo[win].scrolloff)
+        eq('no', vim.wo[win].signcolumn)
+      end
+      eq(false, vim.wo[s.files_win].cursorline)
+      eq(false, vim.wo[s.diff_win].cursorline)
+      -- the session turns it off and on itself
+      eq(true, vim.wo[s.commits_win].cursorline)
+      eq(true, vim.wo[s.diff_win].foldenable)
+    end)
+  end)
+  vim.o.wrap, vim.o.cursorline, vim.o.signcolumn = false, false, 'auto'
+  vim.o.foldenable, vim.o.scrolloff = true, 0
+end)
+
 --- @param s gitview.Session
 --- @return string[]
 local function diff_rows(s)

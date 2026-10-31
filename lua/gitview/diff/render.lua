@@ -342,7 +342,7 @@ end
 --- keystroke of a file list.
 --- @return integer bufnr
 function M.create_buffer()
-  return util.scratch_buffer('gitview-diff', views)
+  return util.scratch_buffer(views)
 end
 
 --- The row a commit's header folds from. The subject above it stays out of the
@@ -1362,16 +1362,30 @@ local function lnum_options()
   return { number = number or not relative, relativenumber = relative }
 end
 
+--- Give a diff window the options a user may set otherwise, from an ftplugin
+--- of `gitview-diff` among other ways. Set before the filetype, so that one
+--- set there wins.
 --- @param win integer
---- @param buf integer
-function M.configure_window(win, buf)
+function M.set_window_defaults(win)
   util.configure_window_options(win, lnum_options())
+  util.configure_window_options(win, {
+    wrap = false,
+    cursorline = true,
+  })
+end
+
+--- Give a diff window the options it is drawn with. Set after the filetype,
+--- so that these win over one set by an ftplugin: what the window shows
+--- depends on them.
+---
+--- 'signcolumn' and 'foldcolumn' are among them because 'statuscolumn' draws
+--- the whole gutter, and either would only take room beside it.
+--- @param win integer
+function M.fix_window(win)
   util.configure_window_options(win, {
     winbar = '%!v:lua.require("gitview.diff.render").winbar()',
     statuscolumn = '%!v:lua.require("gitview.diff.render").statuscolumn()',
     signcolumn = 'no',
-    wrap = false,
-    cursorline = true,
     foldmethod = 'expr',
     foldexpr = 'v:lua.require("gitview.diff.render").foldexpr()',
     foldtext = 'v:lua.require("gitview.diff.render").foldtext()',
