@@ -8,6 +8,7 @@ local config = require('gitview.config')
 local git = require('gitview.git')
 local index = require('gitview.index')
 local keymap = require('gitview.diff.keymap')
+local keymaps = require('gitview.keymaps')
 local list = require('gitview.ui.list')
 local perf = require('gitview.perf')
 local place = require('gitview.diff.place')
@@ -1593,14 +1594,16 @@ end
 --- @param like gitview.ListTarget a file of the list, only its kind and the
 ---        list it is in read
 --- @param index integer
+--- @return boolean moved false when the index was past either end, or the
+---         list holds no files
 local function select_nth(s, like, index)
   local scope = like.kind == 'commit_file' and scope_of(s, like)
   local count = like.kind == 'file' and #s.entries or #(scope and scope.changes or {})
   if count == 0 then
-    return
+    return false
   end
-  index = math.max(1, math.min(count, index))
-  local target = { kind = like.kind, index = index, review = like.review } --- @type gitview.ListTarget
+  local clamped = math.max(1, math.min(count, index))
+  local target = { kind = like.kind, index = clamped, review = like.review } --- @type gitview.ListTarget
   local win, buf = pane_of(s, target)
   local row = list.row_of(buf, target)
   if row then
@@ -1609,6 +1612,7 @@ local function select_nth(s, like, index)
   -- The cursor now stands on the row that was asked for, so following it is all
   -- that is left to do.
   sync_selection(s, win)
+  return clamped == index
 end
 
 --- Put the list's cursor on one of the uncommitted files and show it.
@@ -2012,13 +2016,15 @@ end
 --- own, `clear_mark`.
 ---
 --- @param s gitview.Session
+--- @return boolean marked false when the cursor is on no commit
 function M.set_mark(s)
   local target, mark = selected_end(s)
   if not target then
-    return
+    return false
   end
   s.mark = mark
   redraw_list(s, target)
+  return true
 end
 
 --- Clear the mark, if there is one.
@@ -2060,21 +2066,27 @@ end
 --- not already list, so there the cursor goes to the files pane instead.
 ---
 --- @param s gitview.Session
+--- @return boolean handled false when already looking into one, or when the
+---         cursor is on no commit
 function M.enter(s)
+  if s.scope then
+    return false
+  end
   local target, at = selected_end(s)
   if not target then
-    return
+    return false
   end
   local range, label = range_of(s, target)
   if not range then
     if s.review then
       util.info('the uncommitted files are not listed during a review')
-      return
+      return true
     end
     vim.api.nvim_set_current_win(s.files_win)
-    return
+    return true
   end
   look_into(s, range, label, assert(at), first_of(s, target))
+  return true
 end
 
 --- Stop looking into the range, and name the row the commits pane goes back to:
@@ -2096,12 +2108,14 @@ end
 --- Go back to the uncommitted changes, with the cursor on the commit that was
 --- being looked into.
 --- @param s gitview.Session
+--- @return boolean left false when nothing was being looked into
 function M.leave(s)
   local scope = s.scope
   if not scope then
-    return
+    return false
   end
   redraw_list(s, target_of_id(s, close_scope(s, scope)))
+  return true
 end
 
 --- Whether to go on with what throws the review's checks away, asking first
@@ -2134,6 +2148,8 @@ end
 --- The mark is cleared: the range is the review's now, and a range still
 --- painted in the commits pane would look like one still being chosen.
 --- @param s gitview.Session
+--- @return boolean handled false when the cursor is on no commit, or the
+---         working tree has no commit to be reviewed from
 function M.start_review(s)
   local scope = s.scope
   local range, label, first
@@ -2142,25 +2158,25 @@ function M.start_review(s)
   else
     local target = selected_end(s)
     if not target then
-      return
+      return false
     end
     range, label = range_of(s, target)
     first = first_of(s, target)
     if not range then
       local head = git.head(s.root)
       if not head then
-        return
+        return false
       end
       range, label = { old = head.full_sha }, head.sha .. '..working tree'
     end
   end
   if not may_discard(s) then
-    return
+    return true
   end
   local changes, err = git.changed_between(range, s.root, untracked_paths(s))
   if not changes then
     util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
-    return
+    return true
   end
   -- Tell whether the range spans a fork once, here: the ends are fixed, and so
   -- is whether they are on one line.
@@ -2193,6 +2209,7 @@ function M.start_review(s)
   -- Focus the files pane only once drawn, so that entering it finds the
   -- review's files there rather than drawing the uncommitted ones on the way.
   vim.api.nvim_set_current_win(s.files_win)
+  return true
 end
 
 --- End the review, and list the uncommitted files again with the cursor where
@@ -2352,7 +2369,7 @@ end
 --- Open the file the list's cursor is on; see `open_file`.
 --- @param s gitview.Session
 --- @param win integer the pane the key was pressed in
-local function open_listed(s, win)
+function M.open_listed(s, win)
   local buf = vim.api.nvim_win_get_buf(win)
   local target = list.target_at(buf, vim.api.nvim_win_get_cursor(win)[1])
   local item
@@ -2419,10 +2436,14 @@ end
 ---
 --- @param s gitview.Session
 --- @param op 'stage'|'unstage'
-local function apply_to_selected(s, op)
+--- @return boolean handled false when the cursor is on nothing to stage
+function M.apply_to_selected(s, op)
   local target = s.selected
-  if not target or wait_for_read(s) or refuses_review(target) then
-    return
+  if not target then
+    return false
+  end
+  if wait_for_read(s) or refuses_review(target) then
+    return true
   end
   local action, why
   if target.kind == 'dir' then
@@ -2436,7 +2457,7 @@ local function apply_to_selected(s, op)
   elseif target.kind == 'file' then
     local entry = s.entries[target.index]
     if not entry then
-      return
+      return false
     end
     if op == 'stage' then
       action, why = stage.stage(entry)
@@ -2445,19 +2466,20 @@ local function apply_to_selected(s, op)
     end
   else
     util.info('only an uncommitted file can be staged')
-    return
+    return true
   end
   if not action then
     util.info(why or 'nothing to do')
-    return
+    return true
   end
   local err = stage.run(action, s.root)
   if err then
     util.git_error(err)
-    return
+    return true
   end
   s.outdated = true
   M.refresh(s)
+  return true
 end
 
 --- Say why the rows of an unmerged file cannot be staged or unstaged, if
@@ -2505,31 +2527,32 @@ end
 --- @param op 'stage'|'unstage'
 --- @param first integer 1-based row of the diff buffer
 --- @param last integer inclusive
-local function apply_to_rows(s, op, first, last)
+--- @return boolean handled false when the diff shows nothing to stage
+function M.apply_to_rows(s, op, first, last)
   local target = s.selected
   if refuses_review(target) then
-    return
+    return true
   end
   -- The rows of a file would do here, as they do in its own diff, but the index
   -- contents to write them into are read for one file. Of the views of many
   -- files, only a directory's sits among the files that can be staged by row.
   if target and target.kind == 'dir' then
     util.info("lines can be staged only in a single file's diff; the directory's row in the list takes all of its files")
-    return
+    return true
   end
   if wait_for_read(s) then
-    return
+    return true
   end
   local entry = target and target.kind == 'file' and s.entries[target.index] or nil
   if entry and refuses_conflict(entry) then
-    return
+    return true
   end
   local view = render.view_of(s.diff_buf)
   if not entry or not view or not s.index_lines then
-    return
+    return false
   end
   if refuses_layer(s, op) then
-    return
+    return true
   end
   -- Ignoring whitespace folds a line that differs only in whitespace into a
   -- context row, whose text is read from the index. Writing the shown rows back
@@ -2539,17 +2562,17 @@ local function apply_to_rows(s, op, first, last)
   -- rows.
   if s.ignore_whitespace then
     util.warn('whitespace is being ignored; stage the whole file, or stop ignoring it')
-    return
+    return true
   end
   local rows = index.selection(view.lines, first, last, op)
   if #rows == 0 then
     util.info(('nothing to %s here'):format(op))
-    return
+    return true
   end
   local err = index.write(op, entry, index.apply(s.index_lines, rows), s.root)
   if err then
     util.git_error(err)
-    return
+    return true
   end
   -- With one layer alone, what was moved leaves the view, and the change it
   -- was part of with it when it was all of it. The cursor goes on from where
@@ -2563,23 +2586,29 @@ local function apply_to_rows(s, op, first, last)
   end
   s.outdated = true
   M.refresh(s)
+  return true
 end
 
---- The rows a key pressed in the diff pane acts on.
----
---- In visual mode the two ends of the selection are read before leaving it,
---- since the marks that would give them afterwards are only set on the way out.
---- @param visual boolean
---- @return integer first
---- @return integer last
-local function pressed_rows(visual)
-  if not visual then
-    local row = vim.api.nvim_win_get_cursor(0)[1]
-    return row, row
+--- Move the whole change the diff's cursor is in across the index.
+--- @param s gitview.Session
+--- @param op 'stage'|'unstage'
+--- @return boolean handled false when the diff shows nothing to stage
+function M.apply_to_hunk(s, op)
+  local target = s.selected
+  if refuses_review(target) then
+    return true
   end
-  local a, b = vim.fn.line('v'), vim.fn.line('.')
-  vim.cmd.normal({ args = { vim.keycode('<Esc>') }, bang = true })
-  return math.min(a, b), math.max(a, b)
+  local entry = target and target.kind == 'file' and s.entries[target.index]
+  if entry and (refuses_conflict(entry) or refuses_layer(s, op)) then
+    return true
+  end
+  local view = render.view_of(s.diff_buf)
+  local first, last = index.hunk_at(view and view.lines or {}, vim.fn.line('.'))
+  if not first then
+    util.info('not inside a change')
+    return true
+  end
+  return M.apply_to_rows(s, op, first, last)
 end
 
 --- The files a row of the review stands for: its file, or those under its
@@ -2605,11 +2634,12 @@ end
 --- @param s gitview.Session
 --- @param first integer 1-based
 --- @param last integer inclusive
-local function check_rows(s, first, last)
+--- @return boolean handled false when the rows stand for no file
+function M.check_rows(s, first, last)
   local r = s.review
   if not r then
     util.info('files are checked off during a review')
-    return
+    return true
   end
   local paths, seen = {}, {}
   for row = first, last do
@@ -2621,7 +2651,7 @@ local function check_rows(s, first, last)
     end
   end
   if #paths == 0 then
-    return
+    return false
   end
   -- Read each file as it is now, as a row has no view on screen to go by.
   -- `toggle` records what was read only when it checks the files off.
@@ -2631,6 +2661,7 @@ local function check_rows(s, first, last)
   end
   review.toggle(r.checks, paths, reads)
   redraw_checks(s)
+  return true
 end
 
 --- The files the diff shows under review, in order, and which of them the
@@ -2694,7 +2725,7 @@ end
 --- checking go on to the next one to read: read, check, next is how a review
 --- goes. Taking a check off stays, since the file is the one to read again.
 --- @param s gitview.Session
-local function check_shown(s)
+function M.check_shown(s)
   local paths, at, many = shown_review_files(s)
   if not paths then
     util.info(tostring(at))
@@ -2726,215 +2757,59 @@ end
 --- way cannot be stopped, since the session is let go of once it is gone, and
 --- `q` is the one pressed by accident.
 --- @param s gitview.Session
-local function close_asked(s)
+function M.close_asked(s)
   if may_discard(s) then
     M.close(s)
   end
 end
 
---- `x` and `]x`, `[x` in the diff: checking off the file under review being
---- read, and going to the next one still to be read.
+--- Go on to the next file still to be read in `dir`, from the file the diff's
+--- cursor is in; see `go_to_open`.
 --- @param s gitview.Session
-local function set_diff_review_keymaps(s)
-  local map = util.buf_mapper(s.diff_buf)
-  map('x', function()
-    check_shown(s)
-  end, 'check off the file under review the cursor is in')
-  for _, dir in ipairs({ 1, -1 }) do
-    map(dir > 0 and ']x' or '[x', function()
-      local paths, at, many = shown_review_files(s)
-      if not paths then
-        util.info(tostring(at))
-        return
-      end
-      --- @cast at integer
-      go_to_open(s, paths, at, many == true, dir)
-    end, dir > 0 and 'next file still to be read' or 'previous file still to be read')
+--- @param dir 1|-1
+function M.step_open(s, dir)
+  local paths, at, many = shown_review_files(s)
+  if not paths then
+    util.info(tostring(at))
+    return
   end
+  --- @cast at integer
+  go_to_open(s, paths, at, many == true, dir)
 end
 
---- Inside the diff, `s` and `u` work on lines rather than on the whole file:
---- the rows under the cursor or the visual selection, and with a capital, the
---- whole change the cursor is in.
---- @param s gitview.Session
-local function set_diff_stage_keymaps(s)
-  local map = util.buf_mapper(s.diff_buf)
-  for _, op in ipairs({ 'stage', 'unstage' }) do
-    local lhs = op == 'stage' and 's' or 'u'
-    for _, mode in ipairs({ 'n', 'x' }) do
-      map(lhs, function()
-        apply_to_rows(s, op, pressed_rows(mode == 'x'))
-      end, ('%s the selected lines'):format(op), { mode })
-    end
-    map(lhs:upper(), function()
-      local target = s.selected
-      if refuses_review(target) then
-        return
-      end
-      local entry = target and target.kind == 'file' and s.entries[target.index]
-      if entry and (refuses_conflict(entry) or refuses_layer(s, op)) then
-        return
-      end
-      local view = render.view_of(s.diff_buf)
-      local first, last = index.hunk_at(view and view.lines or {}, vim.fn.line('.'))
-      if not first then
-        util.info('not inside a change')
-        return
-      end
-      apply_to_rows(s, op, first, last)
-    end, ('%s this hunk'):format(op))
-  end
-end
-
---- The keys both panes of the sidebar share.
---- @param s gitview.Session
---- @param buf integer
-local function set_shared_keymaps(s, buf)
-  local map = util.buf_mapper(buf)
-  map('R', function()
-    M.refresh(s)
-  end, 'refresh')
-  map('q', function()
-    close_asked(s)
-  end, 'close')
-  map('gf', function()
-    open_listed(s, vim.api.nvim_get_current_win())
-  end, 'open the file under the cursor in the previous tab page')
-end
-
---- What the keys do in the files pane.
---- @param s gitview.Session
-local function set_files_keymaps(s)
-  local map = util.buf_mapper(s.files_buf)
-  map('<CR>', function()
-    vim.api.nvim_set_current_win(s.diff_win)
-  end, 'focus the diff')
-  map('<BS>', function()
-    if not M.end_review(s) then
-      util.run_global_map('n', '<BS>')
-    end
-  end, 'end the review')
-  -- Point `gr` to the commits pane, where the ranges are chosen, rather than
-  -- leave it to Neovim's own `gr` keys.
-  map('gr', function()
-    util.info('a review is started from the commits pane')
-  end, 'nothing to review here')
-  for _, mode in ipairs({ 'n', 'x' }) do
-    map('x', function()
-      check_rows(s, pressed_rows(mode == 'x'))
-    end, 'check off the files under review selected', { mode })
-  end
-  -- `s` and `u` rather than one key toggling: a file with changes on both sides
-  -- has no obvious sense in which it is on or off, and a row here states that
-  -- state rather than hiding it, so the direction is given explicitly.
-  map('s', function()
-    apply_to_selected(s, 'stage')
-  end, 'stage the file or directory under the cursor')
-  map('u', function()
-    apply_to_selected(s, 'unstage')
-  end, 'unstage the file or directory under the cursor')
-  set_shared_keymaps(s, s.files_buf)
-end
-
---- What the keys do in the commits pane.
+--- Move to the next file in `dir` from the one the diff shows.
 ---
---- Separating the panes is what lets each one carry only the keys that mean
---- something in it. `s` and `u` are the exception: they are mapped in order to
---- say why they do nothing, since leaving them unmapped would let `s` reach a
---- buffer that cannot be modified and error.
----
+--- A commit's or a directory's diff is many files in one buffer, so moving
+--- between files there means scrolling within it rather than moving the list's
+--- cursor. Every other view holds one file, and the list's cursor moves on,
+--- the focus staying in the diff: the key was pressed while reading it, and the
+--- next file is read there too.
 --- @param s gitview.Session
-local function set_commits_keymaps(s)
-  local map = util.buf_mapper(s.commits_buf)
-  map('<CR>', function()
-    -- On a commit there is somewhere further in to go; on one of its files the
-    -- row already names what the diff is showing.
-    if s.scope then
-      vim.api.nvim_set_current_win(s.diff_win)
-      return
-    end
-    M.enter(s)
-  end, 'look into the commit or range, or focus the diff')
-  map('<BS>', function()
-    M.leave(s)
-  end, 'back out of the commit')
-  map('m', function()
-    M.set_mark(s)
-  end, 'mark this commit as the far end of a range')
-  -- `g` and a letter, as the other keys that change what the session is doing
-  -- rather than act on a row. Mapped with `<nowait>`, so that Neovim's own
-  -- `grn` and the like do not hold it up.
-  map('gr', function()
-    M.start_review(s)
-  end, 'review the commit or range')
-  map('<Esc>', function()
-    -- `<Esc>` is commonly mapped already, to `:nohlsearch` above all, and this
-    -- map hides it in the pane: with no range to clear it does what it would
-    -- have done.
-    if not M.clear_mark(s) then
-      util.run_global_map('n', '<Esc>')
-    end
-  end, 'clear the range')
-  for _, lhs in ipairs({ 's', 'u' }) do
-    map(lhs, function()
-      util.info('only an uncommitted file can be staged')
-    end, 'nothing to stage here')
+--- @param dir 1|-1
+--- @return boolean moved false when there is no file that way
+function M.step_file(s, dir)
+  local t = s.selected
+  if shows_many(t) then
+    return keymap.jump_files(dir)
   end
-  map('x', function()
-    util.info(s.review and 'the files under review are in the files pane'
-      or 'files are checked off during a review')
-  end, 'nothing to check off here')
-  set_shared_keymaps(s, s.commits_buf)
+  local like = (t and t.kind == 'commit_file') and t or { kind = 'file', index = 1 }
+  return select_nth(s, like, (t and t.index or 1) + dir)
 end
 
---- Inside a session a diff is one pane of something larger: `q` gives up the
---- whole session, and moving between files means moving the list's cursor
---- rather than scrolling within one buffer.
---- `gw` is mapped in every buffer of the session, since what it changes is what
---- the diff pane shows wherever the cursor happens to be. It shadows the `gw`
---- format operator, which means nothing in a buffer that cannot be modified.
----
---- `gs` is mapped the same way, for the same reason, over `:sleep`.
+--- Open the file the diff's cursor is in, at the line it stands on; see
+--- `open_file`.
 --- @param s gitview.Session
-local function set_view_keymaps(s)
-  for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
-    util.buf_mapper(buf)('gw', function()
-      M.toggle_whitespace(s)
-    end, 'toggle ignoring whitespace')
-    util.buf_mapper(buf)('gs', function()
-      M.toggle_layer(s)
-    end, 'show both layers, staged alone or unstaged alone')
+function M.open_shown(s)
+  local view = render.view_of(s.diff_buf)
+  local path, lnum = nil, nil
+  if view then
+    path, lnum = keymap.source_at(view, vim.api.nvim_win_get_cursor(0)[1])
   end
-end
-
---- @param s gitview.Session
-local function set_diff_keymaps(s)
-  keymap.set(s.diff_buf, {
-    close = function()
-      close_asked(s)
-    end,
-    goto_file = function(dir)
-      local t = s.selected
-      -- A commit's or a directory's diff is many files in one buffer, so moving
-      -- between files there means scrolling within it rather than moving the
-      -- list's cursor. Every other view holds one file.
-      if shows_many(t) then
-        keymap.jump_files(dir)
-        return
-      end
-      -- The focus stays in the diff: the key was pressed while reading it, and
-      -- the next file is read there too.
-      local like = (t and t.kind == 'commit_file') and t or { kind = 'file', index = 1 }
-      select_nth(s, like, (t and t.index or 1) + dir)
-    end,
-    goto_commit = function(dir)
-      M.step_commit(s, dir)
-    end,
-    open_file = function(path, lnum)
-      M.open_file(s, path, lnum)
-    end,
-    root = s.root,
-  })
+  if not path then
+    util.info('no file here')
+    return
+  end
+  M.open_file(s, path, assert(lnum))
 end
 
 --- Whether the shared autocommands have been created.
@@ -3183,12 +3058,7 @@ function M.open()
   vim.wo[s.commits_win].winfixheight = true
   lay_out(s)
 
-  set_files_keymaps(s)
-  set_commits_keymaps(s)
-  set_diff_keymaps(s)
-  set_diff_stage_keymaps(s)
-  set_diff_review_keymaps(s)
-  set_view_keymaps(s)
+  keymaps.set(s)
 
   for _, buf in ipairs({ s.files_buf, s.commits_buf }) do
     vim.api.nvim_create_autocmd({ 'CursorMoved', 'WinEnter' }, {

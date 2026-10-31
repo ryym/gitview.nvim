@@ -8,6 +8,8 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | module               | responsibility                                          |
 | -------------------- | ------------------------------------------------------- |
 | `init.lua`           | The `:GitView` command, and `setup()`                   |
+| `actions.lua`        | What can be done to an open session, for keys to call   |
+| `keymaps.lua`        | The keys each pane is given by default                  |
 | `config.lua`         | Defaults, and the subset `vim.diff` takes               |
 | `git.lua`            | Every subprocess call, and the parsers for their output |
 | `status.lua`         | What is uncommitted, as one entry per file               |
@@ -26,7 +28,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 | `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
 | `diff/color.lua`     | Deriving diff colors from the colorscheme's             |
 | `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
-| `diff/keymap.lua`    | What the keys do inside a diff buffer                   |
+| `diff/keymap.lua`    | Moving within a diff buffer, and where its rows are     |
 | `diff/place.lua`     | Finding a row again in a view drawn after it            |
 | `ui/list.lua`        | A sidebar pane: its rows, its gutter, its winbar         |
 | `ui/session.lua`     | One tab page's state, and redrawing it                   |
@@ -40,6 +42,10 @@ The dependency direction is one-way: `init` only opens a session, `source` uses
 
 `ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
 under `diff/` knows that `ui` exists.
+
+`ui/session` maps the keys of `keymaps`, whose `actions` call back into the
+session. `actions` requires the session only once called, so that it can be
+required from a user's configuration without loading the rest.
 
 `source` is the only part that reads git and the editor. It hands `view` plain
 data, so assembling a view looks nothing up for itself.
@@ -177,15 +183,19 @@ does not show is worth seeing without opening anything. A view with nothing but
 such files is that list, under the header when there is one, rather than a
 notice that would hide which files they were.
 
-Four keys in the diff act on the session rather than on the buffer: `q` gives
-up the whole session, `gf` opens the file as described below, `]f` moves
+Every key of a pane calls a function of `actions`, which finds the session of
+the current tab page and the pane by the current buffer. Keys are not mapped
+in `actions` itself but in `keymaps`, so that a user can map the same functions
+to keys of their own.
+
+Several keys in the diff act on the session rather than on the buffer: `q`
+gives up the whole session, `gf` opens the file as described below, `]f` moves
 the list's cursor — except in the diff of a commit, the working tree or a
 directory, which holds many files and scrolls to the next one's header instead —
 and `]r` moves the commits pane's cursor, or looks into the adjacent commit
-while one is being looked into. `diff/keymap` takes
-those as callbacks so that it does not depend on the session.
-`gy` needs only the repository root, to name files relative to it, and is given
-that alone.
+while one is being looked into. What stays within the buffer, moving between
+its changes or naming the lines under the cursor for `gy`, is in `diff/keymap`,
+which does not depend on the session.
 
 #### Opening a file
 

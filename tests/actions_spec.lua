@@ -1,0 +1,151 @@
+--- The actions called directly rather than through the keys mapped to them,
+--- which the session and review specs press. What is tested here is what only
+--- a direct call shows: what they return, and where they refuse to act.
+local actions = require('gitview.actions')
+local list = require('gitview.ui.list')
+local session = require('gitview.ui.session')
+local helpers = dofile('tests/helpers.lua')
+
+local test, eq = _G.test, _G.eq
+
+--- @param s gitview.Session
+local function settle(s)
+  local done = vim.wait(5000, function()
+    return not s.reading
+  end)
+  assert(done, 'the status was never read')
+end
+
+--- Open a session against a fresh repository, run `fn`, then close it.
+--- @param setup fun(repo: gitview.TestRepo)
+--- @param fn fun(s: gitview.Session, repo: gitview.TestRepo)
+local function with_session(setup, fn)
+  helpers.with_repo(function(repo)
+    setup(repo)
+    local previous = vim.fn.getcwd()
+    vim.cmd.lcd(repo.root)
+    local s = session.open()
+    local ok, err = pcall(function()
+      assert(s, 'no session opened')
+      settle(s)
+      fn(s, repo)
+      vim.wait(5000, function()
+        return not s.loading and not s.pending
+      end)
+    end)
+    if s and vim.api.nvim_tabpage_is_valid(s.tab) then
+      session.close(s)
+    end
+    vim.cmd.lcd(previous)
+    if not ok then
+      error(err, 0)
+    end
+  end)
+end
+
+--- Two commits and an uncommitted edit.
+local function history(repo)
+  repo.write('a.lua', { 'return 1' })
+  repo.commit('first')
+  repo.write('a.lua', { 'return 2' })
+  repo.write('b.lua', { 'return 2' })
+  repo.commit('second')
+  repo.write('a.lua', { 'return 3' })
+end
+
+--- Put the commits pane's cursor on a commit, as moving there does.
+--- @param s gitview.Session
+--- @param index integer
+local function goto_commit(s, index)
+  vim.api.nvim_set_current_win(s.commits_win)
+  local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = index }))
+  vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  session.follow_cursor(s, s.commits_win)
+end
+
+test('actions: every one does nothing outside a session', function()
+  for name, fn in pairs(actions) do
+    eq(false, fn(), name)
+  end
+end)
+
+test('actions: a window that is no pane takes only the actions on the session', function()
+  with_session(history, function(s)
+    vim.cmd.new()
+    local win = vim.api.nvim_get_current_win()
+    eq(false, actions.focus_diff())
+    eq(false, actions.stage())
+    eq(false, actions.next_hunk())
+    eq(true, actions.toggle_ignore_whitespace())
+    eq(true, s.ignore_whitespace)
+    eq(true, actions.refresh())
+    settle(s)
+    vim.api.nvim_win_close(win, true)
+  end)
+end)
+
+test('actions: one that means nothing in the pane does nothing', function()
+  with_session(history, function(s)
+    vim.api.nvim_set_current_win(s.files_win)
+    eq(false, actions.stage_hunk())
+    eq(false, actions.look_into())
+    vim.api.nvim_set_current_win(s.diff_win)
+    eq(false, actions.focus_diff())
+  end)
+end)
+
+test('actions: with nothing to undo they say they did nothing', function()
+  with_session(history, function(s)
+    vim.api.nvim_set_current_win(s.files_win)
+    eq(false, actions.end_review())
+    vim.api.nvim_set_current_win(s.commits_win)
+    eq(false, actions.clear_range())
+    eq(false, actions.back_out())
+  end)
+end)
+
+test('actions: looking into a commit, and backing out', function()
+  with_session(history, function(s)
+    goto_commit(s, 1)
+    eq(true, actions.look_into())
+    assert(s.scope, 'not looking into the commit')
+    -- already in, with nothing further to go into
+    eq(false, actions.look_into())
+    eq(true, actions.back_out())
+    eq(nil, s.scope)
+  end)
+end)
+
+test('actions: moving past the last change says it did nothing', function()
+  with_session(history, function(s)
+    session.select(s, 1)
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.api.nvim_win_set_cursor(s.diff_win, { 1, 0 })
+    eq(true, actions.next_hunk())
+    eq(false, actions.next_hunk())
+  end)
+end)
+
+test('actions: close asks about a review part way through, unless forced', function()
+  with_session(history, function(s)
+    goto_commit(s, 1)
+    eq(true, actions.start_review())
+    vim.api.nvim_set_current_win(s.files_win)
+    eq(true, actions.toggle_check())
+    local confirm, asked = vim.fn.confirm, 0
+    vim.fn.confirm = function()
+      asked = asked + 1
+      return 2
+    end
+    local ok, err = pcall(function()
+      eq(true, actions.close())
+      eq(1, asked)
+      assert(vim.api.nvim_tabpage_is_valid(s.tab), 'closed in spite of the answer')
+      eq(true, actions.close({ force = true }))
+      eq(1, asked)
+      assert(not vim.api.nvim_tabpage_is_valid(s.tab), 'not closed')
+    end)
+    vim.fn.confirm = confirm
+    assert(ok, err)
+  end)
+end)

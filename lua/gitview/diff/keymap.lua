@@ -1,22 +1,11 @@
---- What the keys do inside a diff buffer.
----
---- Four of them depend on the session the buffer is a pane of: closing gives
---- up the whole session, and moving between files or commits may mean moving
---- the list's cursor. What they call is passed in, so that this module does not depend on
---- the session, as is the repository `gy` names files relative to.
+--- What the keys of a diff buffer do within the buffer itself: moving between
+--- its rows, finding where a row is in its file, and opening folds. What
+--- depends on the session the buffer is a pane of is left to the session.
 local dlib = require('gitview.diff.lines')
 local render = require('gitview.diff.render')
 local util = require('gitview.util')
 
 local M = {}
-
---- @class gitview.DiffKeys
---- @field close fun() what `q` does
---- @field goto_file fun(dir: 1|-1) what `]f` and `[f` do
---- @field goto_commit fun(dir: 1|-1) what `]r` and `[r` do
---- @field open_file fun(path: string, lnum: integer) what `gf` does with the
----        file the cursor is in and the line it stands for
---- @field root string the repository `gy` names files relative to
 
 --- The rows of the diff shown in the current window, or nothing when the buffer
 --- holds no diff.
@@ -31,6 +20,7 @@ end
 --- forwards from the start, backwards from the end.
 --- @param dir 1|-1
 --- @param rows integer[] the rows worth landing on, ascending
+--- @return boolean moved false when there is no row that way
 function M.jump(dir, rows)
   local cur = vim.api.nvim_win_get_cursor(0)[1]
   local target
@@ -49,16 +39,26 @@ function M.jump(dir, rows)
       end
     end
   end
-  if target then
-    vim.api.nvim_win_set_cursor(0, { target, 0 })
+  if not target then
+    return false
   end
+  vim.api.nvim_win_set_cursor(0, { target, 0 })
+  return true
 end
 
 --- Move between the file headers of a multi-file diff, which is what `]f` means
 --- when the whole diff is in one buffer.
 --- @param dir 1|-1
+--- @return boolean moved
 function M.jump_files(dir)
-  M.jump(dir, rows_of('file_rows'))
+  return M.jump(dir, rows_of('file_rows'))
+end
+
+--- Move between the changes of the diff.
+--- @param dir 1|-1
+--- @return boolean moved
+function M.jump_hunks(dir)
+  return M.jump(dir, rows_of('hunk_rows'))
 end
 
 --- The line of the new version a row lands on.
@@ -240,20 +240,13 @@ function M.references(view, first, last, root)
   return out
 end
 
---- Put where the rows are into the register the key was given, the unnamed one
---- by default, so that `"+gy` copies them to the clipboard.
+--- Put where the rows `first` to `last` are into `reg`.
 --- @param buf integer
 --- @param root string
---- @param visual boolean
-local function copy_references(buf, root, visual)
-  local reg = vim.v.register
-  local first = vim.api.nvim_win_get_cursor(0)[1]
-  local last = first
-  if visual then
-    local v = vim.fn.line('v')
-    first, last = math.min(v, first), math.max(v, first)
-    vim.cmd.normal({ args = { vim.keycode('<Esc>') }, bang = true })
-  end
+--- @param first integer 1-based
+--- @param last integer inclusive
+--- @param reg string
+function M.copy_references(buf, root, first, last, reg)
   local view = render.view_of(buf)
   local refs = view and M.references(view, first, last, root) or {}
   if #refs == 0 then
@@ -307,7 +300,7 @@ end
 --- was on, so that the change stays where it was and the lines open above it.
 --- @param buf integer
 --- @param key string
-local function open_fold(buf, key)
+function M.open_fold(buf, key)
   local count = vim.v.count > 0 and vim.v.count or ''
   local row = vim.api.nvim_win_get_cursor(0)[1]
   local first, last = vim.fn.foldclosed(row), vim.fn.foldclosedend(row)
@@ -325,56 +318,6 @@ local function open_fold(buf, key)
     topline = last - screen_row + 1
   end
   vim.fn.winrestview({ topline = topline, lnum = last, col = 0, curswant = 0 })
-end
-
---- @param buf integer
---- @param keys gitview.DiffKeys
-function M.set(buf, keys)
-  local map = util.buf_mapper(buf)
-  for _, key in ipairs({ 'zo', 'zO', 'za', 'zA' }) do
-    map(key, function()
-      open_fold(buf, key)
-    end, ('%s, keeping the change in view on a file\'s first fold'):format(key))
-  end
-  map(']c', function()
-    M.jump(1, rows_of('hunk_rows'))
-  end, 'next hunk')
-  map('[c', function()
-    M.jump(-1, rows_of('hunk_rows'))
-  end, 'previous hunk')
-  map(']f', function()
-    keys.goto_file(1)
-  end, 'next file')
-  map('[f', function()
-    keys.goto_file(-1)
-  end, 'previous file')
-  map(']r', function()
-    keys.goto_commit(1)
-  end, 'next commit, the older one')
-  map('[r', function()
-    keys.goto_commit(-1)
-  end, 'previous commit, the newer one')
-  map('q', function()
-    keys.close()
-  end, 'close')
-  map('gf', function()
-    local view = render.view_of(buf)
-    local path, lnum = nil, nil
-    if view then
-      path, lnum = M.source_at(view, vim.api.nvim_win_get_cursor(0)[1])
-    end
-    if not path then
-      util.info('no file here')
-      return
-    end
-    keys.open_file(path, lnum)
-  end, 'open the file the cursor is in')
-  map('gy', function()
-    copy_references(buf, keys.root, false)
-  end, 'copy the file and line under the cursor')
-  map('gy', function()
-    copy_references(buf, keys.root, true)
-  end, 'copy the files and lines selected', { 'x' })
 end
 
 return M
