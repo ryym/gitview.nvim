@@ -2094,6 +2094,50 @@ test('session: <Esc> with no mark does what it does elsewhere', function()
   assert(ok, err)
 end)
 
+-- As `<Esc>`, `<BS>` hides a global mapping of it in the pane.
+test('session: <BS> with nothing to back out of does what it does elsewhere', function()
+  local ran = 0
+  vim.keymap.set('n', '<BS>', function()
+    ran = ran + 1
+  end)
+  local ok, err = pcall(with_session, forked_history, function(s)
+    vim.api.nvim_set_current_win(s.commits_win)
+    vim.api.nvim_feedkeys(vim.keycode('<BS>'), 'mx', false)
+    eq(1, ran)
+    goto_commit(s, 1)
+    session.enter(s)
+    vim.api.nvim_feedkeys(vim.keycode('<BS>'), 'mx', false)
+    eq(1, ran)
+    eq(nil, s.scope)
+  end)
+  vim.keymap.del('n', '<BS>')
+  assert(ok, err)
+end)
+
+test('session: `R` refreshes from the diff too', function()
+  with_session(base, function(s, repo)
+    repo.write('later.txt', { 'new' })
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal('R')
+    settle(s)
+    eq({ 'edit.txt', 'later.txt', 'loose.txt' }, rows(s))
+  end)
+end)
+
+-- Unmapped in visual mode, `s` and `x` would delete the selection of a buffer
+-- that cannot be modified, and error.
+test('session: no key editing a buffer reaches a pane from visual mode', function()
+  with_session(base, function(s)
+    for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do
+      vim.api.nvim_set_current_win(win)
+      for _, key in ipairs({ 's', 'u', 'x' }) do
+        vim.cmd.normal('V' .. key)
+        settle(s)
+      end
+    end
+  end)
+end)
+
 -- A commit's files are not the rows the range was painted on.
 test('session: looking into a range takes its paint away', function()
   with_session(forked_history, function(s)
