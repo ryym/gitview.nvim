@@ -385,6 +385,17 @@ function M.toggle_ignore_whitespace()
   return true
 end
 
+--- Count lines that differ only in whitespace as unchanged, or as changed.
+--- @param ignore boolean
+--- @return boolean false when they are counted so already
+function M.set_ignore_whitespace(ignore)
+  if type(ignore) ~= 'boolean' then
+    error(('gitview: ignore must be a boolean, not %s'):format(vim.inspect(ignore)), 2)
+  end
+  local s = whole()
+  return s ~= nil and require('gitview.ui.session').set_whitespace(s, ignore)
+end
+
 --- Show the next layer of the uncommitted changes: both, staged alone, or
 --- unstaged alone, and round again.
 --- @return boolean
@@ -395,6 +406,20 @@ function M.cycle_layer()
   end
   require('gitview.ui.session').toggle_layer(s)
   return true
+end
+
+--- The layers of the uncommitted changes there are to show.
+local LAYERS = { both = true, staged = true, unstaged = true }
+
+--- Show both layers of the uncommitted changes, or one alone.
+--- @param layer gitview.Layer `both`, `staged` or `unstaged`
+--- @return boolean false when the layer is shown already
+function M.set_layer(layer)
+  if not LAYERS[layer] then
+    error(('gitview: no such layer: %s'):format(vim.inspect(layer)), 2)
+  end
+  local s = whole()
+  return s ~= nil and require('gitview.ui.session').set_layer(s, layer)
 end
 
 --- Re-read the repository. The panes are redrawn once it has been read.

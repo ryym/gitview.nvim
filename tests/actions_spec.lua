@@ -63,10 +63,30 @@ local function goto_commit(s, index)
   session.follow_cursor(s, s.commits_win)
 end
 
+--- The arguments of the actions that need one.
+local ARGS = { set_layer = 'staged', set_ignore_whitespace = true }
+
 test('actions: every one does nothing outside a session', function()
   for name, fn in pairs(actions) do
-    eq(false, fn(), name)
+    eq(false, fn(ARGS[name]), name)
   end
+end)
+
+test('actions: the setters refuse what is no value of theirs', function()
+  assert(not pcall(actions.set_layer, 'all'))
+  assert(not pcall(actions.set_ignore_whitespace, 'on'))
+end)
+
+test('actions: a setter says nothing changed when it is set already', function()
+  with_session(history, function(s)
+    vim.api.nvim_set_current_win(s.files_win)
+    eq(false, actions.set_layer('both'))
+    eq(true, actions.set_layer('staged'))
+    eq('staged', s.layer)
+    eq(false, actions.set_ignore_whitespace(false))
+    eq(true, actions.set_ignore_whitespace(true))
+    eq(true, s.ignore_whitespace)
+  end)
 end)
 
 test('actions: a window that is no pane takes only the actions on the session', function()

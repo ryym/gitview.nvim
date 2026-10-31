@@ -1949,35 +1949,58 @@ function M.follow_cursor(s, win)
 end
 
 --- Start counting lines that differ only in whitespace as changed again, or stop.
+--- @param s gitview.Session
+function M.toggle_whitespace(s)
+  M.set_whitespace(s, not s.ignore_whitespace)
+end
+
+--- Count lines that differ only in whitespace as unchanged, or as changed.
 ---
 --- The view is rebuilt rather than redrawn, because which lines differ is what
 --- changed. The position in it is kept: it is the same file being read.
 --- @param s gitview.Session
-function M.toggle_whitespace(s)
-  s.ignore_whitespace = not s.ignore_whitespace
+--- @param ignore boolean
+--- @return boolean changed false when they were counted so already
+function M.set_whitespace(s, ignore)
+  if s.ignore_whitespace == ignore then
+    return false
+  end
+  s.ignore_whitespace = ignore
   s.generation = s.generation + 1
   M.show_selected(s)
+  return true
 end
 
 --- Show the next layer of the uncommitted changes: both, staged alone, or
 --- unstaged alone, and round again.
+--- @param s gitview.Session
+function M.toggle_layer(s)
+  M.set_layer(s, NEXT_LAYER[s.layer])
+end
+
+--- Show both layers of the uncommitted changes, or one alone.
 ---
 --- A file the list goes on showing stays selected, and the diff's cursor stays
 --- on the line it was on, though every row of it may have moved. A file the
 --- list no longer shows gives way to its first file: where the cursor was in
 --- the old list means nothing in the new one.
 --- @param s gitview.Session
-function M.toggle_layer(s)
+--- @param layer gitview.Layer
+--- @return boolean handled false when the layer is shown already
+function M.set_layer(s, layer)
+  if s.layer == layer then
+    return false
+  end
   -- A review compares two trees, with no index between them, so nothing it
   -- shows would change. What would is the files pane once the review is over,
   -- left filtered by a switch made while it could not be seen.
   if s.review then
     util.info('the layer cannot be switched during a review')
-    return
+    return true
   end
   local id = selection_id(s)
   place_next(s, place.same_line)
-  s.layer = NEXT_LAYER[s.layer]
+  s.layer = layer
   s.entries = in_layer(s.uncommitted, s.layer)
   s.generation = s.generation + 1
   local target = target_of_id(s, id)
@@ -1985,6 +2008,7 @@ function M.toggle_layer(s)
     target = { kind = 'file', index = 1 }
   end
   redraw_list(s, target)
+  return true
 end
 
 --- The row of the commits pane the cursor is on, and what a mark on it would
