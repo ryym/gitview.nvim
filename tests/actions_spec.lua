@@ -104,6 +104,54 @@ test('actions: neither gitview nor its actions load the rest when required', fun
   eq('false', out.stdout, out.stderr)
 end)
 
+--- What `:GitView` with `args` said through `vim.notify`.
+--- @param args string
+--- @return string[]
+local function run(args)
+  local notify = vim.notify
+  local messages = {}
+  vim.notify = function(msg)
+    messages[#messages + 1] = (msg:gsub('^gitview: ', ''))
+  end
+  local ok, err = pcall(vim.cmd, 'GitView ' .. args)
+  vim.notify = notify
+  assert(ok, err)
+  return messages
+end
+
+test(':GitView subcommands act on the session of the tab page', function()
+  vim.cmd.runtime('plugin/gitview.lua')
+  -- Loaded ahead, while the relative runtimepath of the suite can still find
+  -- it: the session changes the directory.
+  require('gitview.command')
+  with_session(history, function(s)
+    run('layer')
+    eq('staged', s.layer)
+    run('layer both')
+    eq('both', s.layer)
+    run('whitespace on')
+    eq(true, s.ignore_whitespace)
+    run('whitespace')
+    eq(false, s.ignore_whitespace)
+    eq({ 'layer takes both or staged or unstaged, not all' }, run('layer all'))
+    eq({ 'too many arguments to refresh' }, run('refresh now'))
+    eq({ 'no such subcommand: stage' }, run('stage'))
+    run('close')
+    assert(not vim.api.nvim_tabpage_is_valid(s.tab), 'not closed')
+  end)
+  eq({ 'no session in this tab page' }, run('refresh'))
+end)
+
+test(':GitView completes its subcommands and their arguments', function()
+  local command = require('gitview.command')
+  eq({ 'close', 'layer', 'open', 'refresh', 'whitespace' }, command.complete('', 'GitView '))
+  eq({ 'refresh' }, command.complete('re', 'GitView re'))
+  eq({ 'staged' }, command.complete('st', 'GitView layer st'))
+  eq({ 'on', 'off' }, command.complete('', 'GitView whitespace '))
+  eq({}, command.complete('', 'GitView refresh '))
+  eq({}, command.complete('', 'GitView layer both '))
+end)
+
 test('actions: a window that is no pane takes only the actions on the session', function()
   with_session(history, function(s)
     vim.cmd.new()
