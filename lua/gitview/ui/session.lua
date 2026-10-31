@@ -2482,6 +2482,69 @@ function M.apply_to_selected(s, op)
   return true
 end
 
+--- Change the index for the files under the rows `first` to `last` of the
+--- files pane, then redraw; see `apply_to_selected`, which a single row is
+--- left to.
+---
+--- Rows of directories take the files the list shows under them. The files are
+--- staged together, as a directory's are, so that an unmerged one among them
+--- refuses them all: staging it is how its conflict is marked resolved, which
+--- is done file by file.
+--- @param s gitview.Session
+--- @param op 'stage'|'unstage'
+--- @param first integer 1-based
+--- @param last integer inclusive
+--- @return boolean handled false when the rows stand for no file
+function M.apply_to_list_rows(s, op, first, last)
+  if first == last then
+    return M.apply_to_selected(s, op)
+  end
+  local entries, seen = {}, {}
+  for row = first, last do
+    local t = list.target_at(s.files_buf, row)
+    if t and t.review then
+      refuses_review(t)
+      return true
+    end
+    local found = {}
+    if t and t.kind == 'file' then
+      found = { s.entries[t.index] }
+    elseif t and t.kind == 'dir' then
+      found = (files_in(s.entries, assert(t.path)))
+    end
+    for _, e in ipairs(found) do
+      if not seen[e.path] then
+        seen[e.path] = true
+        entries[#entries + 1] = e
+      end
+    end
+  end
+  if #entries == 0 then
+    return false
+  end
+  if wait_for_read(s) then
+    return true
+  end
+  local action, why
+  if op == 'stage' then
+    action, why = stage.stage_all(entries, 'the selection')
+  else
+    action, why = stage.unstage_all(entries, s.has_head, 'the selection')
+  end
+  if not action then
+    util.info(why or 'nothing to do')
+    return true
+  end
+  local err = stage.run(action, s.root)
+  if err then
+    util.git_error(err)
+    return true
+  end
+  s.outdated = true
+  M.refresh(s)
+  return true
+end
+
 --- Say why the rows of an unmerged file cannot be staged or unstaged, if
 --- `entry` is one.
 ---
@@ -2664,14 +2727,15 @@ function M.check_rows(s, first, last)
   return true
 end
 
---- The files the diff shows under review, in order, and which of them the
---- cursor is in, or why there are none.
+--- The files the diff shows under review, in order, and which of them `row`
+--- is in, or why there are none.
 --- @param s gitview.Session
+--- @param row integer 1-based, of the diff
 --- @return string[]? paths
---- @return integer|string at the index of the cursor's file into `paths`, 0
+--- @return integer|string at the index of the row's file into `paths`, 0
 ---        above the first; or why there is nothing
 --- @return boolean? many whether the files are those of one view
-local function shown_review_files(s)
+local function shown_review_files(s, row)
   local r, t = s.review, s.selected
   if not (r and t and t.review) then
     return nil, r and 'not a file under review' or 'files are checked off during a review'
@@ -2683,7 +2747,6 @@ local function shown_review_files(s)
   if not view or not (s.drawn and s.drawn.view == view) then
     return nil, 'no file here'
   end
-  local row = vim.api.nvim_win_get_cursor(s.diff_win)[1]
   local at = 0
   for i, f in ipairs(view.files) do
     if f.row <= row then
@@ -2721,21 +2784,25 @@ local function go_to_open(s, paths, at, many, dir)
   select_nth(s, assert(s.selected), to)
 end
 
---- Check off the file the diff's cursor is in, or take its check off, and on
---- checking go on to the next one to read: read, check, next is how a review
---- goes. Taking a check off stays, since the file is the one to read again.
+--- Check off the files the rows `first` to `last` of the diff are in, or take
+--- their checks off when every one is checked already, and on checking go on to
+--- the next one to read: read, check, next is how a review goes. Taking a check
+--- off stays, since the file is the one to read again.
+---
+--- A diff of one file is that file whichever of its rows are given.
 --- @param s gitview.Session
-function M.check_shown(s)
-  local paths, at, many = shown_review_files(s)
+--- @param first integer 1-based
+--- @param last integer inclusive
+function M.check_shown(s, first, last)
+  local paths, at, many = shown_review_files(s, first)
   if not paths then
     util.info(tostring(at))
     return
   end
   --- @cast at integer
-  local path = paths[at]
-  if not path then
-    util.info('no file here')
-    return
+  local to = at
+  if many then
+    to = select(2, shown_review_files(s, last)) --[[@as integer]]
   end
   -- Record the lines the view was built from rather than the file now, which
   -- may have moved on without anything having drawn it again. A file shown
@@ -2743,12 +2810,24 @@ function M.check_shown(s)
   -- name.
   local r = assert(s.review)
   local view = render.view_of(s.diff_buf)
-  local drawn = view and s.drawn and s.drawn.view == view and view.files[many and at or 1]
-  local lines = drawn and (vim.fs.relpath(s.root, drawn.path) == path) and drawn.new_lines or nil
-  local checked = review.toggle(r.checks, { path }, { [path] = read_as(s, r, path, lines) })
+  local picked, reads = {}, {}
+  for i = math.max(at, 1), to do
+    local path = paths[i]
+    if path then
+      local drawn = view and s.drawn and s.drawn.view == view and view.files[many and i or 1]
+      local lines = drawn and (vim.fs.relpath(s.root, drawn.path) == path) and drawn.new_lines or nil
+      picked[#picked + 1] = path
+      reads[path] = read_as(s, r, path, lines)
+    end
+  end
+  if #picked == 0 then
+    util.info('no file here')
+    return
+  end
+  local checked = review.toggle(r.checks, picked, reads)
   redraw_checks(s)
   if checked then
-    go_to_open(s, paths, at, many == true, 1)
+    go_to_open(s, paths, to, many == true, 1)
   end
 end
 
@@ -2768,7 +2847,7 @@ end
 --- @param s gitview.Session
 --- @param dir 1|-1
 function M.step_open(s, dir)
-  local paths, at, many = shown_review_files(s)
+  local paths, at, many = shown_review_files(s, vim.api.nvim_win_get_cursor(s.diff_win)[1])
   if not paths then
     util.info(tostring(at))
     return

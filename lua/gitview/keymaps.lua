@@ -51,8 +51,8 @@ local PANES = {
     -- sides has no obvious sense in which it is on or off, and a row here
     -- states that state rather than hiding it, so the direction is given
     -- explicitly.
-    { 's', actions.stage, 'stage the file or directory under the cursor', modes = NX },
-    { 'u', actions.unstage, 'unstage the file or directory under the cursor', modes = NX },
+    { 's', actions.stage, 'stage the files or directories selected', modes = NX },
+    { 'u', actions.unstage, 'unstage the files or directories selected', modes = NX },
   },
 
   -- Separating the panes is what lets each one carry only the keys that mean
@@ -101,7 +101,7 @@ local PANES = {
     { 'u', actions.unstage, 'unstage the selected lines', modes = NX },
     { 'S', actions.stage_hunk, 'stage this hunk' },
     { 'U', actions.unstage_hunk, 'unstage this hunk' },
-    { 'x', actions.toggle_check, 'check off the file under review the cursor is in', modes = NX },
+    { 'x', actions.toggle_check, 'check off the files under review selected', modes = NX },
     { ']x', actions.next_unread, 'next file still to be read' },
     { '[x', actions.prev_unread, 'previous file still to be read' },
   },

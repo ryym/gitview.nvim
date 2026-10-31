@@ -526,6 +526,26 @@ test('review: a directory marks the headers of the files checked off', function(
   end, { tree = true })
 end)
 
+test('review: `x` over rows of several files in the diff checks each off', function()
+  with_session(history, function(s)
+    review_second(s)
+    vim.api.nvim_win_set_cursor(s.files_win, { 1, 0 })
+    session.follow_cursor(s, s.files_win)
+    vim.wait(1000, function()
+      return render.view_of(s.diff_buf) ~= nil and #render.view_of(s.diff_buf).files == 2
+    end)
+    local view = assert(render.view_of(s.diff_buf))
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.api.nvim_win_set_cursor(s.diff_win, { view.files[1].row, 0 })
+    vim.cmd.normal(('V%dGx'):format(view.files[2].row))
+    eq({ '✓', '✓', '✓' }, marks(s))
+    -- and off again, all of them checked
+    vim.api.nvim_win_set_cursor(s.diff_win, { view.files[1].row, 0 })
+    vim.cmd.normal(('V%dGx'):format(view.files[2].row))
+    eq({ '', '', '' }, marks(s))
+  end, { tree = true })
+end)
+
 test('review: the same file looked into is not marked', function()
   with_session(history, function(s)
     review_second(s)

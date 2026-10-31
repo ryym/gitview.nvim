@@ -170,9 +170,9 @@ function M.clear_range()
   return s ~= nil and require('gitview.ui.session').clear_mark(s)
 end
 
---- Check off the files under review: those selected or under the cursor in the
---- files pane, or the one the cursor is in in the diff, which then goes on to
---- the next one to read. Their checks are taken off when all are checked.
+--- Check off the files under review selected or under the cursor, in the files
+--- pane or in the diff, which then goes on to the next one to read. Their
+--- checks are taken off when all are checked.
 --- @return boolean
 function M.toggle_check()
   local s, pane = in_panes(ALL)
@@ -183,13 +183,13 @@ function M.toggle_check()
   if pane == 'files' then
     return session.check_rows(s, selected_rows())
   end
-  leave_visual()
-  if pane == 'commits' then
-    util.info(s.review and 'the files under review are in the files pane'
-      or 'files are checked off during a review')
+  if pane == 'diff' then
+    session.check_shown(s, selected_rows())
     return true
   end
-  session.check_shown(s)
+  leave_visual()
+  util.info(s.review and 'the files under review are in the files pane'
+    or 'files are checked off during a review')
   return true
 end
 
@@ -226,16 +226,16 @@ local function apply(op)
   if pane == 'diff' then
     return session.apply_to_rows(s, op, selected_rows())
   end
-  leave_visual()
-  if pane == 'commits' then
-    util.info('only an uncommitted file can be staged')
-    return true
+  if pane == 'files' then
+    return session.apply_to_list_rows(s, op, selected_rows())
   end
-  return session.apply_to_selected(s, op)
+  leave_visual()
+  util.info('only an uncommitted file can be staged')
+  return true
 end
 
---- Stage the file or directory under the cursor in the files pane, or the
---- lines selected or under the cursor in the diff.
+--- Stage the files or directories selected or under the cursor in the files
+--- pane, or the lines selected or under the cursor in the diff.
 --- @return boolean
 function M.stage()
   return apply('stage')
