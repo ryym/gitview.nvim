@@ -1,5 +1,9 @@
 # Architecture
 
+A map for reading the code, for anyone changing the plugin: its parts, the rules
+they share, and what is known to be missing. What the plugin does for a user is in
+[usage.md](../usage.md).
+
 ## Premises
 
 Two premises hold up the design:
@@ -11,1370 +15,218 @@ Two premises hold up the design:
   separators are drawn rather than written, so that a yank gives code. Putting
   non-source characters into the buffer is a regression, not a style choice.
 
-## Modules
-
-The unified diff is one part of the plugin rather than the whole of it, so its
-pipeline lives under `diff/` and the modules every part needs sit above it.
-
-| module               | responsibility                                          |
-| -------------------- | ------------------------------------------------------- |
-| `init.lua`           | The `:Gitview` command, and `setup()`                   |
-| `actions.lua`        | What can be done to an open session, for keys to call   |
-| `keymaps.lua`        | The keys each pane is given by default                  |
-| `config.lua`         | Defaults, and the subset `vim.diff` takes               |
-| `git.lua`            | Every subprocess call, and the parsers for their output |
-| `status.lua`         | What is uncommitted, as one entry per file               |
-| `stage.lua`          | Which git command moves a file into or out of the index  |
-| `review.lua`         | Which files of a review are checked off, and changed     |
-| `tree.lua`           | Laying out the listed paths as a tree of directories     |
-| `index.lua`          | Writing part of a file's changes into the index          |
-| `util.lua`           | Messages shown to the user                              |
-| `perf.lua`           | Timings logged for development, off by default          |
-| `diff/source.lua`    | Reading the versions to compare, and their filetype     |
-| `diff/view.lua`      | Assembling sources into a view, and freeing it           |
-| `diff/lines.lua`     | `vim.diff` wrapper, unified line list, del/add pairing  |
-| `diff/mixed.lua`     | Merging HEAD, index and working tree into one line list |
-| `diff/conflict.lua`  | The lines of an unmerged file, by part of a conflict    |
-| `diff/highlight.lua` | Scratch buffers, and collecting highlight segments      |
-| `diff/worddiff.lua`  | Word-level ranges within a pair of changed lines        |
-| `diff/color.lua`     | Deriving diff colors from the colorscheme's             |
-| `diff/render.lua`    | Building the buffer, extmarks, gutter, winbar           |
-| `diff/keymap.lua`    | Moving within a diff buffer, and where its rows are     |
-| `diff/place.lua`     | Finding a row again in a view drawn after it            |
-| `ui/list.lua`        | A sidebar pane: its rows, its gutter, its winbar         |
-| `ui/session.lua`     | One tab page's state, and redrawing it                   |
-
-The dependency direction is one-way: `init` only opens a session, `source` uses
-`status`, `stage` uses `status` and `git`, `index` uses `git`, `status` uses
-`git`, `view` uses `lines`, `mixed`, `conflict` and `highlight`, `conflict` uses
-`mixed`, `review` uses `source`, `render` uses `highlight`, `color`,
-`worddiff` and `lines`, `place` uses `lines`, `git` and `render` use `perf`, and `config`, `util`,
-`tree`, `color` and `perf` depend on nothing but Neovim.
-
-`ui` uses `status` and, once it shows diffs, the pipeline under `diff/`; nothing
-under `diff/` knows that `ui` exists.
-
-`ui/session` maps the keys of `keymaps`, whose `actions` call back into the
-session. `actions` requires the session only once called, so that it can be
-required from a user's configuration without loading the rest.
-
-`source` is the only part that reads git and the editor. It hands `view` plain
-data, so assembling a view looks nothing up for itself.
-
-## The status tab
-
-`:Gitview` opens a tab page that outlives the moment it was opened in. A
-session keeps its repository root, its entries and the tail of the history, so
-that all of them can be re-read — which is what lets it follow a repository that
-moves on while it is open.
-
-A session is registered against its tab page and dropped when that tab closes,
-however it closes. Its three buffers go with it.
-
-The list follows the same rule as a diff buffer: the text is the thing itself,
-and everything around it is drawn. A row is a path, or a sha and a subject, and
-nothing more, so yanking one gives something that names the thing elsewhere; the
-status letters are painted by `'statuscolumn'`, and what the pane is holding by
-`'winbar'`. Shortening works the same way in reverse: a sha is written whole and
-its tail concealed by an extmark, so the row is still the thing itself when only
-part of it is on screen.
-
-A row stands for a `gitview.ListTarget` — a kind and an index — rather than for
-an entry, because a row is no longer always a file: it can be a commit, the
-working tree standing in the commit list, a file of a range, or a directory. A row can also stand for nothing, which is what the notices are. The
-mapping is kept in both directions: the cursor picks a target, but `]f` picks a
-file from inside the diff.
-
-What a pane draws is a `gitview.ListModel` rather than a list of entries, and the
-session hands each pane a fresh one on every redraw. The gutter is computed while
-those rows are built rather than when the screen line is drawn: an entry has two
-status letters, a commit's file has one and a commit has none, and putting that
-decision in `'statuscolumn'` would mean teaching it every kind of row there is.
-The one thing it decides is that a commits pane listing commits has no gutter
-at all: none of its rows has anything to put there, and the width goes to the
-subjects.
-
-#### Files as a tree
-
-A tree is drawn over the same rows rather than replacing them. A file's row is
-still its whole path: the parent directory's part is concealed and the depth
-drawn in front as inline virtual text, so yanking a row gives the same thing
-either way. The status letters are drawn there too, after the indent, rather
-than in `'statuscolumn'`, which a tree leaves empty: at the left edge they would
-drift away from the name the deeper a file is. Each level of indent is drawn as
-a guide; indent-blankline cannot draw one here, since it reads the whitespace a
-line starts with and these rows have none. The tree only adds rows, one per
-directory and one for the root.
-
-The rows keep the entries' order, which is byte order, and `tree.lua` builds
-the tree in that order without sorting siblings. In byte order a directory's
-paths are contiguous and siblings come in the order git sorts a tree in, so the
-rows from top to bottom are still the entries by index. That is what keeps `]f`,
-the files of a multi-file diff and `git diff` in step with the list; putting
-directories first would mean sorting the entries themselves, everywhere a list
-of files is made.
-
-A directory row's target is the first file in it, which is also the next file
-below it, plus its path. The path tells it apart from that file and from an
-enclosing directory starting at the same file, and is what finds it again after
-a refresh. A directory is a selection like any other, and its diff is every file
-in it, read as a commit's is; see below. Lines are not staged from it, since a
-partial stage reads the index contents of one file. Unlike the views of many
-files in the commits pane, it says so when asked: it sits among the files whose
-diffs do stage by row.
-
-What follows the cursor is painted apart from the rows, in namespaces of its own,
-since the cursor moves far more often than the list changes: the name of the
-row the diff shows, and the rows of a range. A range is painted as a selection,
-with the cursor line turned off meanwhile so their backgrounds do not run into
-each other.
-
-#### Two panes, not two sections
-
-The sidebar is split: the uncommitted files above, the commits below, each its
-own window and its own buffer. One buffer holding both would push the history off
-the bottom of the screen as soon as a working tree had more changes than the
-sidebar is tall — and the history is the part that does not grow.
-
-Being separate windows is what makes the rest simple:
-
-- **`list.state` is keyed by buffer**, so `'statuscolumn'` and `'winbar'` already
-  read the pane they are drawn in. Telling the two apart needed nothing but a
-  `pane` field for the winbar to switch on.
-- **Each pane carries only the keys that mean something in it**, instead of one
-  set of keys branching on the kind of row under the cursor. `s` and `u` are the
-  exception: the commits pane maps them in order to say why they do nothing,
-  since leaving `s` unmapped would let it reach a buffer that cannot be modified
-  and error.
-- **No row has to stand for nothing.** The section header and the blank row that
-  separated the two lists are gone, and with them the rule that had to pull a
-  cursor off them.
-
-What two cursors cost is that neither moves when the focus does, so `WinEnter` is
-watched alongside `CursorMoved`: entering a pane is the only thing that tells the
-diff the selection now comes from that list.
-
-The commits pane is the one with `'winfixheight'`. What the sidebar gains or
-loses on a resize belongs to the files, which is the list that grows without
-bound.
-
-### The diff pane
-
-The pane is one buffer for the life of the session, drawn into again on each
-selection. Making a buffer per file and swapping it into the window would fire
-the `Buf*` autocommands, disturb the alternate buffer and the jumplist, and
-leave the old buffer to dispose of — on every cursor movement in the list.
-
-What one buffer costs is that a position in it outlives the contents it belonged
-to. Replacing the text only clamps the cursor to the new line count, so a short
-diff drawn after a long one opens at its end. The pane is therefore put back to
-its start whenever what it shows changes, and left alone whenever it does not:
-staging a hunk redraws the same file, and being thrown back to the top on every
-`s` would make working down a diff impossible.
-
-Which of the two it is is decided by comparing what is shown — a kind and a path
-or sha — rather than the selection itself, because a refresh can move a file to
-another index while it goes on being the same file.
-
-Each file is read as three versions and shown through `diff/mixed`, so the
-choice between staged and unstaged never has to be made. An unmerged file is
-the exception: it is read from the working tree alone and shown through
-`diff/conflict`; see [Conflict view](#conflict-view). Four things a view cannot
-express — a binary file, a change with no lines, an unmerged file with no
-conflict markers, and nothing selected at all — are drawn by `render.notice`,
-which drops the view along with the text so that the gutter and winbar describe
-nothing rather than what was there before.
-
-A view of many files, a commit's or the working tree's, has the same files to
-leave out, and lists them at its top instead: a line each, naming the file and
-saying why, as a view of one of them would. `view.list_skipped` puts them above
-the first file, and a commit's header goes above them. They are buffer text
-for the reasons the header is, and stay out of its fold: which files the diff
-does not show is worth seeing without opening anything. A view with nothing but
-such files is that list, under the header when there is one, rather than a
-notice that would hide which files they were.
-
-Every key of a pane calls a function of `actions`, which finds the session of
-the current tab page and the pane by the current buffer. Keys are not mapped
-in `actions` itself but in `keymaps`, so that a user can map the same functions
-to keys of their own.
-
-A session opens its panes in an order that lets a user's configuration win
-where it can: the default keys are mapped, the window options a user may change
-are set, then the filetype, and last the options the panes are drawn with. The
-filetype is set once each buffer is in its window, since `FileType` runs in a
-window showing the buffer and an ftplugin's `:setlocal` lands there.
-
-Several keys in the diff act on the session rather than on the buffer: `q`
-gives up the whole session, `gf` opens the file as described below, `]f` moves
-the list's cursor — except in the diff of a commit, the working tree or a
-directory, which holds many files and scrolls to the next one's header instead —
-and `]r` moves the commits pane's cursor, or looks into the adjacent commit
-while one is being looked into. What stays within the buffer, moving between
-its changes or naming the lines under the cursor for `gy`, is in `diff/keymap`,
-which does not depend on the session.
-
-#### Opening a file
-
-`gf` opens the file under the cursor from any pane: the file a list row names,
-or the file a diff row belongs to, at the line of it the row stands for. It is
-for a look at the whole file while reading its diff, so the session stays open.
-
-- **It goes to the tab page the session was opened from**, into whichever window
-  had the cursor there last. The session keeps that tab page as `origin`. Once it
-  is closed, a new one is opened just before the session's and becomes `origin`
-  in its place.
-- **A window that cannot take the file is not replaced by another.** One pinned
-  with `'winfixbuf'`, or holding unsaved changes under `'nohidden'`, makes `:edit`
-  fail, and the error is reported. Picking some other window would make where the
-  file lands hard to predict.
-- **A row the new version lacks lands where it was.** A deleted line has no
-  `new_lnum`, so it opens at the line after the nearest row above it that has
-  one: the line that now stands in its place. A file's header and the blank row
-  after its last line open it at the top. A commit's header belongs to no file.
-- **A commit's line numbers are taken as they are.** They name lines of the file
-  as the commit left it, which the working tree may have moved on from, and the
-  line is clamped to the file as it is now. A file the working tree no longer
-  has is refused rather than opened as a new, empty buffer.
-- **A commit row opens nothing**: it stands for every file the commit touched.
-
-#### Copying where lines are
-
-`gy` in the diff copies where the rows under the cursor or the selection are, as
-`path:12-18` with the path relative to the repository. It is for pointing at
-lines from outside the editor, such as in a message to an agent that wrote the
-change, so it says where they are rather than what they hold: the reader can
-open the file.
-
-`keymap.references` turns rows into those lines, one per file:
-
-- **The range is in the new version.** A deleted row counts as the line
-  `gf` would open for it, the one now in its place, so a selection across a
-  change widens the range rather than losing its deleted half. One at the end of
-  the file is clamped to the file's last line, where `gf` relies on `edit_at`.
-- **Only rows that are all deleted are given in the old version**, with the
-  version named: `(deleted from HEAD)`, or from a commit. A row only the index
-  had, in a mixed view, is numbered in the index and says so. It counts only
-  when no row from HEAD is among them, since the two number lines differently.
-- **A commit's file names the commit**, `(at <sha>)`, as its line numbers may no
-  longer be the working tree's. A range ending at the working tree needs none.
-- **A file's header alone names the file without lines**, as `gf` opens it at
-  the top. A commit's header and the blank rows between files are passed over.
-
-Which version each side is comes from the sources: `Source.old_rev` and
-`Source.new_rev`, carried onto `gitview.File`. Only the source knows it: a view
-of the working tree compares against `HEAD`, a range against its ends.
-
-### The commit list
-
-The lower pane lists the most recent commits, and selecting one draws what it
-changed. That view is the ordinary two-version one rather than a mixed view:
-both sides are committed, so there is no index between them and nothing to mark
-as staged.
-
-Three things follow from both sides being committed:
-
-- **Neither side comes from the working tree.** `source.for_range` reads both
-  from the object database, in one `git cat-file --batch` as everything else
-  does. The working tree is not one of the versions being compared, and may no
-  longer have the file. The [working-tree row](#the-working-tree-row) is the one
-  row that makes it a side, and then only the new one.
-- **Its line numbers are the commit's.** `gf` still opens the file at the line
-  a row names, which is close to where it now is rather than on it; see
-  [Opening a file](#opening-a-file).
-- **Nothing about it can be staged.** `s` and `u` refuse outright rather than
-  relying on there being no index contents to write.
-
-A commit the cursor lands on is read without blocking. Its diff is every file it
-touched, and reading it in the foreground would stall the cursor on every row
-passed over. Instead:
-
-- A placeholder is drawn at once: the commit's subject and author as the log
-  gave them, or its whole header when its message has been read before.
-- The view is read in the background and replaces the placeholder once read.
-- One view is read at a time. A row asked for meanwhile waits, replacing
-  whatever was waiting, and a generation counter drops a result the selection
-  has moved on from.
-- What a range between two commits was read as is kept, for the last few dozen
-  ranges, since neither end can change. A range ending at the working tree is
-  read every time.
-- A commit read before has nothing to wait for but its draw, which is still the
-  costly part of a large one. It is drawn on the next turn of the event loop
-  with no placeholder, so a row passed over before then is never drawn.
-
-The working-tree row is read the same way, and so is a directory row of either
-list, with two differences:
-
-- A directory waits for the cursor to rest on it before anything is read or
-  drawn. Moving from file to file in a tree passes over directory rows all the
-  time, and reading each would start a read that cannot be stopped and blink a
-  placeholder between two files' views. Meanwhile the pane keeps the view it
-  had; the selection has moved on, so nothing done in it reaches that file.
-- A directory of a commit looked into is taken out of the whole range's
-  contents. Looking in passed over the commit's row, so they are usually kept
-  already; when they are not, the directory reads and keeps the whole range.
-  Directories of the uncommitted files are read every time, since the working
-  tree can change under them.
-
-A file row costs a single file's view and is drawn at once, as is anything drawn
-by a refresh.
-
-#### Pushed and unpushed commits
-
-A commit's sha is faded once the branch's upstream has it. What is not pushed
-yet keeps the color a sha has everywhere else, and stands out against the faded
-ones without a color of its own: a warning color would make an ordinary state of
-work look like a problem. Above the commit the upstream points at, a line of its
-own names it (`── origin/main ───`).
-
-- Two commands run alongside every read of the log. `git rev-parse` resolves
-  the upstream to its sha and its name at once, and `git rev-list HEAD --not
-  <sha>` names the unpushed commits, capped at the log's count. Both print full
-  shas, so the log gives each commit's full sha as well as the abbreviated one
-  shown.
-- Without an upstream — a branch that tracks nothing, a detached HEAD — every
-  sha keeps the one color it has otherwise, and no line is drawn. That is an
-  ordinary state, so the failing command is not reported.
-
-The line marks where the upstream is rather than the last unpushed row. A merge
-from the upstream can leave pushed commits between unpushed ones, since the log
-is in date order, and below the last unpushed row would then be no boundary at
-all. It follows that an upstream the log does not reach, being diverged or older
-than the list, has no line; the colors still tell the commits apart.
-
-The line is a virtual line, so the rows stay one for one with the buffer's
-lines. It hangs below the row above rather than above its own: one above the
-first line of a buffer is only shown once the window is scrolled up onto it.
-So it is left out while there is no working-tree row above HEAD's, before the
-status is read.
-
-#### The commit header
-
-A commit shown on its own starts with what `git show --stat` prints before the
-diff: subject, author and date, body, and stat. A range of two commits has no one
-message and gets none, and neither does a file of a commit, whose commit the
-pane's winbar already names. A mark on a commit's own parent is the same
-comparison as the commit alone, and gets the header too.
-
-- **It is buffer text**, for the same reasons as the file headers: it can be
-  searched and yanked, and `virt_lines` cannot go above the first line anyway.
-  Its kinds are outside `dlib.source_kinds`, so the gutter, highlight collection
-  and `gf` pass over it without being told about it.
-- **The stat is git's own**, from `git.commit_detail`, rather than counted from
-  the view. It covers the binary files and renames the view leaves out, and it
-  describes the commit rather than how the view is drawn, so `gw` leaves it
-  alone. It compares the same range as the diff, so a merge's stat is against
-  its first parent.
-- **The message and stat are read once per sha** and kept in the session, since
-  a commit cannot change.
-- **It folds as one below the subject**, through `'foldexpr'` reading
-  `header_rows`, and starts closed. The subject stays out of the fold on a line
-  of its own: sharing the fold's single line, a long one would push the author
-  and the size off the screen. Whether it was open is carried from one view to
-  the next as a folded run's is; see
-  [Folded unchanged lines](#folded-unchanged-lines).
-
-#### What is compared with what
-
-Everything downstream takes a `gitview.Range`, an old revision and a new one,
-rather than a commit. The whole question of which parent a commit is compared
-with then lives in `git.commit_range` and nowhere else.
-
-`git log -z` gives each commit's parents, which is what decides that:
-
-| parents | the range of one commit                         |
-| ------- | ----------------------------------------------- |
-| none    | `git diff-tree --root`, against the empty tree  |
-| one     | that parent to the commit                       |
-| several | the **first** parent to the commit              |
-
-`git diff-tree -m` would have covered all three, but on a merge it concatenates
-one diff per parent and `--no-commit-id` removes the headers that would tell the
-blocks apart. `--first-parent` is a rev-list option that `diff-tree` rejects.
-Naming the parent explicitly avoids the question, and both commands print the
-same `--name-status` and `--numstat` records, so one pair of parsers reads both.
-
-#### Two commits
-
-`m` marks the commit under the cursor, and while a mark is set the pane shows
-every row from the mark to the cursor. One mark rather than two: the far end is
-marked and the near end is wherever the cursor goes, so a range is read by moving
-rather than by a second key. The commits pane is short and a range is often long,
-which is what makes moving the better half to leave free.
-
-`m` only ever marks, moving the mark if it is elsewhere, and `<Esc>` clears it.
-A toggle would make starting a range somewhere else two keys whenever the cursor
-happens to be on the mark. `<Esc>` is commonly mapped globally already, and a
-buffer-local map hides that for good, so with no mark to clear the pane runs the
-global mapping itself (`util.run_global_map`).
-
-- **Both ends are in the range.** It starts at the older end's first parent,
-  the parent that commit is compared with on its own, so what is read is every
-  row between the two, as a selection reads; the winbar writes it `older^..newer`.
-  Starting at the older end itself, as `git diff older newer` would, left that
-  commit out while its row looked as much a part of the range as the other end.
-- **Which end is old follows from the list, not from the dates.** The list is
-  newest first, so the row further down is the older side. A rebase or a
-  cherry-pick can leave dates out of order, and the list is what is being read.
-- **The cursor on the mark itself is the one commit**, against its own first
-  parent, which is what a range of one row comes to anyway.
-- **A root commit at the older end starts the range from the empty tree.** It
-  cannot be left unnamed as for a root commit on its own: `git diff-tree --root`
-  compares one commit with its parent, not two ends. The empty tree's sha is
-  asked of `git hash-object`, since it differs between SHA-1 and SHA-256.
-- **A merge inside a range is no special case.** A range compares two trees;
-  only where it starts needs a parent chosen. This is the reason the range is
-  the type everything takes.
-- **A mark is dropped along with the list it pointed into.** A mark on a commit
-  no longer listed would go on widening every range while no row showed where it
-  was, so it is cleared whenever a re-read replaces the list without it — and only
-  then, since a list that was [held back](#refreshing) still has the row.
-
-A range whose ends sit on branches that diverged is compared all the same, and
-said to have done so: `git merge-base --is-ancestor` decides whether the older
-end is in the newer one's history, and if not the winbar reads `diverged`.
-`git diff` compares the two trees either way, but across a fork the result
-leaves the older end out and undoes whatever its side did, which is not what
-"the changes between these two commits" sounds like. Naming it is better than refusing a comparison that was asked for. The
-answer is kept by the older end rather than by the range: two ends with one
-parent start the same range, yet only one of them may lie on the line.
-
-`git diff A...B`, which compares from the merge base instead, would have made
-that case read as "what B added since they forked". It is not used, because it
-would mean two rules for what a range means and the winbar could no longer state
-the comparison as a pair of revisions.
-
-#### The working-tree row
-
-The list is headed by a row of zeros standing for the working tree. The use is
-`git diff HEAD~4`: from some commit to the state of things now, committed or
-not, read as a range like any other.
-
-- **It is the newest end a range can have**, so it sits above the commits and is
-  the new side whenever it is one end. `gitview.Range.new` is nil for it, which
-  `git diff` given one revision already means, and `source.for_range` reads the
-  new side from the files rather than the object database.
-- **On its own it is not a range.** Against HEAD it would compare what the files
-  pane already lists, so it shows that: every uncommitted file in one mixed view,
-  staged and unstaged at once. `<CR>` there moves to the files pane rather than
-  listing the same files a second time. Nothing is staged from it, since a
-  partial stage reads the index contents of one file.
-- **It is there even when nothing is uncommitted.** A clean working tree compares
-  nothing HEAD's own row does not, but the row is still an end a range can be
-  marked at. Such a range can be set up before anything is edited and follows
-  the edits as they are made, and the commit rows do not shift as the row would
-  come and go. It waits only for the status to be read and for a HEAD to exist;
-  a mark on it goes while it is missing, as a mark on a commit goes with the list.
-- **Untracked files are part of a range.** See
-  [Untracked files in a range](#untracked-files-in-a-range).
-- **Divergence is asked of HEAD.** The working tree stands on it, so a range
-  ending there is one line of history exactly when its commit is an ancestor of
-  HEAD.
-
-#### Untracked files in a range
-
-`git diff <rev>` compares only the paths the index names, so it would leave out
-every file git is not tracking. The change list of a range ending at the working
-tree is read against a copy of the index instead, with those files added to it as
-intents to add (`git add -N`), and `GIT_INDEX_FILE` pointing the diff at the copy.
-
-- **git treats them as any other file.** A path the old side had is a
-  modification rather than a deletion beside an addition, a file moved without
-  `git mv` is a rename, and binary detection is git's own.
-- **The real index is never written.** The copy is thrown away afterwards, so
-  nothing the user staged moves, and a write to the real index meanwhile cannot
-  be undone by it.
-- **The copy starts from the real index, not from nothing.** The diff lists the
-  paths the index names, and an empty one would report every tracked file as
-  deleted.
-- **A stale copy gives the same answer.** It compares the old side with the
-  working tree, and the index only decides which paths are looked at. git
-  replaces the index by renaming a finished one over it, so the copy is never of
-  a write under way.
-- **The untracked files are the ones the status read found.** Listing them walks
-  the whole working tree, which is too slow to repeat for every view.
-
-#### Looking into one commit
-
-`<CR>` sets the session's `scope` to whatever the cursor compares — one commit
-or a marked range — and the commits pane is **replaced** by the files it
-changed. The files pane above is left
-alone, so what is uncommitted stays in view. Replacing rather than merging the
-two lists is what a commit's `gitview.Change` and an uncommitted
-`gitview.StatusEntry` being different shapes — one status letter against two, a
-parent against three versions — makes right.
-
-Which commit is being looked into is named by the pane's `'winbar'`, so no row of
-the buffer stands for it and every row remains a file.
-
-- **The change list is read once, on the way in, and kept**, along with the
-  range it was read for. It is what the rows stand for and what each file's two
-  versions are then read against, so selecting a file lists nothing again.
-  `source.for_range_change` reads one entry of it the way `source.for_entry`
-  reads one status entry.
-- **A commit is immutable, so a refresh leaves the scope alone.** What is
-  re-read is everything underneath, which is what backing out goes back to. A
-  range ending at the working tree is the exception: its change list is read
-  again, since the working tree may have moved on. The
-  log is not even read while a range is in front of it, since the commits pane is
-  showing the range's files; `<BS>` reads it on the way out.
-- **`<BS>` backs out**, and the cursor lands on the commit it was on when going
-  in — the near end of a range, not the mark — rather than wherever the row
-  happens to fall. `q` still closes the
-  session: a stack one level deep is not worth overloading it for.
-- **`<CR>` inside a commit focuses the diff**, which is what it does in the files
-  pane, since the row already names what is being shown.
-
-`]f` and `[f` mean what the view is shaped like rather than where they are
-pressed. A whole commit or a directory is many files in one buffer, so they
-scroll within it; a single file — uncommitted or from a commit — is one of many
-rows, so they move the list's cursor.
-
-`]r` and `[r` are `j` and `k` in the commits pane, pressed from the diff, and
-step through the working-tree row as those would. Inside a commit they look
-into the adjacent commit instead, since stepping through history one commit at
-a time is what backing out, moving and going in again would otherwise be for.
-Inside a range they refuse: a range has no commit next to it. Whether the scope
-is one commit is read from what it compares, not from the mark, which `<Esc>`
-can clear while the scope stands.
-
-### Reviewing a range
-
-`gr` sets the session's `review` to whatever `<CR>` would look into, and the
-files pane is **replaced** by that range's files. It is the files pane rather
-than the commits pane so that the commits pane stays free for looking into
-other commits while the review goes on, which is why looking into is kept
-beside it rather than replaced by it. A range being looked into is promoted:
-looking into it ends, since the same files would be listed twice.
-
-The rows are the files of a range, as a commit's are, and of the same kinds:
-`commit_file` and `commit_dir`. A target says which list it is in with
-`review`, and every lookup of a range's files goes through the row, by
-`scope_of`, as does the choice of pane. The two lists can hold the same range,
-so `review` is part of what the diff pane shows as well — `shown` and the key a
-position is kept under — or a file looked into would be taken for the same file
-under review.
-
-- **Both ends are fixed when it starts.** The working tree on its own is not a
-  range, and is reviewed from the commit HEAD is on at that moment, by sha:
-  naming HEAD would compare from wherever HEAD has got to, and what was
-  committed meanwhile would leave the review. Whether the ends diverged is
-  asked once, since neither moves.
-- **What it compares is re-read on refresh** when it ends at the working tree,
-  as a range looked into is, and whatever the commits pane is showing.
-- **Staging and switching the layer are refused.** A range has no index between
-  its sides, so the layer would change nothing on screen and leave the files
-  pane filtered once the review was over.
-
-#### Checks
-
-`review.lua` keeps which files are checked off, by path: the new side's for a
-rename, the old side's for a deletion. A check lives as long as the review, in
-memory; it is not kept anywhere once the review ends.
-
-A check records what was read rather than that something was. In a range ending
-at the working tree that is a hash of the new side's lines, so that a file that
-changes afterwards is told apart from one still as it was read:
-
-- **A check made from the diff records the lines the view was built from**,
-  which `gitview.File` keeps. The file may have moved on since the view was
-  drawn: a write that goes through no git command triggers no refresh.
-- **One made from the list, or of a file shown with no view**, records the file
-  as it is then. A binary file is hashed as bytes, a deleted one recorded as
-  such.
-- **Every checked file is read again on each refresh**, listed or not, and a
-  file under review is compared whenever its view is built, which can come
-  before the refresh. Nothing is skipped by modification time: a change missed
-  would leave unread content marked as read. Reading and hashing a file of a
-  few hundred lines takes about a tenth of a millisecond.
-- **A changed file stays checked, marked as changed**, and counts as still to
-  be read. Put back as it was read, it is checked again.
-
-In the list, the marks are drawn by `'statuscolumn'` in a column at the left
-edge that only a review has, in a tree as well, where the status letters stay
-by the names. At the edge they line up however deep a file is nested, and the
-column itself tells a review apart from the uncommitted files. A directory's
-mark is worked out from its files: changed while any is, checked once all are.
-
-The diff's header marks are painted in a namespace of their own rather than
-drawn with the view: a check changes them without changing the view, and
-building a view of many files again on every check would be slow. Only a view
-drawn for a selection under review is painted, never one of the same files
-looked into.
-
-A review part way through asks before its checks are thrown away, through
-`vim.fn.confirm` with No as the default; `vim.ui.select` is left alone, since
-a plugin may replace it. A finished review does not ask: that is how one
-ordinarily ends. Only `q` asks among the ways of closing, since closing the tab
-page otherwise cannot be stopped.
-
-### Ignoring whitespace
-
-`gw` stops lines that differ only in whitespace from counting as changed, and
-turns it back on. It is session state rather than configuration — a way of
-looking at one thing, changed and changed back while reading — and the configured
-`ignore_whitespace` is only where it starts. `vim.diff` does the work; the option
-had to be threaded through `dlib.hunks`, which builds its options table key by
-key.
-
-Two things have to be said out loud, because the fold is otherwise invisible:
-
-- **The winbar reads `-w`**, `git diff`'s flag for it, for as long as it is on.
-  A mode that silently changes which lines count as different is a trap.
-- **A file whose only change is whitespace says `(no change outside whitespace)`**
-  rather than `(no textual change)`, which would be a lie in exactly the case
-  where the fold hides everything there was.
-
-And **the row-level staging keys refuse while it is on.** A folded line is drawn
-as `context`, which a mixed view reads from the index, so writing the shown rows
-back would leave that line at its index version while the working tree kept the
-other. Whole-file `s` is unaffected: it is `git add`, which reads no rows. The
-measurement and the alternative are in
-[staging.md](staging.md#ignoring-whitespace-and-the-rows-disagree).
-
-The toggle lives on the session rather than in the configuration, because
-changing it means building every view again from the sources. `ignore_whitespace`
-in `setup()` only says where a session starts out.
-
-### Staged or unstaged alone
-
-`gs` goes from both layers of the uncommitted changes to the staged one alone,
-then the unstaged one alone, and back. It is session state for the same reason
-`gw` is, and the configured `layer` is only where a session starts.
-
-- **The files pane lists the files with a change in the layer**, by
-  `status.has_staged` and `status.has_unstaged`. The session keeps every entry
-  as `uncommitted` and the listed ones as `entries`, so everything that goes by
-  the list — a directory's row, the working-tree row's diff, `]f` — follows the
-  layer without knowing about it. A range ending at the working tree does not:
-  it compares two trees, with no index between them.
-- **An unmerged file is unstaged only.** Its index has no stage 0, and so no
-  version a commit would take; resolving it is deciding what to stage.
-- **The status letters stay both.** One of them alone would hide that an `MM`
-  file is partly staged.
-- **What is shown says so, in words the winbars already have.** The diff's rev
-  label is what is compared: `HEAD, staged` or `index, unstaged`. The files
-  pane counts `5 staged` where it would count `5 files`. Filtering is a change
-  that cannot be seen from what is left, which is the same trap as `gw`.
-- **The row-level keys refuse to move rows into the layer shown**, where there
-  is nothing to move, and say so: `s` with the staged layer alone, `u` with the
-  unstaged one. The files pane's `s` and `u` work in either, and a directory's
-  row takes the files listed under it and none the layer hides.
-
-The diff is the mixed view projected onto the layer; see
-[One layer alone](#one-layer-alone).
-
-#### Where the diff's cursor goes
-
-Redrawing the same file keeps the cursor's row, which keeps the line as long as
-the rows stay in place. Both layers at once do: staging moves a change from one
-layer to the other and adds or removes no row. A layer alone does not, so there
-`diff.place` finds the line again by what it is, and the session asks it to on
-three occasions:
-
-| occasion                   | the line is found by                       |
-| -------------------------- | ------------------------------------------ |
-| switching layers           | its version and number, else the index's   |
-| the index changed under it | the version the layer leaves alone         |
-| staging from the diff      | what is left of the change, or the next    |
-
-- **The version a layer leaves alone** is HEAD for the staged layer and the
-  working tree for the unstaged one. Neither is written by staging, and every
-  unchanged row of the layer has a number in it.
-- **After staging from the diff**, the cursor goes to what is left of the change
-  from its start, so that rows above the selection are not passed over. With
-  none left, it goes on to the file's next change, as working down a file the
-  way `git add -p` does. Past the file's last change it stops at the next file's
-  header, or stays where it was: what it lands on is then no change, so pressing
-  the key again does nothing rather than acting on rows unseen.
-- **A file staged out of the layer drops out of the list**, and the files pane
-  drifts to the next file, whose diff opens at its header for the same reason.
-
-A change to the working tree from elsewhere still moves the row, as it does with
-both layers shown.
+The sidebar follows the second as well: a row is a path, or a sha and a subject, and
+everything around it is drawn or concealed.
+
+## Parts
+
+| part                            | responsibility                                |
+| ------------------------------- | --------------------------------------------- |
+| `init`, `command`, `config`     | The entry points and the configuration        |
+| `actions`, `keymaps`            | What keys can do, and which keys do it        |
+| `ui/session`                    | One tab page's state, and redrawing it        |
+| `ui/list`, `tree`               | A sidebar pane and its rows                   |
+| `diff/`                         | Turning versions of files into a drawn view   |
+| `git`, `status`                 | Every subprocess, and what is uncommitted     |
+| `stage`, `index`                | Writing to the index; see [staging](staging.md) |
+| `review`                        | Which files of a review are checked off       |
+| `util`, `perf`                  | Helpers, and timing; see [performance](performance.md) |
+
+The dependencies run one way:
+
+- **Nothing under `diff/` knows `ui/` exists.**
+- **`diff/source` alone reads git and the editor for a view.** It hands the rest of
+  `diff/` plain data, so assembling a view looks nothing up for itself.
+- **`actions` requires the session only once called**, so that a user's configuration
+  can require it without loading the rest. Every key calls an action, so that a user
+  can map the same functions.
+
+## How a view is made
+
+For each file:
+
+1. Read the versions to compare.
+2. Diff them into a flat list of rows.
+3. Load each whole version into a scratch buffer, so that the highlighter sees full
+   context rather than a fragment.
+
+Then once for the view: collect highlights for the rows shown, draw the text and replay
+the highlights, and discard the scratch buffers. Tree-sitter and legacy `:syntax` both
+produce the same thing, and nothing downstream knows which ran.
+
+Three shapes of view replace step 2:
+
+- **Two versions**, for anything committed. Everything downstream takes a range, an old
+  revision and a new one, rather than a commit. Which parent a commit is compared with
+  is decided in one place.
+- **Three versions**, for an uncommitted file: the mixed view. See [below](#the-mixed-view).
+- **One version**, for an unmerged file. Its index has no stage 0, so there is no middle
+  for a mixed view, and the working tree is what is left to resolve.
+
+### The mixed view
+
+The mixed view diffs HEAD to the index and the index to the working tree. Both diffs share
+the index as one side, so every index line is placed by both at once. This is what the rest
+relies on:
+
+- **Every row knows where it sits in the index**, which is all that writing back needs.
+- **Pairing lines for word diffs stays within one stage.** Across stages it would compare
+  HEAD with the working tree, past the index.
+- **One layer alone is a projection of these rows**, not a second diff. Building the two-way
+  diff directly would give a second path for writing to the index and for finding a row's
+  line.
+
+### Rows and folds
+
+- **Not every row stands for a line of a version.** File headers, separators, a commit's
+  header and the list of files left out are buffer text too, so that they can be searched and
+  yanked. Anything that looks a row up in a version has to check its kind first.
+- **Every line of every version is in the buffer.** Unchanged lines are folded rather than
+  dropped, so a view's row count follows the size of its files rather than of its diff; see
+  [performance](performance.md#folded-rows).
+- **Folds are an expression reading the view**, since manual folds would be lost whenever the
+  lines are replaced.
+
+## The session
+
+A session is one tab page. It is registered against the tab page and dropped when that closes,
+however it closes.
+
+### Panes
+
+- **Two list panes rather than two sections of one**, so that a long working tree does not push
+  the history off the screen, and each pane carries only the keys that mean something in it.
+  What this costs is that neither cursor moves when the focus does, so entering a pane is what
+  tells the diff which list it follows.
+- **One buffer for the diff, for the life of the session.** A buffer per file would fire the
+  `Buf*` autocommands and disturb the alternate buffer and the jumplist on every cursor movement.
+  The pane therefore goes back to its start when what it shows changes, and stays put otherwise.
+- **What the pane shows is compared by what it names**: a kind and a path or sha. A list index
+  will not do, since a refresh can move a file, and one new commit moves every commit below it.
 
 ### Changing the index
 
-Two modules write to the index, and both hand back what they decided rather than
-acting on it, so the decision can be tested without a repository:
+After a change everything is rebuilt from git rather than adjusted in place, since the status
+letters, the file's versions and which lines count as staged all move together.
 
-- `stage.lua` picks the porcelain command that stages or unstages a whole file.
-- `index.lua` assembles the index contents a set of diff rows implies, and writes
-  them as a blob the entry is pointed at. No patch is generated anywhere.
-
-[staging.md](staging.md) covers both in full: the commands, why `git apply
---cached` was not used, what a row's `side` decides, and where the approach has
-holes. The parts that constrain the rest of the design are:
-
-- **The session keeps the selected file's `index_lines`**, which is what
-  `index.apply` writes the chosen rows into.
-- **Whether the repository has a HEAD is a session-level flag**, re-read
-  whenever the log is, because it decides which unstaging command is even
-  available.
-- **An unmerged file is never written to by row.** It has no stage 0 to read a
-  version from, and writing one over a conflict's three entries reports no error
-  and discards them. It is refused everywhere but whole-file `s`, which is
-  `git add` resolving it. Its view has no `index_lines`, and the row-level keys
-  check for a conflict before anything else, so that they say why rather than
-  doing nothing.
-
-After a change everything is rebuilt from git rather than adjusted in place: the
-status letters, the file's three versions and which of its lines count as staged
-all move together. The cursor follows what was selected rather than the row it
-was on, by path for a file and by sha for a commit, because a file added or
-committed away shifts every row below it. When the selection is gone altogether
-each pane keeps the row it was on, clamped to what was just drawn.
+The status is read in the background, so the panes show the old index until the read catches up.
+Staging from them meanwhile would write that old state back, so the session refuses to stage until
+a read has drawn the result.
 
 ### Refreshing
 
-A session re-reads the repository on `R`, after it has changed the index itself,
-and on its own from two triggers:
-
-- **A poll on `<gitdir>/index`**, every second, which is what catches a change
-  made while the session's own tab page is the one being looked at. `git add`,
-  `git commit` and `git checkout` all write that file, so one watcher covers them
-  whatever ran them: another terminal, a tmux pane, a script, another Neovim.
-- **`TabEnter`**, which picks up whatever happened while another tab page was
-  current, including the writes the poll passed over because nobody was looking
-  at the session.
-
-Two kinds of change fall between them, and are what `R` is left for:
-
-- **A file written by something that never went through git**, by an external
-  editor or a script. Neither the index nor HEAD moves. Watching the working tree
-  instead is not on offer: `fs_event` does not recurse on Linux, and a watcher per
-  directory of a repository is not worth what it would catch.
-- **A command that moves HEAD without writing the index**: `git reset --soft`, an
-  amend of nothing but the message, `git update-ref`. Watching `HEAD` as well
-  would not settle this, since on a branch it is `refs/heads/<name>` that moves
-  while `HEAD` holds still. In practice such a command is nearly always followed
-  by one that does write the index, which is the next line redrawn.
-
-Both are only a gap while the tab page stays current; entering it re-reads
-regardless.
-
-`FocusGained` would be the obvious third, and is deliberately not used. It needs
-the terminal to report focus, which tmux does not do unless `focus-events` is on,
-so it would be a trigger that silently never fires for some of the people it was
-added for. The index poll covers what it was wanted for and does not wait for
-Neovim to be given focus back.
-
-The watcher polls rather than subscribing to filesystem events because git writes
-`index.lock` and renames it over the index. The inode is replaced on every write,
-so `fs_event` would be left holding a file nothing writes to again, while
-`fs_poll` stats the path by name. The git directory is asked for rather than
-assumed from the root, since `.git` is a file naming somewhere else in a worktree
-and in a submodule.
-
-`TabEnter` is global rather than a buffer event, so it is created once for the
-module instead of once per session, and it acts on whichever session is current.
-A session's own `tabnew` fires it before the session is registered, and so does
-nothing. The watchers are the other way round — one set per session, started
-with the tab page and closed with it, since a poll handle is owned by nothing
-else.
-
-Being triggered rather than asked for changes what a refresh may do:
-
-- **It is throttled**, since `TabEnter` fires on every move between tab pages,
-  including a glance at another one and straight back. One refresh is seven
-  subprocesses and a view.
-- **It reports nothing when git fails.** The trigger will come again, so a
-  message per attempt would be noise rather than news. `R` still reports.
-- **It keeps a diff the selection cannot have changed.** A commit or a range is
-  named by sha, so what it compares is fixed; a file is named by its path alone,
-  the working tree moves under it, and its view has to be built again. So does
-  anything with the working-tree row at either end, whose name says as little. This is
-  read from what is shown against `shown`, not from the target `sync_selection`
-  derives, because those are compared by list index and one new commit moves every
-  index below it.
-
-The poll adds one more, because it is the only trigger that does not arrive at a
-break in what the user is doing:
-
-- **It waits for normal mode.** A redraw during a visual selection would take the
-  lines being staged away from the command about to stage them. Dropping the
-  refresh rather than deferring it costs nothing, since finishing that command
-  re-reads anyway.
-
-The line none of it may cross is changing what the diff pane shows. Nothing the
-user did would account for it.
-
-#### The upstream is watched on its own
-
-A push or a fetch moves the upstream, and so which commits count as
-[pushed](#pushed-and-unpushed-commits), without writing the index. Another pair
-of polls watches the upstream's ref instead:
-
-- **Its own file and `packed-refs`.** A ref is kept in one or the other:
-  `git pack-refs` and `git gc` move it into `packed-refs`, and it has a file of
-  its own again the next time it moves. Both are polled for the same reason as
-  the index, since a ref is written to a lock file and renamed over.
-- **Under the directory the worktrees share**, which `--git-common-dir` names.
-  A linked worktree's own directory holds only its HEAD and its index.
-- **Re-pointed with the branch.** Every read of the upstream checks the ref it
-  names against the one watched, and restarts the polls when they differ.
-  Switching branch writes the index, so the index poll leads there.
-- **Re-pointed with the config, too.** What a branch tracks is set in the config,
-  by `git push -u` on a branch's first push or by `git branch -u`, neither of
-  which writes the index. A third poll on the config reads the upstream again,
-  and is kept whether or not there is an upstream yet, since the commonest of
-  these is the one that sets the first.
-- **Only the upstream is read again**: one `rev-parse` and one `rev-list`, after
-  which the sha colors and the line are painted over the list rather than drawn
-  with it. An editor that fetches in the background would otherwise re-read the
-  status and the diff every few minutes for nothing. Painting leaves the buffer
-  alone, so unlike the index poll it need not wait for normal mode.
-
-A repository whose refs are a reftable has no file to watch, and is left to `R`.
-
-#### A commit the log has dropped holds the list back
-
-Replacing the list is what would cross that line. The selection is re-derived
-from the row the cursor is on, so a list that no longer names the selected commit
-puts a different commit on that row and draws it instead.
-
-The commit itself is still readable — a rewritten or reset commit stays in the
-object database until it is pruned — so what is wrong is the list, not the view.
-The old list is kept, the commits pane says `(history changed)` in its winbar, and
-the first move off that commit lets the new list through, onto the row the cursor
-chose rather than the one it happened to be on.
-
-This only arises from a history rewrite or from a commit falling off the end of
-the list. A commit merely added leaves the selected sha in place, where following
-it by sha already finds it.
-
-#### The files pane is allowed to drift
-
-The same thing in the files pane is left alone. A file that has left the list has
-stopped having changes in what the list shows: any at all, or with one layer
-alone, any in that layer. Either way there is nothing to go on showing in it, and
-moving to the row that took its place is what a file manager does with a deleted
-file. With nothing left at all the pane holds its empty notice and the diff says
-so too.
-
-Keeping a file staged out of a layer listed until the cursor leaves it would let
-a mistaken `u` be undone from the list. It would also need a state for which
-files are held and when to forget them, a look for a held row, a count that
-disagrees with the rows shown, and a directory's diff holding a file with nothing
-in it. `gs` back to both layers undoes it instead.
-
-#### The status is read in the background
-
-Listing untracked files walks the whole working tree, and in a large one
-`git ls-files --others` alone takes a second. Every read of the status — opening
-the tab page and every refresh — therefore runs its git commands through
-`git.async`, and Neovim stays usable while they run:
-
-- **Opening shows the commits at once.** The log is one cheap process, so it is
-  read before the tab page is drawn, while the files pane holds a notice until
-  the first read finishes. The cursor then lands on the first file, unless it has
-  been moved to the commits in the meantime.
-- **A refresh leaves the panes as they are** until its read finishes, and then
-  redraws them as a synchronous refresh did.
-- **Only the latest read is drawn.** Each one takes a number, and one that a
-  later read has overtaken is dropped whichever finishes first, since it
-  started from an older repository.
-- **A first read that fails says so in the files pane.** A later one keeps the
-  list already there, which is still the best there is.
-
-`git.async` runs ordinary synchronous code in a coroutine and makes `git.run`
-yield there rather than wait, so the readers in `status` and `git` are the same
-functions either way, and a caller decides by how it calls them.
-
-Staging is the one thing the wait changes. After `s` or `u` the panes show the
-index as it was until the read catches up, and staging lines from them then
-would write that old state back over the change just made. The session marks
-itself `outdated` when it writes the index and refuses to stage again until a
-read has drawn the result.
-
-## Pipeline
-
-For each file in the diff:
-
-1. **Read the versions.** `diff/source` reads each one: a committed version from
-   git, the index's from git, and the working tree's from the file's loaded
-   buffer if it has one and from disk otherwise. git is only ever used to read
-   blobs and to list what changed; the diff itself is `vim.diff`.
-2. **Diff.** `lines.hunks()` returns raw hunk indices; `lines.build()` turns them
-   into a flat list of context/deleted/added lines with both line numbers
-   attached.
-3. **Load ghost buffers.** Each whole version goes into its own scratch buffer,
-   so the highlighter sees full context rather than a hunk fragment.
-
-Then once for the whole view:
-
-4. **Collect highlights** from the ghost buffers, for the rows the view shows.
-   Tree-sitter is used when the language has a parser and legacy `:syntax`
-   otherwise; both produce byte ranges paired with highlight groups, and nothing
-   downstream knows which ran.
-5. **Render**: write the source text, replay the highlights as extmarks, and
-   layer diff backgrounds, word-level highlights and headers on top.
-6. **Discard the ghost buffers.** They exist only for step 4.
-
-The rows folded away are collected after every open row, a few files at a time
-once the view is on screen. A view with many open rows is treated the same way:
-its text and diff colors go on screen at once, and the syntax of its open rows
-follows, starting from the file the cursor is in. `render.draw` owns the ghost
-buffers from the moment it is called, and a step that finds its view replaced
-frees them and stops.
-
-Step 3 is what makes a line deleted from the middle of a multi-line string come
-out as a string: the fragment alone carries no such information.
-
-## Data shapes
-
-### `gitview.Line`
-
-One row of the rendered buffer.
-
-- `text` — the source line, exactly as it appears in the buffer
-- `kind` — `context`, `add`, `del` or `conflict`
-- `part` — which part of a conflict a `conflict` line is: `marker`, `ours`,
-  `base` or `theirs`
-- `old_lnum` / `new_lnum` — line numbers in each version; `nil` on the side
-  where the line does not exist
-- `side` — which version `text` came from, `old` or `new`
-- `row` — 0-based row of `text` in that version's ghost buffer
-- `file` — index into `View.files`
-- `index_pos` — where the row sits in the index; a mixed view only
-
-`side` plus `row` plus `file` is what links a rendered row back to the ghost
-buffer its highlights come from. `old_lnum` / `new_lnum` are for display and for
-opening the source; they are not used for highlighting. `index_pos` is there
-for writing the index back: see `diff/mixed` for how every row is placed against
-it, including the rows the index does not have.
-
-### `gitview.View`
-
-Everything one diff buffer needs, stored in `render.views[bufnr]` and dropped on
-`BufWipeout`.
-
-- `lines` — the `gitview.Line[]`, one per buffer row
-- `files` — `gitview.File[]`, each with its ghost buffers, language, label, and
-  the 1-based row of its header line
-- `hunk_rows` — 1-based rows to jump between with `]h` / `[h`
-- `rev`, `note` — shown in the winbar
-- `header_rows` — how many rows at the top are a commit's header; `nil` when
-  there is none
-- `mixed`, `layer` — whether the rows are a mixed view, and the one layer it
-  shows alone; `layer` is `nil` for both
-
-Rows in `hunk_rows` and `files` are absolute in the combined buffer. Assembling
-several files means concatenating each file's lines and shifting its rows by the
-running offset, and `view.list_skipped` and `view.prepend` shift them all once
-more for what they put above the files.
-
-### Line kinds
-
-Every buffer row has a `gitview.Line`, but only some of them stand for a line of
-one of the two versions:
-
-| kind                     | text                       | has line numbers |
-| ------------------------ | -------------------------- | ---------------- |
-| `context`, `add`, `del`  | source text                | yes              |
-| `conflict`               | source text                | yes              |
-| `file`                   | the file's label           | no               |
-| `blank`                  | empty, separates two files | no               |
-| `subject`, `author`      | a commit's header          | no               |
-| `body`, `stat`           | a commit's header          | no               |
-| `skipped`                | a file the view leaves out | no               |
-
-`dlib.source_kinds` is the test for the first two rows. Anything that looks a
-line up in a ghost buffer, prints a gutter, or opens the source has to check it
-first, because the other kinds carry no `side`, `row` or `file`. Highlight
-collection checks `dlib.has_syntax` instead, which also leaves out a conflict's
-markers.
-
-### Folded unchanged lines
-
-Every line of every version is in the view. The unchanged lines away from any
-change — all but `context` of them on each side of a change, and all of them
-before the first and after the last — are marked `folded`, and each run of them
-is one closed fold.
-
-- **Folding rather than dropping** lets a reader open a run to see what the
-  change sits in, and lets a search find a line that is not in view.
-- **A run of one line is left open.** A closed fold still takes a row, so folding
-  a single line away saves nothing and hides the line.
-- **A closed run reads as its first line that is not blank**, indented as it is
-  in the file and colored by its syntax, followed by how many lines it holds.
-  It is the only hint of what the run hides without opening it. Tabs are
-  expanded and a long line is cut, so that the count always fits.
-- **The rest of a closed fold is `'fillchars'` fold**, the user's own, for a run
-  and for a commit's header alike, so a closed fold spans the window and is
-  hard to miss.
-- **The gutter is blank on a closed run**, which stands for several lines rather
-  than for its first.
-- **Their syntax comes last.** The folded rows cover whole files, so they are
-  collected after every open row, in the background; a run shown or opened
-  before then shows its colors a moment late.
-
-Folds are an expression reading the view rather than manual folds, because a
-manual fold would be lost every time the lines are replaced. Replacing them
-under an open fold leaves it open or closes it depending on how its extent
-changed, so `render.draw` records which folds were open in each window and
-restores that. A fold is recognised in the next view by the file and the new
-line number of its first row — or as the header — which stays put while
-staging redraws the same file. A fold with no counterpart follows
-`'foldlevel'`.
-
-## Layering
-
-Everything drawn is an extmark, ordered by priority:
-
-| priority | layer                                        |
-| -------- | -------------------------------------------- |
-| 10       | Line background, with `hl_eol`               |
-| 100      | Replayed syntax highlighting, the stat graph |
-| 200      | Word-level change highlights                 |
-
-The ordering is the point: the line background has to sit under the syntax
-colors so they survive, and the word-level highlights have to sit over both so a
-changed word stands out against its own line's background.
-
-File headers are ordinary buffer lines, highlighted by the same whole-line
-range marks as the diff colors. They were virtual lines once; making them real
-means they can be searched, jumped to by row, and copied along with the lines
-around them, and it removes the special cases that `virt_lines` above line 1
-forced (see `neovim-notes.md`).
-
-Two things are still deliberately _not_ buffer text:
-
-- the gutter, drawn with `'statuscolumn'`, so line numbers stay out of a yank
-- the name of the file the cursor is in, drawn in the `'winbar'`
-
-The winbar is recomputed on redraw rather than set once, so it follows the cursor
-through a multi-file view and keeps naming the file after its header line has
-scrolled off.
-
-A winbar too long for its window is cut by Neovim from the left, which would
-take the file and the shas first. So `render.winbar` measures the window and
-cuts what follows the first word of the rev, a commit's subject, ending it in
-`…`; the file, the shas, `[N files]` and the notes are kept whole. It measures
-the text before any `%` is escaped or a color added, since neither takes a
-cell, and cuts by display cells, never inside a character. A window too narrow
-even without the subject is cut from the right, by the `%<` the winbar ends
-with.
-
-## Word-level pairing
-
-`change_pairs()` decides which deleted line is word-diffed against which added
-one. Within a del/add block, each deletion is paired with the first addition
-after the last pair whose word diff passes `worddiff.useful`, the same greedy
-scheme git-delta uses. Deletions and additions that resemble nothing stay
-unpaired, and pairs never cross, because a unified view cannot show crossing
-pairs as changes.
-
-Every comparison is a word diff, so the search is bounded twice:
-
-- A deletion is only compared against the next 10 additions, so the cost grows
-  linearly with the block rather than quadratically.
-- A block with more than 500 deleted or added lines is not paired at all. Word
-  highlights tell little in a replacement that large, and a 500-line block
-  rewritten wholesale already costs up to 5,000 word diffs, around 65ms.
-
-Which lines are compared is independent of how the diff is laid out, so pairing
-moves no hunk boundary and keeps the agreement with `git diff`.
-
-## Mixed view
-
-An uncommitted file's diff replaces step 2 of the pipeline with `mixed.build`,
-which takes three versions of the file instead of two. The rest of the pipeline
-is unchanged apart from a third ghost buffer for the index.
-
-### Aligning on the index
-
-`mixed.merge` diffs HEAD -> index (the staged changes) and index -> working tree
-(the unstaged ones). Both diffs share the index as one of their sides, so every
-index line is placed by both at once. Each row then falls into one case:
-
-| HEAD | index | work | `kind`    | `stage`    |
-| ---- | ----- | ---- | --------- | ---------- |
-| yes  | yes   | yes  | `context` | —          |
-| yes  | —     | —    | `del`     | `staged`   |
-| —    | yes   | yes  | `add`     | `staged`   |
-| yes  | yes   | —    | `del`     | `unstaged` |
-| —    | —     | yes  | `add`     | `unstaged` |
-| —    | yes   | —    | `del`     | `index`    |
-
-- `old_lnum` is the HEAD line number and `new_lnum` the working-tree one, as in
-  an ordinary view. An `index` row has neither.
-- A line in HEAD and the working tree but not the index is not a case of its
-  own. It comes out as a staged deletion plus an unstaged addition.
-- Rows are read from the index ghost buffer (`side = 'index'`) whenever the
-  index has the line, and from HEAD or the working tree otherwise.
-
-### Ordering between index lines
-
-Between two index lines there can be HEAD lines the index dropped and
-working-tree lines the index lacks. They are normally emitted deletions first.
-The exception is when the index line above was itself removed from the working
-tree. The additions then replace that line, so they come first. Otherwise a
-partially staged hunk interleaves the two layers:
-
-```
-- a      (unstaged)      - a      (unstaged)
-- b  S                   + A      (unstaged)
-+ A      (unstaged)      - b  S
-+ B  S                   + B  S
-  wrong                    right
-```
-
-### Pairing
-
-`change_pairs()` only pairs a deletion and an addition of the same `stage`.
-Across stages they are two separate changes, and a word diff between them
-would compare HEAD with the working tree past the index.
-
-### One layer alone
-
-With one layer shown, `mixed.project` turns the merged rows into the plain diff
-of the two versions that layer compares: HEAD -> index for `staged`, index ->
-working tree for `unstaged`. Nothing is reordered; each row is kept, turned into
-context, renamed or dropped.
-
-| row                | `staged`  | `unstaged` |
-| ------------------ | --------- | ---------- |
-| `context`          | kept      | kept       |
-| `del`, `staged`    | kept      | dropped    |
-| `add`, `staged`    | kept      | context    |
-| `del`, `unstaged`  | context   | kept       |
-| `add`, `unstaged`  | dropped   | kept       |
-| `del`, `index`     | `add`     | kept       |
-
-- **A row of the other layer is context when the index has it**, being in both
-  versions compared, and dropped otherwise. Hiding it rather than turning it
-  into context would make an index line look deleted.
-- **The `index` row takes the name of the layer shown.** It is an addition
-  HEAD -> index and a deletion index -> working tree. Left as `index`, pairing,
-  a file's counts and its colors would each treat it as the both-layers case.
-  Writing it back is unchanged: its side is the index, so either direction drops
-  it from the index, and the direction that would keep it is refused anyway.
-- **The result is the two-way diff, hunk for hunk**, since `mixed.merge` is
-  built from exactly those two diffs. Folds are computed after projecting, so a
-  change of the other layer opens nothing.
-
-Building the two-way diff directly would have given the same rows without
-their `index_pos`, `side` and working-tree number, and with them a second path
-for writing to the index and a second way to find a row's line for `gf`.
-Projected rows keep all three.
-
-What the projection changes downstream:
-
-- **The colors are a plain diff's**, with no bar. The blended background and the
-  `┃` tell two layers apart, and there is only one.
-- **The gutter numbers the two versions compared.** The index column comes from
-  `index_pos`, for a row whose side is the index: every row has an `index_pos`,
-  but for the rest it is the line they stand in front of.
-- **Context rows no longer have both numbers.** Staged alone, a line the working
-  tree dropped has no `new_lnum`; unstaged alone, a line the index added has no
-  `old_lnum`. Folds are remembered by the version the layer leaves alone, which
-  every unchanged row of it has: HEAD for staged, the working tree for unstaged.
-- **`gy` gives a row only the index has by its index number**, as the gutter
-  does: `in the index` staged, where it is an addition or unchanged, and
-  `deleted from the index` unstaged.
-
-### File list
-
-`status.list` names the files. A file appears when `git diff --cached`,
-`git diff` or `git ls-files --others` lists it, and it appears once however
-many of them do: the first two are joined on the index path, which is the only
-name both use for a file renamed in the index.
-
-Each entry keeps the status letter of either side, as `git status --short`
-prints them, but nothing downstream branches on it. The diff is built from HEAD,
-the index and the working tree whatever changed, and a version the file does not
-have is empty — an untracked file has neither of the first two. A file with only
-staged changes has a working tree equal to its index, and one with only unstaged
-changes has a HEAD equal to its index, so neither is read twice.
-
-Binary files are excluded. git flags the tracked ones through
-`git diff --numstat`; it never diffs an untracked file, so those are recognised
-the way git itself does it, by a NUL byte in the first 8000 bytes.
-
-## Conflict view
-
-An unmerged file's view replaces step 2 of the pipeline with `conflict.build`,
-which reads one version: the working tree, as git left it after the merge. Its
-index holds merge stages 1 to 3 and no stage 0, so there is no middle for a
-mixed view, and the working tree is what is left to resolve. `Source.conflicted`
-is what tells `view.build` to take this path.
-
-### Recognising the markers
-
-`conflict.classify` gives every line a `kind`: `context` outside a conflict, and
-`conflict` inside one, `part` saying where.
-
-| `part`   | lines                                                   |
-| -------- | ------------------------------------------------------- |
-| `marker` | `<<<<<<<`, `\|\|\|\|\|\|\|`, `=======` and `>>>>>>>`     |
-| `ours`   | after `<<<<<<<`, up to the next marker                  |
-| `base`   | after `\|\|\|\|\|\|\|`, up to `=======` (`diff3`, `zdiff3`) |
-| `theirs` | after `=======`, up to `>>>>>>>`                        |
-
-All of them are one kind so that everything but the colors asks one question,
-whether a line is part of a conflict, and only the colors look at `part`.
-
-- **A separator counts only where it can come next.** `=======` is a marker only
-  in an open conflict, and `|||||||` only right after ours. A Markdown heading's
-  underline elsewhere stays `context`.
-- **A conflict that is never closed is left as `context`.** Markers partly
-  removed by hand leave nothing to tell what the conflict would span, and
-  guessing would run it on to the next one or to the end of the file.
-- **Only git's default of seven characters is recognised**, not a size set
-  with the `conflict-marker-size` attribute.
-
-Every line carries `new_lnum` and `side = 'new'` with its `row`, so the gutter,
-`gf` and highlight collection treat it as a line of the working tree. There is
-no `old_lnum`, so the gutter's first column is blank: HEAD says nothing about how
-the merge went.
-
-### Folding and jumping
-
-The lines go through `mixed.fold`, which folds whatever is `context` away from
-any other kind, so only the lines around each conflict are open. `hunk_rows` is
-the `<<<<<<<` row of each conflict, taken from `classify` rather than from
-`fold`: two conflicts with nothing between them are one run to `fold`, and `]c`
-would not stop at the second.
-
-A file with no conflict marked out has no view. It is listed as left out, or
-noticed in place of a view, like a change with no lines. That is the case for a
-file one side deleted, whose working tree holds the other side unmarked, and for
-one whose markers were all removed by hand but which has not been added.
-
-### Colors
-
-- **The background is by `part`**, in the colors other tools give them: ours
-  the add color, theirs the change color, and the base, which both sides moved
-  away from, the delete color. They are faded further than a staged change, so
-  that a conflict among ordinary diffs is not read as one.
-- **Each marker has a group of its own**, told apart by its first character.
-  `<<<<<<<` and `>>>>>>>` take their side's color, less faded, so that where a
-  conflict starts and ends stands out. `|||||||` and `=======` belong to neither
-  side and are a neutral gray.
-- **Syntax is collected from the working tree, markers and all**, onto every row
-  but the markers, which `dlib.has_syntax` leaves out: they are no code in any
-  language and would be colored as errors. The rest is not valid code either,
-  so the parse can go wrong inside a conflict and just after one. Most rows still
-  get the right colors, which is better than none.
-- **The header counts conflicts**, as `!3` where an ordinary file's header shows
-  `+n -m`, so the counts line up in a directory's view. `File.conflicts` carries
-  the number.
+A session re-reads the repository on `R`, after changing the index itself, when its tab page is
+entered, and when a poll sees the index written. Polls on the upstream's ref and on the config
+re-read only the upstream.
+
+The line none of it may cross is changing what the diff pane shows, since nothing the user did would
+account for it:
+
+- **A diff the selection cannot have changed is kept.** A commit or range is named by sha, and a file
+  by a path the working tree moves under.
+- **A list that no longer names the selected commit is held back** until the cursor leaves that
+  commit, since the selection follows the row and another commit would take it.
+- **The files pane is allowed to drift.** A file that left the list has nothing left to show.
+- **A refresh during a visual selection is dropped**, as it would take away the lines about to be
+  staged. Finishing that command re-reads anyway.
+
+### Reviews and ranges
+
+- **A review's ends are fixed by sha when it starts**, or what is committed meanwhile would leave it.
+- **The same range can be both reviewed and looked into**, so which list a row is in is part of what
+  the diff pane shows and of the key a cursor position is kept under.
+- **A check records what was read, not that something was.** A file that changed is told apart by a
+  hash of what the view showed. Nothing is skipped by modification time, since a change missed would
+  leave unread content marked as read.
+- **A range ending at the working tree is read against a copy of the index** with the untracked files
+  added, so that git treats them as any other file. The real index is never written for it.
 
 ## Invariants
 
-Each of these is guarded by a test. Breaking one is a regression even if
-everything still looks right.
+Each of these is guarded by a test. Breaking one is a regression even if everything still looks right.
 
-| invariant                                                               | guarded by                                       |
-| ----------------------------------------------------------------------- | ------------------------------------------------ |
-| Buffer text equals source text, row for row                             | `render_spec`, `multifile_spec`                  |
-| Hunk boundaries match `git diff`                                        | `diff_spec`                                      |
-| No line is emitted twice, and line numbers only increase                | `diff_spec`                                      |
-| Highlight ranges stay inside their line and on character boundaries     | `render_spec`, `worddiff_spec`, `highlight_spec` |
-| Restricting collection to some rows does not change what those rows get | `highlight_spec`                                 |
-| Colors work without `setup()` ever being called                         | `render_spec`                                    |
-| Word-level pairing never crosses a file boundary                        | `diff_spec`                                      |
-| Word-level pairing never crosses a stage boundary                       | `mixed_spec`                                     |
-| Unstaging a rename leaves the index equal to HEAD                       | `stage_spec`                                     |
-| An unmerged path is never written to the index                           | `session_spec`                                   |
-| A separator outside an open conflict is not a marker                     | `conflict_spec`                                  |
-| A conflict's markers get no syntax                                       | `render_spec`                                    |
-| A merge is compared with its first parent only when shown alone           | `git_spec`, `session_spec`                        |
-| A range across a fork is compared, and said to be across one             | `git_spec`, `session_spec`                        |
-| A commit's view reads neither side from the working tree                | `session_spec`                                   |
-| Nothing is staged while a commit or one of its files is selected        | `session_spec`                                   |
-| Looking into a commit replaces the commits pane, not the files pane      | `list_spec`, `session_spec`                      |
-| The diff pane restarts at the top unless it is redrawing the same thing  | `session_spec`                                   |
-| Staging every unstaged row leaves nothing unstaged                      | `index_spec`                                     |
-| Rows are never written to the index while whitespace is ignored          | `session_spec`                                    |
-| Unchanged lines are folded, never dropped                               | `diff_spec`, `mixed_spec`                        |
-| An opened fold stays open while the same file is redrawn                | `session_spec`                                   |
+- Buffer text equals source text, row for row.
+- Hunk boundaries match `git diff`.
+- No line is emitted twice, and line numbers only increase.
+- Highlight ranges stay inside their line and on character boundaries.
+- Restricting collection to some rows does not change what those rows get.
+- Colors work without `setup()` ever being called.
+- Word-level pairing never crosses a file or a stage boundary.
+- Unstaging a rename leaves the index equal to HEAD.
+- An unmerged path is never written to the index.
+- A separator outside an open conflict is not a marker, and a conflict's markers get no syntax.
+- A merge is compared with its first parent only when shown alone.
+- A range across a fork is compared, and said to be across one.
+- A commit's view reads neither side from the working tree.
+- Nothing is staged while a commit or one of its files is selected.
+- The diff pane restarts at the top unless it is redrawing the same thing.
+- Staging every unstaged row leaves nothing unstaged.
+- Rows are never written to the index while whitespace is ignored.
+- Unchanged lines are folded, never dropped, and an opened fold stays open while the same file is
+  redrawn.
+- A module a window option can reach through `require` holds no large table; see
+  [performance](performance.md#keep-module-state-off-what-vlua-converts).
 
 ## Deliberate omissions
 
-Alternatives that were tried or considered and rejected, so they are not
-re-attempted by accident:
+Alternatives a reader might reach for, and why they are not used:
 
-- **Generating a patch and running `git apply --cached`.** See
-  [staging.md](staging.md#why-not-git-apply---cached).
-- **Parsing `git diff` output instead of using `vim.diff`.** Workable, and it
-  would inherit the user's git configuration, but git compares the file on disk
-  while this compares the buffer. `vim.diff` already agrees with git on hunk
-  boundaries once `linematch` is off.
-- **`linematch` on by default.** It disagrees with `git diff`, and word-level
-  pairing does not need it (see [Word-level pairing](#word-level-pairing)). It
-  is configurable; the default favours agreement.
-- **Pairing changed lines by position.** It only works for equally sized
-  blocks: one line inserted in the middle shifts every pair below it.
-- **Character-level word diff.** Unrelated lines share letters, so the result
-  reads as noise. Tokens are runs of word characters instead.
-- **`line_hl_group` for the line background.** See [neovim-notes.md](neovim-notes.md).
-- **`vim.inspect_pos()` for collecting highlights.** See the same document.
+- **Parsing `git diff` output instead of using `vim.diff`.** Every version is already in memory as
+  lines for highlighting, and `vim.diff` agrees with git on hunk boundaries once `linematch` is off,
+  so a parser would add a representation nothing else needs.
+- **`linematch` on by default.** It disagrees with `git diff`, and word-level pairing does not need it.
+- **`git apply --cached`.** See [staging](staging.md#why-not-a-patch).
+- **`FocusGained` as a refresh trigger, and a watcher on the working tree.** See the comments on the
+  session's watchers.
 
 ## Known gaps
 
 ### A conflict is shown, not merged
 
-The [conflict view](#conflict-view) shows the working tree and leaves resolving
-it to editing the file. Everything else a conflict could use is in the index
-already, as merge stages 1, 2 and 3, and none of it is read yet.
+The conflict view shows the working tree and leaves resolving it to editing the file. Everything else a
+conflict could use is in the index already, as merge stages 1, 2 and 3, and none of it is read yet.
 
 #### Syntax from each stage
 
-The syntax collected from the working tree breaks around a conflict, since the
-file with its markers is not valid code. Each stage is: `:2:path` is ours,
-`:3:path` theirs and `:1:path` the base, and none has a marker. Their syntax
-would color each row correctly:
+The syntax collected from the working tree breaks around a conflict, since the file with its markers is
+not valid code. Each stage is valid: `:2:path` is ours, `:3:path` theirs and `:1:path` the base. Their
+syntax would color each row correctly:
 
-- Diff the working tree with each stage, and map its rows with `mixed.align`.
-- An ours row takes the matching row of `:2`, a theirs row that of `:3`, and a
-  base row that of `:1`.
-- A row outside every conflict takes `:2` or `:3`, whichever has it: a line
-  merged in cleanly from theirs is only in `:3`.
-- A row in no stage, such as one edited since the merge, keeps the working
-  tree's syntax, as now. A marker gets none.
+- Diff the working tree with each stage, and map its rows through the hunks.
+- An ours row takes the matching row of `:2`, a theirs row that of `:3`, and a base row that of `:1`.
+- A row outside every conflict takes `:2` or `:3`, whichever has it: a line merged in cleanly from theirs
+  is only in `:3`.
+- A row in no stage, such as one edited since the merge, keeps the working tree's syntax. A marker gets
+  none.
 
-It costs, per conflicted file, two or three more blobs read, two diffs and two
-or three more ghost buffers parsed.
+It costs, per conflicted file, two or three more blobs read, two diffs and two or three more scratch
+buffers parsed.
 
 #### Keys that resolve
 
-There is no taking ours, theirs or both from the view. A mixed view is the wrong
-shape for such keys, for two independent reasons.
+There is no taking ours, theirs or both from the view. A mixed view is the wrong shape for such keys, for
+two independent reasons.
 
-- **There is no staged layer to show.** A path has either stage 0 or stages 1–3,
-  never both: `git add` on an unmerged path is what collapses the stages into
-  stage 0, so resolving and staging are the same act. The question a mixed view
-  exists to answer — staged or unstaged — does not arise.
-- **The three versions fork rather than chain.** `HEAD -> index -> work` is a
-  chain, and which versions hold a line maps onto staged and unstaged.
-  `ours <- base -> theirs` has one common ancestor, and the same fact maps onto
-  ours, theirs and both. git draws its own distinction here: `git diff` on an
-  unmerged path emits a combined diff, `@@@` with two marker columns, rather than
-  an ordinary one.
+- **There is no staged layer to show.** A path has either stage 0 or stages 1–3, never both: `git add` on
+  an unmerged path is what collapses the stages into stage 0, so resolving and staging are the same act.
+- **The three versions fork rather than chain.** `HEAD -> index -> work` is a chain, and which versions
+  hold a line maps onto staged and unstaged. `ours <- base -> theirs` has one common ancestor, and the same
+  fact maps onto ours, theirs and both. git draws its own distinction here: `git diff` on an unmerged path
+  emits a combined diff rather than an ordinary one.
 
-What carries over and what does not:
-
-- `mixed.align` is reusable as it stands. It turns a hunk list into a line
-  correspondence and assumes nothing about what the two sides are.
-- `mixed.merge` is not. Its pivot is the new side of one diff and the old side of
-  the other, so it reads `staged.new_to_old` and `unstaged.old_to_new`. A merge
-  pivots on base, which is the old side of **both** diffs. The assembly is the
-  same shape written against different tables.
+Aligning two versions through a hunk list carries over as it is. Merging the two diffs does not: the mixed
+view pivots on the new side of one diff and the old side of the other, while a merge pivots on base, the old
+side of both.
 
 #### The exact status pair
 
-git tells seven pairs apart — `UU`, `AA`, `DU`, `UD`, `AU`, `UA`, `DD` — by which
-stages the index holds: `AA` has no base, `DU` no ours, `UD` no theirs. Only the
-fact that a path is unmerged is recorded, so every conflict is listed as `UU`.
-Reading `git ls-files -u` gives the pair, and the stages that syntax from each
+git tells seven pairs apart — `UU`, `AA`, `DU`, `UD`, `AU`, `UA`, `DD` — by which stages the index holds:
+`AA` has no base, `DU` no ours, `UD` no theirs. Only the fact that a path is unmerged is recorded, so every
+conflict is listed as `UU`. Reading `git ls-files -u` gives the pair, and the stages that syntax from each
 stage needs, so both are one piece of work.
 
-#### A range ending at the working tree
+### What the working tree does not report
 
-`git diff <commit>` reports an unmerged file as an ordinary `M` or `A`, so a
-range ending at the working tree shows it as a diff, its markers as added lines.
-That is not wrong, since the markers are in the working tree, and it is left as
-it is.
-
+Two kinds of change are left to `R` while the tab page stays current: a file written by something that never
+went through git, and a command that moves HEAD without writing the index. A repository whose refs are a
+reftable has no file to watch, so moves of its upstream are also left to `R`.
