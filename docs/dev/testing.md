@@ -1,5 +1,8 @@
 # Testing
 
+For anyone adding to the test suite: how it runs, what is worth testing, and the
+traps of reproducing something in a throwaway Neovim.
+
 ```sh
 make test
 ```
