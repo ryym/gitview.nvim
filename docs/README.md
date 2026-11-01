@@ -1,5 +1,9 @@
 # Documentation
 
+## For users
+
+[usage.md](usage.md) covers every view and key, configuration, and limitations.
+
 ## For developers
 
 | document                                   | what it covers                                 |
