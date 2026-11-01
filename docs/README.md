@@ -6,13 +6,13 @@
 
 ## For developers
 
-| document                                   | what it covers                                 |
-| ------------------------------------------ | ---------------------------------------------- |
-| [dev/architecture.md](dev/architecture.md) | The parts of the plugin and the rules they share |
+| document                                   | what it covers                                     |
+| ------------------------------------------ | -------------------------------------------------- |
+| [dev/architecture.md](dev/architecture.md) | The parts of the plugin and the rules they share   |
 | [dev/staging.md](dev/staging.md)           | How the index is written, and where that has holes |
-| [dev/performance.md](dev/performance.md)   | Where the time goes, and how to measure it     |
-| [dev/neovim-notes.md](dev/neovim-notes.md) | Measured Neovim and git behaviours to rely on  |
-| [dev/testing.md](dev/testing.md)           | How the suite runs and how to add to it        |
+| [dev/performance.md](dev/performance.md)   | Where the time goes, and how to measure it         |
+| [dev/neovim-notes.md](dev/neovim-notes.md) | Measured Neovim and git behaviours to rely on      |
+| [dev/testing.md](dev/testing.md)           | How the suite runs and how to add to it            |
 
 ## Documentation policy
 
@@ -23,9 +23,9 @@ keeps to that. State each fact in one place, and link to it from elsewhere.
 
 ### User documents
 
-The README is a short overview. The specification of what a user sees and can
-configure belongs in the user documents, independent of how it is implemented.
-Users do not read the code, so what they would want to know is written out.
+- `README.md`: a short overview of the Gitview.nvim.
+- `docs/usage.md`: The specification of what a user sees and can configure belongs in the user documents,
+  independent of how it is implemented. Users do not read the code.
 
 ### Developer documents
 
@@ -33,19 +33,17 @@ Developer documents are a map for reading the code, not a description of it.
 
 Include only:
 
-- **The overall shape**: which parts exist, what each is responsible for, and how
-  they relate.
+- **The overall shape**: which parts exist, what each is responsible for, and how they relate.
 - **Rules no single file shows**, such as an invariant kept across several modules.
-- **The reason for a choice** a reader would otherwise likely "fix" or undo, when
-  the choice spans several files. If it lives in one place in the code, its reason
-  belongs in a comment there, where anyone about to change it will read it.
-- **What is costly to learn from the code**, such as measured behaviour of Neovim
-  or git, and known gaps.
+- **The reason for a choice** a reader would otherwise likely "fix" or undo, when the choice
+  spans several files. If it lives in one place in the code, its reason belongs in a comment
+  there, where anyone about to change it will read it.
+- **What is costly to learn from the code**, such as measured behaviour of Neovim or git,
+  and known gaps.
 
 Leave out:
 
-- **Internal details**: function names, data shapes, algorithms and step-by-step
-  flows.
+- **Internal details**: function names, data shapes, algorithms and step-by-step flows.
 - **Consequences** that follow from a stated rule, and conventions any developer in
   the field would assume.
 - **Justifications against a previous design**. The motivation for a change belongs
