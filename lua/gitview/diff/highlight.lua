@@ -32,7 +32,7 @@ end
 --- the buffer gets 'syntax' rather than 'filetype'. The syntax file is all the
 --- legacy path reads, and 'filetype' would also set off ftplugins and every
 --- FileType autocommand of the user's, language servers included, for a buffer
---- that lives a moment. See docs/performance.md for what that cost and for how
+--- that lives a moment. See docs/dev/performance.md for what that cost and for how
 --- the colors may differ from the file's own.
 ---
 --- @param lines string[]

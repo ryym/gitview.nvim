@@ -38,7 +38,7 @@ than text, so yanking a selection gives you code and not a gutter.
 There is no `+`/`-` column. A deleted line has only its old number, painted
 red, and an added line only its new number, painted green.
 
-[docs/architecture.md](docs/architecture.md) describes the pipeline in full.
+[docs/dev/architecture.md](docs/dev/architecture.md) describes the pipeline in full.
 
 ### Several files in one buffer
 
@@ -96,7 +96,7 @@ because the index differs from both:
   cannot show as unchanged.
 
 How the three versions are merged is described in
-[docs/architecture.md](docs/architecture.md#mixed-view).
+[docs/dev/architecture.md](docs/dev/architecture.md#mixed-view).
 
 ### Merge conflicts
 
@@ -124,7 +124,7 @@ markers left to show, such as one that one side deleted, says so in place of the
 view.
 
 How the markers are recognised is described in
-[docs/architecture.md](docs/architecture.md#conflict-view).
+[docs/dev/architecture.md](docs/dev/architecture.md#conflict-view).
 
 ### The tab page
 
@@ -458,7 +458,7 @@ require('gitview').setup({ linematch = 60 })
 ```
 
 Both sides of the trade-off are measured in
-[docs/neovim-notes.md](docs/neovim-notes.md#linematch-disagrees-with-git).
+[docs/dev/neovim-notes.md](docs/dev/neovim-notes.md#linematch-disagrees-with-git).
 
 ### The diff's own line numbers
 
@@ -737,7 +737,7 @@ changing an option it is drawn with can leave it drawn wrong.
   one side or the other; the file is edited after `gf`, and marked resolved with
   `s` on it in the list. It is listed as `UU` whichever pair git would print, and
   its syntax colors can be off around a conflict. See
-  [docs/architecture.md](docs/architecture.md#a-conflict-is-shown-not-merged).
+  [docs/dev/architecture.md](docs/dev/architecture.md#a-conflict-is-shown-not-merged).
 - **A range ending at the working tree shows conflict markers as added lines.**
   `git diff <commit>` reports an unmerged file as an ordinary change, and the
   markers are in the working tree.
@@ -745,7 +745,7 @@ changing an option it is drawn with can leave it drawn wrong.
   here can represent a missing final newline: a blob is read as a line array and
   written back as one.
 - **Everything is computed eagerly** when the diff opens, and grows linearly
-  with the number of files. See [docs/performance.md](docs/performance.md) for
+  with the number of files. See [docs/dev/performance.md](docs/dev/performance.md) for
   the numbers.
 
 ## Development
@@ -756,8 +756,8 @@ make test
 
 | document                                     | what it covers                                                                                |
 | -------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [docs/architecture.md](docs/architecture.md) | The pipeline, the modules, the data shapes, and the invariants                                |
-| [docs/neovim-notes.md](docs/neovim-notes.md) | Neovim and git behaviours the code depends on, and why the obvious alternatives were rejected |
-| [docs/staging.md](docs/staging.md)           | How the index is written, why not with a patch, and where that has holes                      |
-| [docs/performance.md](docs/performance.md)   | Where the time goes, measured, and how to measure it again                                    |
-| [docs/testing.md](docs/testing.md)           | How the suite runs and how to add to it                                                       |
+| [docs/dev/architecture.md](docs/dev/architecture.md) | The pipeline, the modules, the data shapes, and the invariants                                |
+| [docs/dev/neovim-notes.md](docs/dev/neovim-notes.md) | Neovim and git behaviours the code depends on, and why the obvious alternatives were rejected |
+| [docs/dev/staging.md](docs/dev/staging.md)           | How the index is written, why not with a patch, and where that has holes                      |
+| [docs/dev/performance.md](docs/dev/performance.md)   | Where the time goes, measured, and how to measure it again                                    |
+| [docs/dev/testing.md](docs/dev/testing.md)           | How the suite runs and how to add to it                                                       |
