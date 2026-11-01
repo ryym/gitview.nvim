@@ -528,7 +528,11 @@ the conflict colors to faded backgrounds derived from `DiffAdd`, `DiffChange`
 and `DiffDelete` with gray between the sides,
 `GitviewFileHeaderBg` to one derived from `CursorLine`, `GitviewFileHeader` to
 bold text in the surrounding color, `GitviewWinBarText` to the winbar's
-colors without its bold, and the rest link to standard groups. All are defined the first time they are
+colors without its bold, `GitviewStatAdd`, `GitviewStatDelete`,
+`GitviewStatusStaged` and `GitviewStatusUnstaged` to the text color of `Added`,
+`Removed` or `Changed` (or, where the colorscheme gives those a background, of
+the `diff*` and `GitSigns*` groups for the same change), and the rest link to
+standard groups. All are defined the first time they are
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
 carries configuration, and the colors do not depend on it.

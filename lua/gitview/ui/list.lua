@@ -462,12 +462,11 @@ function M.content(model)
   return rows
 end
 
---- Status letters are foreground colors, unlike the diff backgrounds, so they
---- are taken from the groups Neovim already defines for exactly this: `Added`,
---- `Changed` and `Comment`. Defining any of them yourself takes precedence.
+--- Status letters are foreground colors, unlike the diff backgrounds. Defining
+--- any of these groups yourself takes precedence.
 local highlights = util.highlights('gitview.ui.highlights', function(set)
-  set('GitviewStatusStaged', { link = 'Added' })
-  set('GitviewStatusUnstaged', { link = 'Changed' })
+  set('GitviewStatusStaged', util.text_color('add'))
+  set('GitviewStatusUnstaged', util.text_color('change'))
   set('GitviewStatusUntracked', { link = 'Comment' })
   set('GitviewCommitWorktree', { link = 'Comment' })
   set('GitviewDirectory', { link = 'Directory' })

@@ -301,6 +301,44 @@ test('list: an untracked file gets both letters in one color', function()
   eq('%#GitviewStatusUntracked#?? ', gutter({ entry('?', '?', 'new.txt') }, 1))
 end)
 
+-- Colorschemes that mark changes with a background give `Added` one. Linked to
+-- it, the letters were drawn on a colored block.
+test('list: status letters take only a text color', function()
+  local names = { 'Added', 'Changed', 'diffAdded', 'diffChanged', 'GitSignsAdd', 'GitSignsChange' }
+  local letters = { 'GitviewStatusStaged', 'GitviewStatusUnstaged' }
+  local saved = {}
+  for _, name in ipairs(names) do
+    saved[name] = vim.api.nvim_get_hl(0, { name = name, link = false })
+  end
+  local function clear()
+    for _, name in ipairs(letters) do
+      vim.cmd('hi clear ' .. name)
+    end
+  end
+  local function get(name)
+    return vim.api.nvim_get_hl(0, { name = name, link = false })
+  end
+  local ok, err = pcall(function()
+    vim.api.nvim_set_hl(0, 'Added', { fg = 0xffffff, bg = 0x20301e })
+    vim.api.nvim_set_hl(0, 'Changed', { fg = 0xffffff, bg = 0x1f2a3a })
+    vim.api.nvim_set_hl(0, 'diffAdded', { fg = 0x00ff00, reverse = true })
+    vim.api.nvim_set_hl(0, 'diffChanged', { fg = 0x0000ff })
+    vim.api.nvim_set_hl(0, 'GitSignsAdd', { fg = 0x00aa00 })
+    clear()
+    list.setup_highlights()
+    eq(0x00aa00, get('GitviewStatusStaged').fg)
+    eq(nil, get('GitviewStatusStaged').bg)
+    eq(0x0000ff, get('GitviewStatusUnstaged').fg)
+    eq(nil, get('GitviewStatusUnstaged').bg)
+  end)
+  for name, h in pairs(saved) do
+    vim.api.nvim_set_hl(0, name, h)
+  end
+  clear()
+  list.setup_highlights()
+  assert(ok, err)
+end)
+
 -- Every row is three columns wide, including the ones standing for no file, or
 -- the paths would not line up.
 test('list: a row with no entry still takes the gutter width', function()
