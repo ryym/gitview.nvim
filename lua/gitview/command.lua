@@ -1,4 +1,4 @@
---- The subcommands of `:GitView`.
+--- The subcommands of `:Gitview`.
 ---
 --- Only what acts on a whole session is here, and nothing that depends on where
 --- the cursor is: those are actions to map keys to rather than commands to type.
@@ -58,7 +58,7 @@ local function error_out(msg)
   vim.notify('gitview: ' .. msg, vim.log.levels.ERROR)
 end
 
---- Run `:GitView` with its arguments; none opens a session.
+--- Run `:Gitview` with its arguments; none opens a session.
 --- @param fargs string[]
 function M.run(fargs)
   local name = fargs[1] or 'open'

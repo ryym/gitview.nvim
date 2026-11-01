@@ -520,7 +520,7 @@ test('review: a directory marks the headers of the files checked off', function(
     -- on the header's band and in its weight, which virtual text does not take
     -- by itself
     eq(
-      { 'GitViewFileHeaderBg', 'GitViewFileHeader', 'GitViewReviewedMark' },
+      { 'GitviewFileHeaderBg', 'GitviewFileHeader', 'GitviewReviewedMark' },
       marks[1][4].virt_text[1][2]
     )
   end, { tree = true })
@@ -899,12 +899,12 @@ test('review: a checked row is faded, status letter included', function()
   with_session(history, function(s, repo)
     review_worktree(s)
     press(s, 'x')
-    eq({ GitViewReviewed = true }, row_groups(s, 1))
-    eq({ GitViewStatusStaged = true }, row_groups(s, 2))
+    eq({ GitviewReviewed = true }, row_groups(s, 1))
+    eq({ GitviewStatusStaged = true }, row_groups(s, 2))
     -- one changed since is to be read again, and not faded
     repo.write('a.lua', { 'return 8' })
     refresh(s)
-    eq({ GitViewStatusStaged = true }, row_groups(s, 1))
+    eq({ GitviewStatusStaged = true }, row_groups(s, 1))
   end)
 end)
 
@@ -920,11 +920,11 @@ test('review: a directory is faded once every file in it is checked', function()
   end, function(s)
     review_worktree(s)
     press(s, '3Gx')
-    eq({ GitViewDirectory = true }, row_groups(s, 2))
+    eq({ GitviewDirectory = true }, row_groups(s, 2))
     -- the letters in front of a name, in a tree, fade with it
-    eq({ GitViewReviewed = true }, row_groups(s, 3))
+    eq({ GitviewReviewed = true }, row_groups(s, 3))
     press(s, '4Gx')
-    eq({ GitViewReviewed = true }, row_groups(s, 2))
-    eq({ GitViewDirectory = true }, row_groups(s, 1))
+    eq({ GitviewReviewed = true }, row_groups(s, 2))
+    eq({ GitviewDirectory = true }, row_groups(s, 1))
   end, { tree = true })
 end)

@@ -12,7 +12,7 @@ works.
 ## Usage
 
 ```vim
-:GitView    " open a tab page with the sidebar and the diff
+:Gitview    " open a tab page with the sidebar and the diff
 ```
 
 Everything else is done inside the tab page it opens, described under
@@ -128,7 +128,7 @@ How the markers are recognised is described in
 
 ### The tab page
 
-`:GitView` opens a tab with a sidebar on the left and the diff on the
+`:Gitview` opens a tab with a sidebar on the left and the diff on the
 right. The sidebar is split in two: the uncommitted changes above, the recent
 commits below. Moving the cursor in either draws whatever it lands on, and moving
 between the two panes switches which list the diff follows. The row the diff is
@@ -150,7 +150,7 @@ re-reads it as well. So is a push or a fetch, which moves what counts as pushed.
 a file written by something that never touched git, and the few commands that move
 HEAD without writing the index, such as `git reset --soft`.
 
-There is one tab page per repository. Running `:GitView` again in the same
+There is one tab page per repository. Running `:Gitview` again in the same
 repository goes back to the one already open rather than opening another.
 
 The upper pane has one row per file, with the two status letters
@@ -335,7 +335,7 @@ row, passing over directories, and in the commits pane only among the files of
 a commit looked into. In the diff they move to the next file's header, or, when
 it shows one file, the list's cursor to the next file.
 
-`gf` opens the file in the tab page `:GitView` was first run from, and leaves the
+`gf` opens the file in the tab page `:Gitview` was first run from, and leaves the
 session open to come back to. From the diff it lands on the line under the
 cursor; a deleted line lands on the line now in its place. A commit's line
 numbers are the commit's, so there it lands near the line rather than on it.
@@ -489,45 +489,45 @@ vim.api.nvim_create_autocmd('FileType', {
 
 ### Highlight groups
 
-`GitViewAdd`, `GitViewDelete`, `GitViewAddText`, `GitViewDeleteText`,
-`GitViewOldLnum`, `GitViewNewLnum`, `GitViewAddLnum`, `GitViewDeleteLnum`,
-`GitViewSeparator`, `GitViewFileHeader`. The rows of an opened fold are marked
-in the gutter with `GitViewFoldBar`.
+`GitviewAdd`, `GitviewDelete`, `GitviewAddText`, `GitviewDeleteText`,
+`GitviewOldLnum`, `GitviewNewLnum`, `GitviewAddLnum`, `GitviewDeleteLnum`,
+`GitviewSeparator`, `GitviewFileHeader`. The rows of an opened fold are marked
+in the gutter with `GitviewFoldBar`.
 
-The mixed view adds `GitViewStagedAdd`, `GitViewStagedDelete`,
-`GitViewStagedAddText`, `GitViewStagedDeleteText`, `GitViewStagedAddBar` and
-`GitViewStagedDeleteBar`.
+The mixed view adds `GitviewStagedAdd`, `GitviewStagedDelete`,
+`GitviewStagedAddText`, `GitviewStagedDeleteText`, `GitviewStagedAddBar` and
+`GitviewStagedDeleteBar`.
 
-A conflicted file's lines use `GitViewConflictOurs`, `GitViewConflictTheirs` and
-`GitViewConflictBase`, and its markers `GitViewConflictOursMarker` (`<<<<<<<`),
-`GitViewConflictBaseMarker` (`|||||||`), `GitViewConflictSeparator` (`=======`)
-and `GitViewConflictTheirsMarker` (`>>>>>>>`).
+A conflicted file's lines use `GitviewConflictOurs`, `GitviewConflictTheirs` and
+`GitviewConflictBase`, and its markers `GitviewConflictOursMarker` (`<<<<<<<`),
+`GitviewConflictBaseMarker` (`|||||||`), `GitviewConflictSeparator` (`=======`)
+and `GitviewConflictTheirsMarker` (`>>>>>>>`).
 
 A file's header is painted across the window, gutter included, with
-`GitViewFileHeaderBg`, and its gutter counts with `GitViewFileHeaderStatAdd`
-and `GitViewFileHeaderStatDelete`, or with `GitViewFileHeaderConflictCount` for
+`GitviewFileHeaderBg`, and its gutter counts with `GitviewFileHeaderStatAdd`
+and `GitviewFileHeaderStatDelete`, or with `GitviewFileHeaderConflictCount` for
 a conflicted file. A commit's header uses
-`GitViewCommitSubject`, `GitViewCommitAuthor`, `GitViewStatAdd` and
-`GitViewStatDelete`. The files a diff leaves out are listed in `GitViewSkipped`.
+`GitviewCommitSubject`, `GitviewCommitAuthor`, `GitviewStatAdd` and
+`GitviewStatDelete`. The files a diff leaves out are listed in `GitviewSkipped`.
 
-The sidebar uses `GitViewStatusStaged`, `GitViewStatusUnstaged`,
-`GitViewStatusUntracked`, `GitViewCommitSha`, `GitViewCommitWorktree`,
-`GitViewListCursor`, `GitViewRange` and, in a tree, `GitViewDirectory` and
-`GitViewIndent`. A review marks the files checked off with
-`GitViewReviewedMark`, in the list and on their headers in the diff, and fades
-their rows with `GitViewReviewed`; those changed since are marked with
-`GitViewReviewChanged`. Where the branch has an upstream, a pushed sha is in
-`GitViewCommitShaPushed` instead of `GitViewCommitSha`, and the line naming
-the upstream has the name in `GitViewUpstream` and the rule in
-`GitViewUpstreamRule`.
-`GitViewCommitSha` colors the shas in the diff's winbar as well. The rest of
-that winbar, other than the file, is in `GitViewWinBarText`.
+The sidebar uses `GitviewStatusStaged`, `GitviewStatusUnstaged`,
+`GitviewStatusUntracked`, `GitviewCommitSha`, `GitviewCommitWorktree`,
+`GitviewListCursor`, `GitviewRange` and, in a tree, `GitviewDirectory` and
+`GitviewIndent`. A review marks the files checked off with
+`GitviewReviewedMark`, in the list and on their headers in the diff, and fades
+their rows with `GitviewReviewed`; those changed since are marked with
+`GitviewReviewChanged`. Where the branch has an upstream, a pushed sha is in
+`GitviewCommitShaPushed` instead of `GitviewCommitSha`, and the line naming
+the upstream has the name in `GitviewUpstream` and the rule in
+`GitviewUpstreamRule`.
+`GitviewCommitSha` colors the shas in the diff's winbar as well. The rest of
+that winbar, other than the file, is in `GitviewWinBarText`.
 
 The diff colors default to backgrounds derived from `DiffAdd`/`DiffDelete`,
 the conflict colors to faded backgrounds derived from `DiffAdd`, `DiffChange`
 and `DiffDelete` with gray between the sides,
-`GitViewFileHeaderBg` to one derived from `CursorLine`, `GitViewFileHeader` to
-bold text in the surrounding color, `GitViewWinBarText` to the winbar's
+`GitviewFileHeaderBg` to one derived from `CursorLine`, `GitviewFileHeader` to
+bold text in the surrounding color, `GitviewWinBarText` to the winbar's
 colors without its bold, and the rest link to standard groups. All are defined the first time they are
 needed, and are redefined on `ColorScheme`.
 Defining any of them yourself takes precedence. `setup()` is optional: it only
@@ -545,18 +545,18 @@ arguments until the plugin is stable.
 
 ### Commands
 
-`:GitView` with no argument opens a tab page. The rest act on the tab page of
+`:Gitview` with no argument opens a tab page. The rest act on the tab page of
 the current one, and say so when it has none.
 
 | command                    | what it does                          |
 | -------------------------- | ------------------------------------- |
-| `:GitView open`            | the same as `:GitView`                |
-| `:GitView close`           | close, asking about a review part way |
-| `:GitView refresh`         | re-read the repository                |
-| `:GitView layer`           | show the next layer, as `gs` does     |
-| `:GitView layer {layer}`   | `both`, `staged` or `unstaged`        |
-| `:GitView whitespace`      | toggle ignoring whitespace, as `gw`   |
-| `:GitView whitespace on`   | ignore whitespace; `off` to stop      |
+| `:Gitview open`            | the same as `:Gitview`                |
+| `:Gitview close`           | close, asking about a review part way |
+| `:Gitview refresh`         | re-read the repository                |
+| `:Gitview layer`           | show the next layer, as `gs` does     |
+| `:Gitview layer {layer}`   | `both`, `staged` or `unstaged`        |
+| `:Gitview whitespace`      | toggle ignoring whitespace, as `gw`   |
+| `:Gitview whitespace on`   | ignore whitespace; `off` to stop      |
 
 ### Actions
 

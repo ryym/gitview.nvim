@@ -142,8 +142,8 @@ local CHANGED_MARK = '!'
 --- The marks by state, as the column at the left edge draws them.
 --- @type table<string, [string, string]>
 local CHECK_MARKS = {
-  checked = { CHECK_MARK, 'GitViewReviewedMark' },
-  changed = { CHANGED_MARK, 'GitViewReviewChanged' },
+  checked = { CHECK_MARK, 'GitviewReviewedMark' },
+  changed = { CHANGED_MARK, 'GitviewReviewChanged' },
 }
 
 --- A mark and a space: the column a review adds at the left edge.
@@ -239,7 +239,7 @@ local function tree_rows(files, dir_kind, in_review)
       row.lead = vim.list_extend(vim.deepcopy(f.letters), { { ' ' } })
     else
       local text = M.dir_label(n.dir)
-      local spans = { { from = n.col, to = #text, group = 'GitViewDirectory' } }
+      local spans = { { from = n.col, to = #text, group = 'GitviewDirectory' } }
       if n.col > 0 then
         table.insert(spans, 1, { from = 0, to = n.col, conceal = true })
       end
@@ -247,7 +247,7 @@ local function tree_rows(files, dir_kind, in_review)
         text = text,
         target = { kind = dir_kind, index = next_file[i], path = n.dir, review = in_review },
         spans = spans,
-        lead = { { DIR_MARK, 'GitViewDirectory' } },
+        lead = { { DIR_MARK, 'GitviewDirectory' } },
       }
     end
     row.indent = n.depth
@@ -261,9 +261,9 @@ end
 --- @return [string, string][]
 local function letters_of(e)
   if status.is_untracked(e) then
-    return { { '??', 'GitViewStatusUntracked' } }
+    return { { '??', 'GitviewStatusUntracked' } }
   end
-  return { { e.index_status, 'GitViewStatusStaged' }, { e.worktree_status, 'GitViewStatusUnstaged' } }
+  return { { e.index_status, 'GitviewStatusStaged' }, { e.worktree_status, 'GitviewStatusUnstaged' } }
 end
 
 --- The gutter is computed when the row is built rather than when the screen
@@ -290,12 +290,12 @@ end
 local function fade(row)
   for _, span in ipairs(row.spans or {}) do
     if span.group then
-      span.group = 'GitViewReviewed'
+      span.group = 'GitviewReviewed'
     end
   end
   for _, chunk in ipairs(row.lead or {}) do
     if chunk[2] then
-      chunk[2] = 'GitViewReviewed'
+      chunk[2] = 'GitviewReviewed'
     end
   end
 end
@@ -353,9 +353,9 @@ local function scope_rows(scope, as_tree, under)
     -- A changed file is not faded: it is to be read again. The letter fades with
     -- the rest of a checked row, which would otherwise still catch the eye.
     local faded = state == 'checked'
-    local spans = faded and { { from = 0, to = #text, group = 'GitViewReviewed' } } or nil
+    local spans = faded and { { from = 0, to = #text, group = 'GitviewReviewed' } } or nil
     -- One letter, in the color the list already uses for a settled change.
-    local letters = { { c.status, faded and 'GitViewReviewed' or 'GitViewStatusStaged' } }
+    local letters = { { c.status, faded and 'GitviewReviewed' or 'GitviewStatusStaged' } }
     rows[i] = {
       text = text,
       gutter = gutter_of(letters),
@@ -441,7 +441,7 @@ function M.content(model)
     local text = ('%s %s'):format(zeros, WORKTREE_SUBJECT)
     -- Faded, since it is not a commit: it stands for what is not recorded yet.
     local spans = sha_spans(zeros)
-    spans[#spans + 1] = { from = 0, to = #text, group = 'GitViewCommitWorktree' }
+    spans[#spans + 1] = { from = 0, to = #text, group = 'GitviewCommitWorktree' }
     rows[1] = {
       text = text,
       target = { kind = 'worktree', index = 1 },
@@ -454,7 +454,7 @@ function M.content(model)
       text = ('%s %s'):format(c.sha, c.subject),
       target = { kind = 'commit', index = i },
       spans = vim.list_extend(sha_spans(c.sha), {
-        { from = 0, to = #c.sha, group = 'GitViewCommitSha' },
+        { from = 0, to = #c.sha, group = 'GitviewCommitSha' },
       }),
       subject = #c.sha + 1,
     }
@@ -466,36 +466,36 @@ end
 --- are taken from the groups Neovim already defines for exactly this: `Added`,
 --- `Changed` and `Comment`. Defining any of them yourself takes precedence.
 local highlights = util.highlights('gitview.ui.highlights', function(set)
-  set('GitViewStatusStaged', { link = 'Added' })
-  set('GitViewStatusUnstaged', { link = 'Changed' })
-  set('GitViewStatusUntracked', { link = 'Comment' })
-  set('GitViewCommitWorktree', { link = 'Comment' })
-  set('GitViewDirectory', { link = 'Directory' })
+  set('GitviewStatusStaged', { link = 'Added' })
+  set('GitviewStatusUnstaged', { link = 'Changed' })
+  set('GitviewStatusUntracked', { link = 'Comment' })
+  set('GitviewCommitWorktree', { link = 'Comment' })
+  set('GitviewDirectory', { link = 'Directory' })
   -- What indent-blankline's own guides default to, so the two look alike.
-  set('GitViewIndent', { link = 'Whitespace' })
+  set('GitviewIndent', { link = 'Whitespace' })
   -- As Neovim's own git syntax colors a hash, so a sha reads the same here as
   -- in `git show` or a rebase todo.
-  set('GitViewCommitSha', { link = 'Identifier' })
+  set('GitviewCommitSha', { link = 'Identifier' })
   -- What is pushed has settled. What is not yet stands out against it without a
   -- color of its own, which would make an ordinary state look like a warning.
-  set('GitViewCommitShaPushed', { link = 'Comment' })
-  set('GitViewUpstream', { link = 'Comment' })
+  set('GitviewCommitShaPushed', { link = 'Comment' })
+  set('GitviewUpstream', { link = 'Comment' })
   -- Dimmer than the name it carries, and as dim as the indent guides, so the
   -- line sits back like the borders between windows rather than outweighing
   -- them.
-  set('GitViewUpstreamRule', { link = 'Whitespace' })
-  set('GitViewListCursor', { link = 'Title' })
+  set('GitviewUpstreamRule', { link = 'Whitespace' })
+  set('GitviewListCursor', { link = 'Title' })
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.
-  set('GitViewRange', { link = 'Visual' })
+  set('GitviewRange', { link = 'Visual' })
   -- A file checked off in a review has been read, and steps back as a pushed
   -- commit does.
-  set('GitViewReviewed', { link = 'Comment' })
+  set('GitviewReviewed', { link = 'Comment' })
   -- The mark itself is not faded with the row: it is what says the file is
   -- done, and a faded one would be hard to pick out.
-  set('GitViewReviewedMark', { link = 'DiagnosticOk' })
+  set('GitviewReviewedMark', { link = 'DiagnosticOk' })
   -- A file to read again, which is something to act on.
-  set('GitViewReviewChanged', { link = 'DiagnosticWarn' })
+  set('GitviewReviewChanged', { link = 'DiagnosticWarn' })
 end)
 
 M.setup_highlights = highlights.apply
@@ -635,7 +635,7 @@ function M.draw(buf, model)
   for i, r in ipairs(rows) do
     local lead = {}
     for _ = 1, r.indent or 0 do
-      lead[#lead + 1] = { INDENT_GUIDE, 'GitViewIndent' }
+      lead[#lead + 1] = { INDENT_GUIDE, 'GitviewIndent' }
     end
     vim.list_extend(lead, r.lead or {})
     if #lead > 0 then
@@ -690,7 +690,7 @@ function M.paint_cursor(buf, row)
   end
   vim.api.nvim_buf_set_extmark(buf, cursor_ns, row - 1, r.subject, {
     end_col = #r.text,
-    hl_group = 'GitViewListCursor',
+    hl_group = 'GitviewListCursor',
     priority = CURSOR_PRIORITY,
   })
 end
@@ -715,7 +715,7 @@ function M.paint_range(buf, first, last)
   vim.api.nvim_buf_set_extmark(buf, range_ns, first - 1, 0, {
     end_row = last,
     end_col = 0,
-    hl_group = 'GitViewRange',
+    hl_group = 'GitviewRange',
     hl_eol = true,
     priority = vim.hl.priorities.user - 1,
   })
@@ -746,7 +746,7 @@ function M.paint_upstream(buf, upstream, unpushed)
       if not unpushed[c.full_sha] then
         vim.api.nvim_buf_set_extmark(buf, upstream_ns, i - 1, 0, {
           end_col = #c.sha,
-          hl_group = 'GitViewCommitShaPushed',
+          hl_group = 'GitviewCommitShaPushed',
           priority = vim.hl.priorities.user + 1,
         })
       end
@@ -766,9 +766,9 @@ function M.paint_upstream(buf, upstream, unpushed)
         vim.api.nvim_buf_set_extmark(buf, upstream_ns, i - 2, 0, {
           virt_lines = {
             {
-              { lead, 'GitViewUpstreamRule' },
-              { name, 'GitViewUpstream' },
-              { ('─'):rep(fill), 'GitViewUpstreamRule' },
+              { lead, 'GitviewUpstreamRule' },
+              { name, 'GitviewUpstream' },
+              { ('─'):rep(fill), 'GitviewUpstreamRule' },
             },
           },
         })

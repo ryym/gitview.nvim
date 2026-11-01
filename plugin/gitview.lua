@@ -3,7 +3,7 @@ if vim.g.loaded_gitview then
 end
 vim.g.loaded_gitview = true
 
-vim.api.nvim_create_user_command('GitView', function(opts)
+vim.api.nvim_create_user_command('Gitview', function(opts)
   require('gitview.command').run(opts.fargs)
 end, {
   nargs = '*',

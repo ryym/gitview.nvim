@@ -179,7 +179,7 @@ end
 --- The panes by their buffer names, which is how they are told apart from
 --- outside. Which pane a session starts in depends on whether there is
 --- anything uncommitted.
-local PANES = { GitView = 'files', ['GitView:commits'] = 'commits', ['GitView:diff'] = 'diff' }
+local PANES = { Gitview = 'files', ['Gitview:commits'] = 'commits', ['Gitview:diff'] = 'diff' }
 
 --- The keys from one pane to another. Each goes straight there: passing
 --- through a list on the way would select its row and replace the diff.
@@ -232,7 +232,7 @@ co = coroutine.create(function()
   vim.o.columns, vim.o.lines = 200, 50
   vim.cmd.lcd(vim.env.BENCH_REPO)
   local t0 = vim.uv.hrtime()
-  vim.cmd('GitView')
+  vim.cmd('Gitview')
   settle(t0)
   -- The status is read in steps; wait for the list to stop changing.
   sleep(100)

@@ -123,13 +123,13 @@ test('headers and gaps are highlighted as whole lines', function()
   local groups = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     eq(nil, m[4].virt_lines, 'no virtual lines are left')
-    if m[4].hl_group ~= 'GitViewFileHeaderBg' then
+    if m[4].hl_group ~= 'GitviewFileHeaderBg' then
       groups[m[2] + 1] = groups[m[2] + 1] or m[4].hl_group
     end
   end
   for i, l in ipairs(view.lines) do
     if l.kind == 'file' then
-      eq('GitViewFileHeader', groups[i], 'row ' .. i)
+      eq('GitviewFileHeader', groups[i], 'row ' .. i)
     end
   end
 end)
@@ -193,7 +193,7 @@ test('the winbar leaves only the file bold', function()
   end)
 
   local bar = render.winbar()
-  local head = '%#GitViewWinBarText# %#GitViewFileHeader#a.lua%#GitViewWinBarText# @ '
+  local head = '%#GitviewWinBarText# %#GitviewFileHeader#a.lua%#GitviewWinBarText# @ '
   eq(head, bar:sub(1, #head))
   assert(not bar:find('%*', 1, true), bar)
 
@@ -229,7 +229,7 @@ end
 test("each header's gutter carries its background", function()
   local buf, view = build({ LUA, PERL })
   local gutter = gutter_at(buf, view.files[2].row)
-  assert(vim.startswith(gutter, '%#GitViewFileHeaderBg# '), 'expected the background: ' .. gutter)
+  assert(vim.startswith(gutter, '%#GitviewFileHeaderBg# '), 'expected the background: ' .. gutter)
   eq((' '):rep(12), gutter_at(buf, view.files[2].row - 1), 'the blank line in front is left blank')
 end)
 
@@ -239,7 +239,7 @@ test("'number' puts the rows own numbers before the gutter", function()
   local plain_header, plain_blank = gutter_at(buf, header), gutter_at(buf, header - 1)
   for _, options in ipairs({ { number = true }, { relativenumber = true } }) do
     eq(
-      '%#GitViewFileHeaderBg#%l ' .. plain_header,
+      '%#GitviewFileHeaderBg#%l ' .. plain_header,
       gutter_at(buf, header, options),
       'the band runs through it'
     )
@@ -279,12 +279,12 @@ test("each header's gutter ends with how many lines its file adds and deletes", 
   }
   local buf, view = build({ LUA, only_add })
   eq(
-    '%#GitViewFileHeaderBg#' .. (' '):rep(5) .. ' %#GitViewFileHeaderStatAdd#+1 %#GitViewFileHeaderStatDelete#-1 ',
+    '%#GitviewFileHeaderBg#' .. (' '):rep(5) .. ' %#GitviewFileHeaderStatAdd#+1 %#GitviewFileHeaderStatDelete#-1 ',
     gutter_at(buf, view.files[1].row)
   )
   -- a count of zero is left out
   eq(
-    '%#GitViewFileHeaderBg#' .. (' '):rep(8) .. ' %#GitViewFileHeaderStatAdd#+1 ',
+    '%#GitviewFileHeaderBg#' .. (' '):rep(8) .. ' %#GitviewFileHeaderStatAdd#+1 ',
     gutter_at(buf, view.files[2].row)
   )
 end)
@@ -305,7 +305,7 @@ test('a count of up to four digits fills the gutter as it is', function()
     { label = 'big.txt', lang = 'text', old = numbered(9999, 'old'), new = numbered(9999, 'new') },
   })
   eq(
-    '%#GitViewFileHeaderBg#%#GitViewFileHeaderStatAdd#+9999 %#GitViewFileHeaderStatDelete#-9999 ',
+    '%#GitviewFileHeaderBg#%#GitviewFileHeaderStatAdd#+9999 %#GitviewFileHeaderStatDelete#-9999 ',
     gutter_at(buf, view.files[1].row)
   )
 end)
@@ -315,7 +315,7 @@ test('a count past four digits is rounded down to thousands', function()
     { label = 'big.txt', lang = 'text', old = numbered(10000, 'old'), new = numbered(12999, 'new') },
   })
   eq(
-    '%#GitViewFileHeaderBg#' .. (' '):rep(1) .. ' %#GitViewFileHeaderStatAdd#+12k %#GitViewFileHeaderStatDelete#-10k ',
+    '%#GitviewFileHeaderBg#' .. (' '):rep(1) .. ' %#GitviewFileHeaderStatAdd#+12k %#GitviewFileHeaderStatDelete#-10k ',
     gutter_at(buf, view.files[1].row)
   )
 end)
@@ -328,9 +328,9 @@ end)
 
 test('a changed line is told apart by the color of its number, not a sign', function()
   local buf = build({ LUA })
-  eq('%#GitViewDeleteLnum#   1        ', gutter_at(buf, 2))
-  eq('     %#GitViewAddLnum#   1   ', gutter_at(buf, 3))
-  eq('%#GitViewOldLnum#   2 %#GitViewNewLnum#   2   ', gutter_at(buf, 4))
+  eq('%#GitviewDeleteLnum#   1        ', gutter_at(buf, 2))
+  eq('     %#GitviewAddLnum#   1   ', gutter_at(buf, 3))
+  eq('%#GitviewOldLnum#   2 %#GitviewNewLnum#   2   ', gutter_at(buf, 4))
 end)
 
 test('a mixed view marks with a bar each row the index has changed', function()
@@ -352,10 +352,10 @@ test('a mixed view marks with a bar each row the index has changed', function()
     end
   end
   eq({
-    staged = '%#GitViewDeleteLnum#   1      %#GitViewStagedDeleteBar#┃ ',
+    staged = '%#GitviewDeleteLnum#   1      %#GitviewStagedDeleteBar#┃ ',
     -- in neither HEAD nor the working tree, so it has no numbers
-    index = '          %#GitViewStagedAddBar#┃ ',
-    unstaged = '     %#GitViewAddLnum#   1   ',
+    index = '          %#GitviewStagedAddBar#┃ ',
+    unstaged = '     %#GitviewAddLnum#   1   ',
   }, gutters)
 end)
 
@@ -399,16 +399,16 @@ end
 test('a layer shown alone is numbered by the two versions it compares', function()
   local head, index, work = { 'a' }, { 'n', 'a', 'b' }, { 'a', 'b', 'w' }
   eq({
-    n = '     %#GitViewAddLnum#   1   ',
-    a = '%#GitViewOldLnum#   1 %#GitViewNewLnum#   2   ',
-    b = '     %#GitViewAddLnum#   3   ',
+    n = '     %#GitviewAddLnum#   1   ',
+    a = '%#GitviewOldLnum#   1 %#GitviewNewLnum#   2   ',
+    b = '     %#GitviewAddLnum#   3   ',
   }, gutters_by_text(layer_view(head, index, work, 'staged')))
   eq({
-    n = '%#GitViewDeleteLnum#   1        ',
-    a = '%#GitViewOldLnum#   2 %#GitViewNewLnum#   1   ',
-    b = '%#GitViewOldLnum#   3 %#GitViewNewLnum#   2   ',
+    n = '%#GitviewDeleteLnum#   1        ',
+    a = '%#GitviewOldLnum#   2 %#GitviewNewLnum#   1   ',
+    b = '%#GitviewOldLnum#   3 %#GitviewNewLnum#   2   ',
     -- placed in front of an index line past the end, which is no line of it
-    w = '     %#GitViewAddLnum#   3   ',
+    w = '     %#GitviewAddLnum#   3   ',
   }, gutters_by_text(layer_view(head, index, work, 'unstaged')))
 end)
 
@@ -429,9 +429,9 @@ test('a layer shown alone has no bar and the colors of a plain diff', function()
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
     groups[view.lines[m[2] + 1].text] = m[4].hl_group
   end
-  eq({ ['m.txt'] = 'GitViewFileHeader', x = 'GitViewDelete', X = 'GitViewAdd' }, groups)
-  eq('%#GitViewDeleteLnum#   1        ', gutter_at(buf, 2))
-  eq('     %#GitViewAddLnum#   1   ', gutter_at(buf, 3))
+  eq({ ['m.txt'] = 'GitviewFileHeader', x = 'GitviewDelete', X = 'GitviewAdd' }, groups)
+  eq('%#GitviewDeleteLnum#   1        ', gutter_at(buf, 2))
+  eq('     %#GitviewAddLnum#   1   ', gutter_at(buf, 3))
 end)
 
 -- Staged alone, the unchanged rows are those HEAD and the index share, and the

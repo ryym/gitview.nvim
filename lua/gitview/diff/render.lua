@@ -130,19 +130,19 @@ local highlights = util.highlights('gitview.highlights', function(set)
   -- rather than a third, unrelated color.
   local add = bg_only('DiffAdd', '#20301e')
   local del = bg_only('DiffDelete', '#3a1f1c')
-  set('GitViewAdd', add)
-  set('GitViewDelete', del)
-  set('GitViewAddText', word(add, 1, 1.4))
-  set('GitViewDeleteText', word(del, 1, 1.4))
+  set('GitviewAdd', add)
+  set('GitviewDelete', del)
+  set('GitviewAddText', word(add, 1, 1.4))
+  set('GitviewDeleteText', word(del, 1, 1.4))
   -- Staged changes in a mixed view are the same hues, faded: they are settled,
   -- and what is still unstaged is what needs attention. The gutter marks them
   -- with a bar too, since 256-color terminals get no fading.
-  set('GitViewStagedAdd', scale(add, 0.6))
-  set('GitViewStagedDelete', scale(del, 0.6))
-  set('GitViewStagedAddText', word(add, 0.6, 0.9))
-  set('GitViewStagedDeleteText', word(del, 0.6, 0.9))
-  set('GitViewStagedAddBar', { link = 'Added' })
-  set('GitViewStagedDeleteBar', { link = 'Removed' })
+  set('GitviewStagedAdd', scale(add, 0.6))
+  set('GitviewStagedDelete', scale(del, 0.6))
+  set('GitviewStagedAddText', word(add, 0.6, 0.9))
+  set('GitviewStagedDeleteText', word(del, 0.6, 0.9))
+  set('GitviewStagedAddBar', { link = 'Added' })
+  set('GitviewStagedDeleteBar', { link = 'Removed' })
   -- A conflict's parts take the diff colors other tools give them: ours the add
   -- color, theirs the change color, and the base, which both sides moved away
   -- from, the delete color. They are faded further than a staged change, so
@@ -154,69 +154,69 @@ local highlights = util.highlights('gitview.highlights', function(set)
   -- faded, so that where a conflict starts and ends stands out. The two between
   -- belong to neither side and are a neutral gray.
   local change = bg_only('DiffChange', '#1f2a3a')
-  set('GitViewConflictOurs', scale(add, 0.5))
-  set('GitViewConflictTheirs', scale(change, 0.5))
-  set('GitViewConflictBase', scale(del, 0.5))
+  set('GitviewConflictOurs', scale(add, 0.5))
+  set('GitviewConflictTheirs', scale(change, 0.5))
+  set('GitviewConflictBase', scale(del, 0.5))
   local gray = { bg = 0xd0d0d0, ctermbg = vim.o.background == 'light' and 251 or 239 }
   local between = scale(gray, 0.3)
-  set('GitViewConflictOursMarker', scale(add, 0.8))
-  set('GitViewConflictBaseMarker', between)
-  set('GitViewConflictSeparator', between)
-  set('GitViewConflictTheirsMarker', scale(change, 0.8))
-  set('GitViewConflictCount', { link = 'DiagnosticWarn' })
-  set('GitViewOldLnum', { link = 'LineNr' })
-  set('GitViewNewLnum', { link = 'LineNr' })
-  set('GitViewAddLnum', { link = 'Added' })
-  set('GitViewDeleteLnum', { link = 'Removed' })
-  set('GitViewSeparator', { link = 'Folded' })
-  set('GitViewFoldBar', { link = 'FoldColumn' })
+  set('GitviewConflictOursMarker', scale(add, 0.8))
+  set('GitviewConflictBaseMarker', between)
+  set('GitviewConflictSeparator', between)
+  set('GitviewConflictTheirsMarker', scale(change, 0.8))
+  set('GitviewConflictCount', { link = 'DiagnosticWarn' })
+  set('GitviewOldLnum', { link = 'LineNr' })
+  set('GitviewNewLnum', { link = 'LineNr' })
+  set('GitviewAddLnum', { link = 'Added' })
+  set('GitviewDeleteLnum', { link = 'Removed' })
+  set('GitviewSeparator', { link = 'Folded' })
+  set('GitviewFoldBar', { link = 'FoldColumn' })
   -- The band already marks where a file starts, so its name needs no color of
   -- its own. Leaving the foreground out lets it take the text color of where it
   -- is drawn, the buffer's or the winbar's.
-  set('GitViewFileHeader', { bold = true })
+  set('GitviewFileHeader', { bold = true })
   -- A file's header is a band across the window, gutter included, so where one
   -- file starts stands out. It is the cursor line's color pushed further from
   -- the background: of a kind with it, yet not to be taken for it.
-  set('GitViewFileHeaderBg', scale(bg_only('CursorLine', '#2c313a'), 1.4))
+  set('GitviewFileHeaderBg', scale(bg_only('CursorLine', '#2c313a'), 1.4))
   -- The cursor line's background is painted under the diff colors, so on a
   -- changed line it would not show. An underline drawn over them does. Its
   -- color is given, or it would take each character's syntax color.
   local lnum = vim.api.nvim_get_hl(0, { name = 'LineNr', link = false })
-  set('GitViewCursorLine', { underline = true, sp = lnum.fg })
+  set('GitviewCursorLine', { underline = true, sp = lnum.fg })
   -- Also defined by `ui.list`, alike, so a sha has one color in both panes
   -- whichever module is drawn first.
-  set('GitViewCommitSha', { link = 'Identifier' })
-  set('GitViewCommitSubject', { link = 'Title' })
-  set('GitViewCommitAuthor', { link = 'Comment' })
+  set('GitviewCommitSha', { link = 'Identifier' })
+  set('GitviewCommitSubject', { link = 'Title' })
+  set('GitviewCommitAuthor', { link = 'Comment' })
   -- Not combining keeps the winbar's colors, which a group leaves unset, but
   -- drops its attributes, the bold among them.
-  set('GitViewWinBarText', { nocombine = true })
-  set('GitViewSkipped', { link = 'Comment' })
+  set('GitviewWinBarText', { nocombine = true })
+  set('GitviewSkipped', { link = 'Comment' })
   -- A count is text to read, so its color goes on the text, and it has to keep
   -- it on the header's band, which replaces any background. Colorschemes that
   -- mark changes with a background leave `Added` no green text to take, hence
   -- the other groups that commonly color added and removed text.
-  set('GitViewStatAdd', fg_only({ 'Added', 'diffAdded', 'GitSignsAdd' }, {
+  set('GitviewStatAdd', fg_only({ 'Added', 'diffAdded', 'GitSignsAdd' }, {
     fg = light and 0x005523 or 0xb3f6c0,
     ctermfg = light and 2 or 10,
   }))
-  set('GitViewStatDelete', fg_only({ 'Removed', 'diffRemoved', 'GitSignsDelete' }, {
+  set('GitviewStatDelete', fg_only({ 'Removed', 'diffRemoved', 'GitSignsDelete' }, {
     fg = light and 0x590008 or 0xffc0b9,
     ctermfg = light and 1 or 9,
   }))
 
   -- 'statuscolumn' cannot stack groups as extmarks do, so the header's gutter
   -- gets each of its colors with the band's background already in it.
-  local band = vim.api.nvim_get_hl(0, { name = 'GitViewFileHeaderBg', link = false })
+  local band = vim.api.nvim_get_hl(0, { name = 'GitviewFileHeaderBg', link = false })
   --- @param name string
   local function on_band(name)
     local h = vim.api.nvim_get_hl(0, { name = name, link = false })
     h.bg, h.ctermbg = band.bg, band.ctermbg
     return h
   end
-  set('GitViewFileHeaderStatAdd', on_band('GitViewStatAdd'))
-  set('GitViewFileHeaderStatDelete', on_band('GitViewStatDelete'))
-  set('GitViewFileHeaderConflictCount', on_band('GitViewConflictCount'))
+  set('GitviewFileHeaderStatAdd', on_band('GitviewStatAdd'))
+  set('GitviewFileHeaderStatDelete', on_band('GitviewStatDelete'))
+  set('GitviewFileHeaderConflictCount', on_band('GitviewConflictCount'))
 end)
 
 M.setup_highlights = highlights.apply
@@ -225,29 +225,29 @@ M.ensure_highlights = highlights.ensure
 M.ensure_highlights_reset = highlights.forget
 
 local LINE_HL = {
-  add = 'GitViewAdd',
-  del = 'GitViewDelete',
-  file = 'GitViewFileHeader',
-  subject = 'GitViewCommitSubject',
-  author = 'GitViewCommitAuthor',
-  skipped = 'GitViewSkipped',
+  add = 'GitviewAdd',
+  del = 'GitviewDelete',
+  file = 'GitviewFileHeader',
+  subject = 'GitviewCommitSubject',
+  author = 'GitviewCommitAuthor',
+  skipped = 'GitviewSkipped',
   -- as `notice` paints the line it replaces a whole buffer with
-  notice = 'GitViewSeparator',
+  notice = 'GitviewSeparator',
 }
-local TEXT_HL = { add = 'GitViewAddText', del = 'GitViewDeleteText' }
-local STAT_HL = { ['%++'] = 'GitViewStatAdd', ['%-+'] = 'GitViewStatDelete' }
-local STAGED_LINE_HL = { add = 'GitViewStagedAdd', del = 'GitViewStagedDelete' }
-local STAGED_TEXT_HL = { add = 'GitViewStagedAddText', del = 'GitViewStagedDeleteText' }
+local TEXT_HL = { add = 'GitviewAddText', del = 'GitviewDeleteText' }
+local STAT_HL = { ['%++'] = 'GitviewStatAdd', ['%-+'] = 'GitviewStatDelete' }
+local STAGED_LINE_HL = { add = 'GitviewStagedAdd', del = 'GitviewStagedDelete' }
+local STAGED_TEXT_HL = { add = 'GitviewStagedAddText', del = 'GitviewStagedDeleteText' }
 local CONFLICT_HL = {
-  ours = 'GitViewConflictOurs',
-  base = 'GitViewConflictBase',
-  theirs = 'GitViewConflictTheirs',
+  ours = 'GitviewConflictOurs',
+  base = 'GitviewConflictBase',
+  theirs = 'GitviewConflictTheirs',
 }
 local MARKER_HL = {
-  ['<'] = 'GitViewConflictOursMarker',
-  ['|'] = 'GitViewConflictBaseMarker',
-  ['='] = 'GitViewConflictSeparator',
-  ['>'] = 'GitViewConflictTheirsMarker',
+  ['<'] = 'GitviewConflictOursMarker',
+  ['|'] = 'GitviewConflictBaseMarker',
+  ['='] = 'GitviewConflictSeparator',
+  ['>'] = 'GitviewConflictTheirsMarker',
 }
 
 --- Whether a row takes the colors of a staged change, blended into the
@@ -307,7 +307,7 @@ vim.api.nvim_set_decoration_provider(ns_cursor, {
       vim.api.nvim_buf_set_extmark(buf, ns_cursor, row, 0, {
         end_row = row + 1,
         end_col = 0,
-        hl_group = 'GitViewCursorLine',
+        hl_group = 'GitviewCursorLine',
         hl_eol = true,
         ephemeral = true,
         -- over the changed words too: it leaves their colors alone
@@ -682,7 +682,7 @@ function M.draw(buf, view)
       vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, 0, {
         end_row = row0,
         end_col = 0,
-        hl_group = 'GitViewFileHeaderBg',
+        hl_group = 'GitviewFileHeaderBg',
         hl_eol = true,
         priority = 9,
       })
@@ -776,7 +776,7 @@ function M.paint_marks(buf, marks)
       -- band and its label's weight are put under the mark's own group, or the
       -- mark would sit in a hole in the band, and look slighter than the label
       -- it stands in front of.
-      local groups = { 'GitViewFileHeaderBg', 'GitViewFileHeader', mark[2] }
+      local groups = { 'GitviewFileHeaderBg', 'GitviewFileHeader', mark[2] }
       vim.api.nvim_buf_set_extmark(buf, ns_marks, f.row - 1, 0, {
         virt_text = { { mark[1] .. ' ', groups } },
         virt_text_pos = 'inline',
@@ -794,7 +794,7 @@ end
 --- @param buf integer from `create_buffer`
 --- @param text string
 function M.notice(buf, text)
-  -- A notice is painted with `GitViewSeparator`, so it is a first use of the
+  -- A notice is painted with `GitviewSeparator`, so it is a first use of the
   -- groups just as much as `draw` is. Without this a session whose first
   -- selection has no view to show - a clean repository, a binary file - would
   -- draw the notice against a group nothing had defined yet.
@@ -809,7 +809,7 @@ function M.notice(buf, text)
   vim.api.nvim_buf_set_extmark(buf, ns_diff, 0, 0, {
     end_row = 1,
     end_col = 0,
-    hl_group = 'GitViewSeparator',
+    hl_group = 'GitviewSeparator',
     hl_eol = true,
     priority = 10,
   })
@@ -835,7 +835,7 @@ local BLANK_GUTTER = (' '):rep(12)
 
 --- Changed lines say which they are by the color of their number, the only one
 --- they have, so the gutter needs no `+`/`-` of its own.
-local LNUM_HL = { add = 'GitViewAddLnum', del = 'GitViewDeleteLnum' }
+local LNUM_HL = { add = 'GitviewAddLnum', del = 'GitviewDeleteLnum' }
 
 --- The gutter of a closed fold: 'fillchars' fold across all of it, as the fold
 --- fills the rest of its row. The last cell stays a space, which parts the
@@ -847,7 +847,7 @@ local function fold_fill(win)
   local char = fillchars:match('fold:([^,]+)') or '·'
   -- '%' starts an item in 'statuscolumn'
   char = char == '%' and '%%' or char
-  return '%#GitViewSeparator#' .. char:rep(#BLANK_GUTTER - 1) .. ' '
+  return '%#GitviewSeparator#' .. char:rep(#BLANK_GUTTER - 1) .. ' '
 end
 
 --- What marks a row the index has changed, which is a row `unstage` would act
@@ -864,9 +864,9 @@ local function staged_bar(view, l)
   if view.layer then
     return ' '
   elseif l.stage == 'index' or (l.stage == 'staged' and l.kind == 'add') then
-    return '%#GitViewStagedAddBar#┃'
+    return '%#GitviewStagedAddBar#┃'
   elseif l.stage == 'staged' then
-    return '%#GitViewStagedDeleteBar#┃'
+    return '%#GitviewStagedDeleteBar#┃'
   end
   return ' '
 end
@@ -888,7 +888,7 @@ local function fold_bar(view, lnum)
   elseif last and not first then
     char = '╰'
   end
-  return '%#GitViewFoldBar#' .. char
+  return '%#GitviewFoldBar#' .. char
 end
 
 --- A count as it fits in the gutter: as it is up to four digits, and cut down
@@ -970,7 +970,7 @@ end
 --- @param cells integer
 --- @return string
 local function band_fill(cells)
-  return '%#GitViewFileHeaderBg#' .. (' '):rep(cells)
+  return '%#GitviewFileHeaderBg#' .. (' '):rep(cells)
 end
 
 --- What the gutter of each file's header shows, by row: the band's background,
@@ -992,12 +992,12 @@ local function header_gutters(view)
     local f = view.files[i]
     if f.conflicts then
       gutters[f.row] = counts_gutter({
-        { text = '!' .. abbrev_count(f.conflicts), group = 'GitViewFileHeaderConflictCount' },
+        { text = '!' .. abbrev_count(f.conflicts), group = 'GitviewFileHeaderConflictCount' },
       }, band_fill)
     else
       gutters[f.row] = count_gutter(s.add, s.del, band_fill, {
-        add = 'GitViewFileHeaderStatAdd',
-        del = 'GitViewFileHeaderStatDelete',
+        add = 'GitviewFileHeaderStatAdd',
+        del = 'GitviewFileHeaderStatDelete',
       })
     end
   end
@@ -1047,7 +1047,7 @@ local function gutter(win, view)
     end) then
       return count_gutter(size.add, size.del, function(cells)
         return (' '):rep(cells)
-      end, { add = 'GitViewStatAdd', del = 'GitViewStatDelete' })
+      end, { add = 'GitviewStatAdd', del = 'GitviewStatDelete' })
     end
     return BLANK_GUTTER
   end
@@ -1068,8 +1068,8 @@ local function gutter(win, view)
   end
   local old, new = lnums(view, l)
   return ('%s %s %s '):format(
-    num(old, 'GitViewOldLnum'),
-    num(new, 'GitViewNewLnum'),
+    num(old, 'GitviewOldLnum'),
+    num(new, 'GitviewNewLnum'),
     l.folded and fold_bar(view, lnum) or staged_bar(view, l)
   )
 end
@@ -1094,14 +1094,14 @@ function M.statuscolumn()
     return g
   end
   local l = view.lines[vim.v.lnum]
-  local band = l and l.kind == 'file' and '%#GitViewFileHeaderBg#' or ''
+  local band = l and l.kind == 'file' and '%#GitviewFileHeaderBg#' or ''
   return band .. '%l ' .. g
 end
 
 --- The winbar's text outside the file and the shas. The winbar is bold by
 --- default, which leaves a bold file name nothing to stand out from, and a
 --- group cannot take an attribute away from it but by not combining with it.
-local WINBAR_TEXT = '%#GitViewWinBarText#'
+local WINBAR_TEXT = '%#GitviewWinBarText#'
 
 --- What a view compares, for the winbar, with its shas colored as the commits
 --- pane colors them and the rest in `WINBAR_TEXT`.
@@ -1117,7 +1117,7 @@ local function rev_statusline(rev)
   for from, hex, to in word:gmatch('()%f[%w](%x+)%f[%W]()') do
     if #hex >= 4 then
       out[#out + 1] = util.escape_statusline(word:sub(at, from - 1))
-      out[#out + 1] = '%#GitViewCommitSha#' .. hex .. WINBAR_TEXT
+      out[#out + 1] = '%#GitviewCommitSha#' .. hex .. WINBAR_TEXT
       at = to
     end
   end
@@ -1184,7 +1184,7 @@ function M.winbar()
   if file then
     head_text = (' %s @ '):format(file.label)
     head = WINBAR_TEXT
-      .. (' %%#GitViewFileHeader#%s%s @ '):format(util.escape_statusline(file.label), WINBAR_TEXT)
+      .. (' %%#GitviewFileHeader#%s%s @ '):format(util.escape_statusline(file.label), WINBAR_TEXT)
   end
   local tail = ''
   if #view.files > 1 then
@@ -1327,9 +1327,9 @@ function M.foldtext()
     local width = info.width - info.textoff - vim.api.nvim_strwidth(label)
     local out = {}
     for _, c in ipairs(first_line_chunks(buf, view, first, last, width)) do
-      out[#out + 1] = { c.text, c.group or 'GitViewSeparator' }
+      out[#out + 1] = { c.text, c.group or 'GitviewSeparator' }
     end
-    out[#out + 1] = { label, 'GitViewSeparator' }
+    out[#out + 1] = { label, 'GitviewSeparator' }
     return out
   end
 
@@ -1341,7 +1341,7 @@ function M.foldtext()
     text = text .. '   ' .. util.counted(size.files, 'file')
   end
   -- a space between the text and the fill, as the label of a run has
-  return { { text .. ' ', 'GitViewCommitAuthor' } }
+  return { { text .. ' ', 'GitviewCommitAuthor' } }
 end
 
 --- Give a diff window the options a user may set otherwise, from an ftplugin

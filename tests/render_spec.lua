@@ -114,12 +114,12 @@ test('diff background is a range mark, not line_hl_group', function()
   end
   local found
   for _, m in ipairs(marks(buf, 'gitview.diff', row)) do
-    if m[4].hl_group == 'GitViewAdd' then
+    if m[4].hl_group == 'GitviewAdd' then
       found = m[4]
     end
     eq(nil, m[4].line_hl_group, 'line_hl_group must not be used')
   end
-  assert(found, 'no GitViewAdd range mark')
+  assert(found, 'no GitviewAdd range mark')
   eq(true, found.hl_eol)
   eq(row + 1, found.end_row)
 end)
@@ -130,9 +130,9 @@ test('word-level marks outrank the line background', function()
   for i, l in ipairs(view.lines) do
     if l.kind == 'add' and l.text:find('a, b, c') then
       for _, m in ipairs(marks(buf, 'gitview.diff', i - 1)) do
-        if m[4].hl_group == 'GitViewAdd' then
+        if m[4].hl_group == 'GitviewAdd' then
           line_prio = m[4].priority
-        elseif m[4].hl_group == 'GitViewAddText' then
+        elseif m[4].hl_group == 'GitviewAddText' then
           word_prio = m[4].priority
         end
       end
@@ -149,9 +149,9 @@ test('syntax marks sit above the line background and below the word marks', func
     if l.kind == 'add' and l.text:find('a, b, c') then
       syn = marks(buf, 'gitview.syntax', i - 1)[1][4].priority
       for _, m in ipairs(marks(buf, 'gitview.diff', i - 1)) do
-        if m[4].hl_group == 'GitViewAdd' then
+        if m[4].hl_group == 'GitviewAdd' then
           line_prio = m[4].priority
-        elseif m[4].hl_group == 'GitViewAddText' then
+        elseif m[4].hl_group == 'GitviewAddText' then
           word_prio = m[4].priority
         end
       end
@@ -229,10 +229,10 @@ test('the gutter is numbered for source lines and blank for the rest', function(
   vim.v.lnum = folded_row
   local opened = render.statuscolumn()
   assert(opened:find('%d'), 'an opened fold shows its numbers')
-  assert(opened:find('GitViewFoldBar', 1, true), 'and a bar marking its rows')
+  assert(opened:find('GitviewFoldBar', 1, true), 'and a bar marking its rows')
   eq(width(real), width(opened), 'in a gutter of the same width')
   vim.v.lnum = source_row
-  eq(nil, render.statuscolumn():find('GitViewFoldBar', 1, true), 'a row outside a fold has no bar')
+  eq(nil, render.statuscolumn():find('GitviewFoldBar', 1, true), 'a row outside a fold has no bar')
 
   vim.api.nvim_win_close(win, true)
   eq(#view.lines, #vim.api.nvim_buf_get_lines(buf, 0, -1, false))
@@ -267,7 +267,7 @@ test('the bar of an opened fold bends at its first and last rows', function()
 
   local function bar(row)
     vim.v.lnum = row
-    return render.statuscolumn():match('%%#GitViewFoldBar#(.-) $')
+    return render.statuscolumn():match('%%#GitviewFoldBar#(.-) $')
   end
   eq('╭', bar(first))
   for row = first + 1, last - 1 do
@@ -383,7 +383,7 @@ test('a closed run reads as its first line and how many lines it holds', functio
   eq('end  3 lines ', text_of(chunks))
   -- the code keeps its syntax
   assert(chunks[1][2]:find('^@keyword'), vim.inspect(chunks[1]))
-  eq({ '  3 lines ', 'GitViewSeparator' }, chunks[#chunks])
+  eq({ '  3 lines ', 'GitviewSeparator' }, chunks[#chunks])
 end)
 
 test('a closed run skips its blank lines and keeps the indent', function()
@@ -445,7 +445,7 @@ test("a pair of lines longer than 'synmaxcol' gets no word marks", function()
     local n = 0
     for i in ipairs(view.lines) do
       for _, m in ipairs(marks(buf, 'gitview.diff', i - 1)) do
-        if m[4].hl_group == 'GitViewAddText' or m[4].hl_group == 'GitViewDeleteText' then
+        if m[4].hl_group == 'GitviewAddText' or m[4].hl_group == 'GitviewDeleteText' then
           n = n + 1
         end
       end
@@ -486,7 +486,7 @@ end)
 -- The groups whose colors we compute; the rest are plain `default link`s, which
 -- survive a colorscheme change on their own.
 local COLOR_GROUPS =
-  { 'GitViewAdd', 'GitViewDelete', 'GitViewAddText', 'GitViewDeleteText' }
+  { 'GitviewAdd', 'GitviewDelete', 'GitviewAddText', 'GitviewDeleteText' }
 
 test('colors are defined by rendering, not by setup()', function()
   -- Reproduce a session where setup() was never called: drop the ColorScheme
@@ -505,12 +505,12 @@ test('colors are defined by rendering, not by setup()', function()
     local h = vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false })
     assert(h.bg, name .. ' should carry a background color')
   end
-  for _, name in ipairs({ 'GitViewSeparator', 'GitViewFileHeader' }) do
+  for _, name in ipairs({ 'GitviewSeparator', 'GitviewFileHeader' }) do
     assert(next(vim.api.nvim_get_hl(0, { name = name })), name .. ' should be defined')
   end
 end)
 
--- A notice paints with `GitViewSeparator`, so it is a first use of the groups
+-- A notice paints with `GitviewSeparator`, so it is a first use of the groups
 -- just as much as a diff is: a session whose first selection has no view to show
 -- would otherwise draw it against a group nothing had defined yet. The computed
 -- groups are the evidence, since a plain `default link` survives on its own and
@@ -537,9 +537,9 @@ test('add and delete backgrounds differ, and each differs from its word color', 
   local function bg(name)
     return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false }).bg
   end
-  assert(bg('GitViewAdd') ~= bg('GitViewDelete'), 'add and delete must be distinguishable')
-  assert(bg('GitViewAdd') ~= bg('GitViewAddText'), 'word highlight must stand out')
-  assert(bg('GitViewDelete') ~= bg('GitViewDeleteText'), 'word highlight must stand out')
+  assert(bg('GitviewAdd') ~= bg('GitviewDelete'), 'add and delete must be distinguishable')
+  assert(bg('GitviewAdd') ~= bg('GitviewAddText'), 'word highlight must stand out')
+  assert(bg('GitviewDelete') ~= bg('GitviewDeleteText'), 'word highlight must stand out')
 end)
 
 -- A colorscheme that leaves the terminal background showing through defines no
@@ -551,18 +551,18 @@ test('word colors stand out even when Normal has no background', function()
   local ok, err = pcall(function()
     -- The groups are defined with `default`, so an earlier test's values would
     -- survive `setup_highlights()` and hide what this one is measuring.
-    vim.cmd('hi clear GitViewAddText')
-    vim.cmd('hi clear GitViewDeleteText')
+    vim.cmd('hi clear GitviewAddText')
+    vim.cmd('hi clear GitviewDeleteText')
     render.setup_highlights()
     local function bg(name)
       return vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name(name), link = false }).bg
     end
-    assert(bg('GitViewAdd') ~= bg('GitViewAddText'), 'word highlight must stand out')
-    assert(bg('GitViewDelete') ~= bg('GitViewDeleteText'), 'word highlight must stand out')
+    assert(bg('GitviewAdd') ~= bg('GitviewAddText'), 'word highlight must stand out')
+    assert(bg('GitviewDelete') ~= bg('GitviewDeleteText'), 'word highlight must stand out')
   end)
   vim.api.nvim_set_hl(0, 'Normal', normal)
-  vim.cmd('hi clear GitViewAddText')
-  vim.cmd('hi clear GitViewDeleteText')
+  vim.cmd('hi clear GitviewAddText')
+  vim.cmd('hi clear GitviewDeleteText')
   render.setup_highlights()
   assert(ok, err)
 end)
@@ -579,10 +579,10 @@ test('word colors stand out from a faint diff color', function()
   vim.api.nvim_set_hl(0, 'DiffAdd', { bg = 0x20303b })
   vim.api.nvim_set_hl(0, 'DiffDelete', { bg = 0x37222c })
   local groups = {
-    GitViewAdd = 'GitViewAddText',
-    GitViewDelete = 'GitViewDeleteText',
-    GitViewStagedAdd = 'GitViewStagedAddText',
-    GitViewStagedDelete = 'GitViewStagedDeleteText',
+    GitviewAdd = 'GitviewAddText',
+    GitviewDelete = 'GitviewDeleteText',
+    GitviewStagedAdd = 'GitviewStagedAddText',
+    GitviewStagedDelete = 'GitviewStagedDeleteText',
   }
   local function clear()
     for line, word in pairs(groups) do
@@ -621,10 +621,10 @@ test('counts take their color from a group that colors its text', function()
     saved[name] = vim.api.nvim_get_hl(0, { name = name, link = false })
   end
   local counts = {
-    'GitViewStatAdd',
-    'GitViewStatDelete',
-    'GitViewFileHeaderStatAdd',
-    'GitViewFileHeaderStatDelete',
+    'GitviewStatAdd',
+    'GitviewStatDelete',
+    'GitviewFileHeaderStatAdd',
+    'GitviewFileHeaderStatDelete',
   }
   local function clear()
     for _, name in ipairs(counts) do
@@ -642,23 +642,23 @@ test('counts take their color from a group that colors its text', function()
     vim.api.nvim_set_hl(0, 'GitSignsAdd', { fg = 0x00aa00 })
     clear()
     render.setup_highlights()
-    eq(0x00aa00, get('GitViewStatAdd').fg, 'passes over a background and a reversed group')
-    eq(nil, get('GitViewStatAdd').bg)
-    eq(0xff0000, get('GitViewStatDelete').fg, 'takes the first group that colors its text')
-    eq(1, get('GitViewStatDelete').ctermfg)
-    eq(0x00aa00, get('GitViewFileHeaderStatAdd').fg, 'keeps the color on the band')
-    eq(0xff0000, get('GitViewFileHeaderStatDelete').fg, 'keeps the color on the band')
+    eq(0x00aa00, get('GitviewStatAdd').fg, 'passes over a background and a reversed group')
+    eq(nil, get('GitviewStatAdd').bg)
+    eq(0xff0000, get('GitviewStatDelete').fg, 'takes the first group that colors its text')
+    eq(1, get('GitviewStatDelete').ctermfg)
+    eq(0x00aa00, get('GitviewFileHeaderStatAdd').fg, 'keeps the color on the band')
+    eq(0xff0000, get('GitviewFileHeaderStatDelete').fg, 'keeps the color on the band')
 
     for _, name in ipairs({ 'diffAdded', 'diffRemoved', 'GitSignsAdd' }) do
       vim.api.nvim_set_hl(0, name, {})
     end
     clear()
     render.setup_highlights()
-    for _, name in ipairs({ 'GitViewStatAdd', 'GitViewStatDelete' }) do
+    for _, name in ipairs({ 'GitviewStatAdd', 'GitviewStatDelete' }) do
       local h = get(name)
       assert(h.fg and h.fg ~= 0xffffff, name .. ' should fall back to a color of its own')
     end
-    assert(get('GitViewStatAdd').fg ~= get('GitViewStatDelete').fg, 'add and delete must differ')
+    assert(get('GitviewStatAdd').fg ~= get('GitviewStatDelete').fg, 'add and delete must differ')
   end)
   for name, h in pairs(saved) do
     vim.api.nvim_set_hl(0, name, h)
@@ -672,10 +672,10 @@ test('a colorscheme change puts the groups back', function()
   render.setup_highlights()
   vim.cmd.colorscheme('default')
   local after = vim.api.nvim_get_hl(0, {
-    id = vim.api.nvim_get_hl_id_by_name('GitViewAdd'),
+    id = vim.api.nvim_get_hl_id_by_name('GitviewAdd'),
     link = false,
   })
-  assert(after.bg, 'GitViewAdd should be redefined after :colorscheme')
+  assert(after.bg, 'GitviewAdd should be redefined after :colorscheme')
   eq(
     vim.api.nvim_get_hl(0, { id = vim.api.nvim_get_hl_id_by_name('DiffAdd'), link = false }).bg,
     after.bg,
@@ -836,11 +836,11 @@ test('a conflict colors its code but not its markers', function()
     end
   end
   eq({
-    'GitViewConflictOursMarker',
-    'GitViewConflictOurs',
-    'GitViewConflictSeparator',
-    'GitViewConflictTheirs',
-    'GitViewConflictTheirsMarker',
+    'GitviewConflictOursMarker',
+    'GitviewConflictOurs',
+    'GitviewConflictSeparator',
+    'GitviewConflictTheirs',
+    'GitviewConflictTheirsMarker',
   }, groups)
   vim.api.nvim_buf_delete(buf, { force = true })
 end)

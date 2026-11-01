@@ -101,9 +101,9 @@ end)
 -- are no sha, stay faded with the rest of their row.
 test('list: the sha of a commit row is colored', function()
   local rows = list.content({ pane = 'commits', worktree = true, commits = { commit('abc1234', 'x') } })
-  eq({ from = 0, to = 7, group = 'GitViewCommitSha' }, rows[2].spans[#rows[2].spans])
+  eq({ from = 0, to = 7, group = 'GitviewCommitSha' }, rows[2].spans[#rows[2].spans])
   for _, span in ipairs(rows[1].spans) do
-    assert(span.group ~= 'GitViewCommitSha', 'the zeros are no sha')
+    assert(span.group ~= 'GitviewCommitSha', 'the zeros are no sha')
   end
 end)
 
@@ -115,7 +115,7 @@ local function upstream_paint(buf)
   local ns = vim.api.nvim_create_namespace('gitview.ui.list.upstream')
   local out = { pushed = {}, lines = {} }
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
-    if m[4].hl_group == 'GitViewCommitShaPushed' then
+    if m[4].hl_group == 'GitviewCommitShaPushed' then
       out.pushed[#out.pushed + 1] = m[2]
     end
     if m[4].virt_lines then
@@ -194,9 +194,9 @@ end)
 
 test('list: the working-tree row is faded as a whole', function()
   local rows = list.content({ pane = 'commits', worktree = true, commits = { commit('abc1234', 'x') } })
-  eq({ from = 0, to = #rows[1].text, group = 'GitViewCommitWorktree' }, rows[1].spans[#rows[1].spans])
+  eq({ from = 0, to = #rows[1].text, group = 'GitviewCommitWorktree' }, rows[1].spans[#rows[1].spans])
   for _, span in ipairs(rows[2].spans) do
-    assert(span.group ~= 'GitViewCommitWorktree', 'a commit row is not faded')
+    assert(span.group ~= 'GitviewCommitWorktree', 'a commit row is not faded')
   end
 end)
 
@@ -224,7 +224,7 @@ test('list: the cursor paint covers what the row names', function()
   eq(nil, cursor_paint(buf, 2))
   -- above the fade of the working-tree row, or it would not show there
   local fade = vim.tbl_filter(function(m)
-    return m[4].hl_group == 'GitViewCommitWorktree'
+    return m[4].hl_group == 'GitviewCommitWorktree'
   end, vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { details = true }))[1]
   assert(cursor_paint(buf, 1).priority > fade[4].priority, 'the cursor paint must win over the fade')
   list.paint_cursor(buf, nil)
@@ -293,12 +293,12 @@ end
 
 test('list: the gutter shows one letter per side', function()
   local entries = { entry('M', 'M', 'a.txt'), entry(' ', 'D', 'b.txt') }
-  eq('%#GitViewStatusStaged#M%#GitViewStatusUnstaged#M ', gutter(entries, 1))
-  eq('%#GitViewStatusStaged# %#GitViewStatusUnstaged#D ', gutter(entries, 2))
+  eq('%#GitviewStatusStaged#M%#GitviewStatusUnstaged#M ', gutter(entries, 1))
+  eq('%#GitviewStatusStaged# %#GitviewStatusUnstaged#D ', gutter(entries, 2))
 end)
 
 test('list: an untracked file gets both letters in one color', function()
-  eq('%#GitViewStatusUntracked#?? ', gutter({ entry('?', '?', 'new.txt') }, 1))
+  eq('%#GitviewStatusUntracked#?? ', gutter({ entry('?', '?', 'new.txt') }, 1))
 end)
 
 -- Every row is three columns wide, including the ones standing for no file, or
@@ -365,7 +365,7 @@ end)
 -- the paths line up with everything else the list draws.
 test('list: a commit file gets one status letter', function()
   local rows = list.content(looking_into({ change('D', 'a.txt') }))
-  eq('%#GitViewStatusStaged#D  ', rows[1].gutter)
+  eq('%#GitviewStatusStaged#D  ', rows[1].gutter)
 end)
 
 test('list: a commit file names both sides of a rename', function()
@@ -401,7 +401,7 @@ test("list: commit rows have no gutter, a commit's files do", function()
   local model = { pane = 'commits', root = '/tmp/repo', commits = { commit('abc1234', 'x') } }
   eq('', commits_gutter(model))
   model.scope = { commit = commit('abc1234', 'x'), changes = { change('M', 'a.txt') } }
-  eq('%#GitViewStatusStaged#M  ', commits_gutter(model))
+  eq('%#GitviewStatusStaged#M  ', commits_gutter(model))
 end)
 
 --- @param rows gitview.ListRow[]
@@ -455,7 +455,7 @@ test('list: a directory row stands for the first file in it', function()
       return chunk[1]
     end, r.lead))
   end, rows))
-  eq({ 'GitViewStatusStaged', 'GitViewStatusUnstaged' }, { rows[2].lead[1][2], rows[2].lead[2][2] })
+  eq({ 'GitviewStatusStaged', 'GitviewStatusUnstaged' }, { rows[2].lead[1][2], rows[2].lead[2][2] })
   -- which leaves the gutter with nothing to draw
   eq(nil, rows[2].gutter)
   eq({ kind = 'file', index = 3 }, rows[6].target)

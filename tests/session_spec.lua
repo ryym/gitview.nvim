@@ -16,7 +16,7 @@ end
 --- Open a session against a fresh repository, run `fn`, then close it.
 ---
 --- `:lcd` into the repository is what makes the session find it, the same way
---- `:GitView` does when the current buffer has no file.
+--- `:Gitview` does when the current buffer has no file.
 --- @param setup fun(repo: gitview.TestRepo)
 --- @param fn fun(s: gitview.Session, repo: gitview.TestRepo)
 --- @param opts? {unsettled?:boolean} `unsettled` to start `fn` while the status
@@ -89,9 +89,9 @@ end)
 
 test('session: names its buffers for the tab page label', function()
   with_session(base, function(s)
-    eq('GitView', vim.fn.bufname(s.files_buf))
-    eq('GitView:commits', vim.fn.bufname(s.commits_buf))
-    eq('GitView:diff', vim.fn.bufname(s.diff_buf))
+    eq('Gitview', vim.fn.bufname(s.files_buf))
+    eq('Gitview:commits', vim.fn.bufname(s.commits_buf))
+    eq('Gitview:diff', vim.fn.bufname(s.diff_buf))
   end)
 end)
 
@@ -128,7 +128,7 @@ test('session: a session on another repository takes numbered buffer names', fun
       session.close(s)
       vim.api.nvim_set_current_tabpage(scratch)
       vim.cmd.tabclose()
-      eq({ 'GitView (2)', 'GitView:commits (2)', 'GitView:diff (2)' }, names)
+      eq({ 'Gitview (2)', 'Gitview:commits (2)', 'Gitview:diff (2)' }, names)
     end)
   end)
 end)
@@ -331,7 +331,7 @@ test('session: the window renders its gutter and winbar', function()
     for _, h in ipairs(gutter.highlights) do
       groups[#groups + 1] = h.group
     end
-    eq({ 'GitViewStatusStaged', 'GitViewStatusUnstaged' }, groups)
+    eq({ 'GitviewStatusStaged', 'GitviewStatusUnstaged' }, groups)
 
     local bar =
       vim.api.nvim_eval_statusline(vim.wo[win].winbar, { winid = win, use_winbar = true })
@@ -1249,7 +1249,7 @@ local function pushed_rows(s)
   local ns = vim.api.nvim_create_namespace('gitview.ui.list.upstream')
   local out = {}
   for _, m in ipairs(vim.api.nvim_buf_get_extmarks(s.commits_buf, ns, 0, -1, { details = true })) do
-    if m[4].hl_group == 'GitViewCommitShaPushed' then
+    if m[4].hl_group == 'GitviewCommitShaPushed' then
       out[#out + 1] = m[2]
     end
   end
@@ -2339,10 +2339,10 @@ test('session: the diff winbar colors the shas it names', function()
     vim.g.statusline_winid = s.diff_win
     local bar = require('gitview.diff.render').winbar()
     local function sha(c)
-      return '%#GitViewCommitSha#' .. c.sha .. '%#GitViewWinBarText#'
+      return '%#GitviewCommitSha#' .. c.sha .. '%#GitviewWinBarText#'
     end
     assert(bar:find(sha(s.commits[2]), 1, true), bar)
-    eq(1, select(2, bar:gsub('GitViewCommitSha', '')))
+    eq(1, select(2, bar:gsub('GitviewCommitSha', '')))
 
     goto_commit(s, 3)
     session.set_mark(s)
@@ -2836,7 +2836,7 @@ test('session: the stat graph is colored as git colors it', function()
     table.sort(got, function(a, b)
       return a[1] < b[1]
     end)
-    eq({ { 11, 12, 'GitViewStatAdd' }, { 12, 13, 'GitViewStatDelete' } }, got)
+    eq({ { 11, 12, 'GitviewStatAdd' }, { 12, 13, 'GitviewStatDelete' } }, got)
   end)
 end)
 
@@ -2859,7 +2859,7 @@ test('session: the header starts folded below its subject, and reads as its byli
     end)
     local commit = s.commits[1]
     eq({
-      { ('\u{25b8} %s · %s   2 files '):format(commit.author, commit.when), 'GitViewCommitAuthor' },
+      { ('\u{25b8} %s · %s   2 files '):format(commit.author, commit.when), 'GitviewCommitAuthor' },
     }, text)
   end)
 end)
@@ -2876,7 +2876,7 @@ end
 test("session: a folded header's gutter ends with how many lines the commit changed", function()
   with_session(described_history, function(s)
     show_commit(s, 1)
-    eq((' '):rep(6) .. '%#GitViewStatAdd#+3 %#GitViewStatDelete#-1 ', diff_gutter(s, 2))
+    eq((' '):rep(6) .. '%#GitviewStatAdd#+3 %#GitviewStatDelete#-1 ', diff_gutter(s, 2))
     eq((' '):rep(12), diff_gutter(s, 1), 'the subject has no count')
     -- opened, the stat says as much
     fold_header(s, 'zo')
@@ -3708,10 +3708,10 @@ test('session: a conflicted file is shown as its working tree has it', function(
     eq(vim.list_extend({ 'fight.txt' }, CONFLICT), diff_rows(s))
     -- the header counts conflicts where it would count lines
     local header = diff_gutter(s, 1)
-    assert(header:find('%#GitViewFileHeaderConflictCount#!1 ', 1, true), header)
+    assert(header:find('%#GitviewFileHeaderConflictCount#!1 ', 1, true), header)
     -- only the working tree's line numbers, markers included
-    eq('     %#GitViewNewLnum#   1   ', diff_gutter(s, 2))
-    eq('     %#GitViewNewLnum#   4   ', diff_gutter(s, 5))
+    eq('     %#GitviewNewLnum#   1   ', diff_gutter(s, 2))
+    eq('     %#GitviewNewLnum#   4   ', diff_gutter(s, 5))
     -- The index has no stage 0 to stage rows into.
     eq(nil, s.index_lines)
   end)

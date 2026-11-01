@@ -371,8 +371,8 @@ end
 --- What marks a file under review as checked off, and as changed since, in
 --- the diff as in the list.
 local CHECK_MARKS = {
-  checked = { '✓', 'GitViewReviewedMark' },
-  changed = { '!', 'GitViewReviewChanged' },
+  checked = { '✓', 'GitviewReviewedMark' },
+  changed = { '!', 'GitviewReviewChanged' },
 }
 
 --- The paths of the files a review lists.
@@ -3111,7 +3111,7 @@ end
 --- numbered set, the same number for all three buffers.
 --- @param s gitview.Session
 local function name_buffers(s)
-  local names = { 'GitView', 'GitView:commits', 'GitView:diff' }
+  local names = { 'Gitview', 'Gitview:commits', 'Gitview:diff' }
   local suffix, n = '', 1
   while
     vim.iter(names):any(function(name)

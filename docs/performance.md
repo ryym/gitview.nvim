@@ -259,7 +259,7 @@ file_rewrite           full_ms        366.8      381.3      -4%
 ```
 
 - **A scenario is a repository and what a user does in it.** Each builds a
-  repository with git, opens `:GitView` there and types keys: `G` onto a row,
+  repository with git, opens `:Gitview` there and types keys: `G` onto a row,
   `<C-w>l` into the diff, `j` and `<C-f>` inside it. Nothing reaches into the
   plugin's modules, so a scenario survives a change to how a view is built or
   drawn. They are listed in `bench/scenarios.lua`, with what each stands for.

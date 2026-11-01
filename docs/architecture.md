@@ -7,7 +7,7 @@ pipeline lives under `diff/` and the modules every part needs sit above it.
 
 | module               | responsibility                                          |
 | -------------------- | ------------------------------------------------------- |
-| `init.lua`           | The `:GitView` command, and `setup()`                   |
+| `init.lua`           | The `:Gitview` command, and `setup()`                   |
 | `actions.lua`        | What can be done to an open session, for keys to call   |
 | `keymaps.lua`        | The keys each pane is given by default                  |
 | `config.lua`         | Defaults, and the subset `vim.diff` takes               |
@@ -52,7 +52,7 @@ data, so assembling a view looks nothing up for itself.
 
 ## The status tab
 
-`:GitView` opens a tab page that outlives the moment it was opened in. A
+`:Gitview` opens a tab page that outlives the moment it was opened in. A
 session keeps its repository root, its entries and the tail of the history, so
 that all of them can be re-read — which is what lets it follow a repository that
 moves on while it is open.

@@ -104,7 +104,7 @@ test('actions: neither gitview nor its actions load the rest when required', fun
   eq('false', out.stdout, out.stderr)
 end)
 
---- What `:GitView` with `args` said through `vim.notify`.
+--- What `:Gitview` with `args` said through `vim.notify`.
 --- @param args string
 --- @return string[]
 local function run(args)
@@ -113,13 +113,13 @@ local function run(args)
   vim.notify = function(msg)
     messages[#messages + 1] = (msg:gsub('^gitview: ', ''))
   end
-  local ok, err = pcall(vim.cmd, 'GitView ' .. args)
+  local ok, err = pcall(vim.cmd, 'Gitview ' .. args)
   vim.notify = notify
   assert(ok, err)
   return messages
 end
 
-test(':GitView subcommands act on the session of the tab page', function()
+test(':Gitview subcommands act on the session of the tab page', function()
   vim.cmd.runtime('plugin/gitview.lua')
   -- Loaded ahead, while the relative runtimepath of the suite can still find
   -- it: the session changes the directory.
@@ -142,14 +142,14 @@ test(':GitView subcommands act on the session of the tab page', function()
   eq({ 'no session in this tab page' }, run('refresh'))
 end)
 
-test(':GitView completes its subcommands and their arguments', function()
+test(':Gitview completes its subcommands and their arguments', function()
   local command = require('gitview.command')
-  eq({ 'close', 'layer', 'open', 'refresh', 'whitespace' }, command.complete('', 'GitView '))
-  eq({ 'refresh' }, command.complete('re', 'GitView re'))
-  eq({ 'staged' }, command.complete('st', 'GitView layer st'))
-  eq({ 'on', 'off' }, command.complete('', 'GitView whitespace '))
-  eq({}, command.complete('', 'GitView refresh '))
-  eq({}, command.complete('', 'GitView layer both '))
+  eq({ 'close', 'layer', 'open', 'refresh', 'whitespace' }, command.complete('', 'Gitview '))
+  eq({ 'refresh' }, command.complete('re', 'Gitview re'))
+  eq({ 'staged' }, command.complete('st', 'Gitview layer st'))
+  eq({ 'on', 'off' }, command.complete('', 'Gitview whitespace '))
+  eq({}, command.complete('', 'Gitview refresh '))
+  eq({}, command.complete('', 'Gitview layer both '))
 end)
 
 test('actions: a window that is no pane takes only the actions on the session', function()

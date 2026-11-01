@@ -6,12 +6,12 @@ local M = {}
 --- @field context integer unchanged lines left open around each hunk
 --- @field algorithm string vim.diff() algorithm
 --- @field linematch integer 0 keeps hunks identical to `git diff`; see diff.lines.hunks
---- @field ignore_whitespace boolean where a diff starts out; `:GitView`
+--- @field ignore_whitespace boolean where a diff starts out; `:Gitview`
 ---        can turn it on and off while it is open
---- @field layer gitview.Layer which uncommitted changes `:GitView` starts out
+--- @field layer gitview.Layer which uncommitted changes `:Gitview` starts out
 ---        showing: `both`, or `staged` or `unstaged` alone
---- @field list_ratio number share of the width the sidebar of `:GitView` takes
---- @field commit_count integer how many recent commits `:GitView` lists
+--- @field list_ratio number share of the width the sidebar of `:Gitview` takes
+--- @field commit_count integer how many recent commits `:Gitview` lists
 --- @field commit_ratio number share of the sidebar height the commit list takes
 --- @field no_highlight string[] filetypes shown without syntax highlighting
 --- @field list_style 'flat'|'tree' whether the sidebar lists files by their

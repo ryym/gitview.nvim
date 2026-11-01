@@ -300,7 +300,7 @@ recorded, so all of them are listed as `UU`; see
 
 ### Ignoring whitespace and the rows disagree
 
-`:GitView` can be told to stop counting lines that differ only in
+`:Gitview` can be told to stop counting lines that differ only in
 whitespace as changed. A line folded away by that is drawn as a `context` row,
 and a mixed view reads context from the index — so the row shows the index
 version while the working tree holds another.
