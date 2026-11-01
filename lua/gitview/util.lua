@@ -83,6 +83,48 @@ function M.highlights(augroup, define)
   }
 end
 
+--- Where each kind of change finds its text color, and what it falls back to:
+--- Neovim's own default colors for `Added`, `Changed` and `Removed`.
+local TEXT_COLORS = {
+  add = {
+    names = { 'Added', 'diffAdded', 'GitSignsAdd' },
+    dark = { fg = 0xb3f6c0, ctermfg = 10 },
+    light = { fg = 0x005523, ctermfg = 2 },
+  },
+  change = {
+    names = { 'Changed', 'diffChanged', 'GitSignsChange' },
+    dark = { fg = 0x8cf8f7, ctermfg = 14 },
+    light = { fg = 0x007373, ctermfg = 6 },
+  },
+  delete = {
+    names = { 'Removed', 'diffRemoved', 'GitSignsDelete' },
+    dark = { fg = 0xffc0b9, ctermfg = 9 },
+    light = { fg = 0x590008, ctermfg = 1 },
+  },
+}
+
+--- The text color of a kind of change, for what marks one with colored text
+--- rather than a colored line.
+---
+--- Colorschemes that mark changes with a background leave `Added` no green text
+--- to take, hence the other groups that commonly color such text. A group with a
+--- background of its own carries its meaning there, and its foreground is only
+--- what reads on it, often the normal text color: such a group is passed over.
+--- So is one drawn reversed, whose foreground is shown as the background.
+--- @param kind 'add'|'change'|'delete'
+--- @return {fg: integer, ctermfg: integer}
+function M.text_color(kind)
+  local color = TEXT_COLORS[kind]
+  local fallback = color[vim.o.background == 'light' and 'light' or 'dark']
+  for _, name in ipairs(color.names) do
+    local h = vim.api.nvim_get_hl(0, { name = name, link = false })
+    if (h.fg or h.ctermfg) and not (h.bg or h.ctermbg or h.reverse) then
+      return { fg = h.fg or fallback.fg, ctermfg = h.ctermfg or fallback.ctermfg }
+    end
+  end
+  return fallback
+end
+
 --- Give a window the options the plugin draws itself with.
 ---
 --- Set for this window and buffer alone, which is what keeps them from spreading:
