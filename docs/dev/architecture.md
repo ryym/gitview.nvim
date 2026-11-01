@@ -1,5 +1,16 @@
 # Architecture
 
+## Premises
+
+Two premises hold up the design:
+
+- **A diff buffer is not valid source code.** It interleaves two versions of a
+  file, so no parser can highlight it. Highlights are collected from scratch
+  buffers holding each whole version, and replayed as extmarks.
+- **A diff buffer's text is source and nothing else.** Line numbers, markers and
+  separators are drawn rather than written, so that a yank gives code. Putting
+  non-source characters into the buffer is a regression, not a style choice.
+
 ## Modules
 
 The unified diff is one part of the plugin rather than the whole of it, so its
