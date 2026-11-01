@@ -474,6 +474,19 @@ vim.opt_local.number = true
 vim.opt_local.relativenumber = true
 ```
 
+A `FileType` autocommand does the same, if it is created before the tab page is
+opened:
+
+```lua
+vim.api.nvim_create_autocmd('FileType', {
+  pattern = 'gitview-diff',
+  callback = function()
+    vim.opt_local.number = true
+    vim.opt_local.relativenumber = true
+  end,
+})
+```
+
 ### Highlight groups
 
 `GitViewAdd`, `GitViewDelete`, `GitViewAddText`, `GitViewDeleteText`,
