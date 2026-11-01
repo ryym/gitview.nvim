@@ -608,6 +608,9 @@ local function fill_syntax(buf, view)
       vim.defer_fn(step, 0)
     end
   end
+  -- Redrawn by hand here and after each step: Neovim puts off its own redraw
+  -- while an event is waiting, and the next step's timer always is, so the text
+  -- would show up only with the last of the colors.
   vim.cmd.redraw()
   vim.defer_fn(step, 0)
 end

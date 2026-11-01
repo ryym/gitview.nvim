@@ -724,6 +724,8 @@ end
 --- sit on branches that diverged. `git diff` compares the two trees either way,
 --- but only in the first case does the result read as "what happened between
 --- these two commits": across a fork it also undoes whatever the other side did.
+--- `git diff a...b` would read better there, but it would mean two rules for what
+--- a range means, and the winbar could no longer state it as a pair of revisions.
 ---
 --- @param a string
 --- @param b string
