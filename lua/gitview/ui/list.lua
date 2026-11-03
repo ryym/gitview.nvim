@@ -67,6 +67,8 @@ local M = {}
 --- @field to integer end-exclusive
 --- @field conceal boolean? hidden from view, though still in the text
 --- @field group string? highlight group the stretch is drawn in
+--- @field over true? drawn over the other spans, so it keeps its color in a
+---        row faded as a whole
 
 --- @class gitview.ListRow
 --- @field text string the buffer line, which is the thing itself
@@ -77,6 +79,8 @@ local M = {}
 ---        past any sha in front of it; colored while the diff shows the row.
 ---        Absent on a row standing for nothing, and on a directory, which the
 ---        diff has nothing to show for
+--- @field subject_end integer? end-exclusive column where what the row names
+---        ends, when something follows it; the end of the text when absent
 --- @field indent integer? how many levels of a tree the row is nested in, each
 ---        drawn in front of the text as a guide
 --- @field lead [string, string?][]? drawn after the indent, in front of the
@@ -188,7 +192,9 @@ end
 --- in line with the others, and a long old path cut off at the window's edge
 --- loses only where the file came from. The old path drops the directory's
 --- part only when it is in that directory too, since otherwise it says where
---- the file came from.
+--- the file came from. It is dimmed, and stays so when the row is faded or
+--- under the cursor: it is a note on the name, not part of it, and a color
+--- of its own keeps it apart from the name either way.
 ---
 --- The status letters move from the gutter to the front of the name. At the
 --- left edge they would sit further from the name the deeper the file is.
@@ -226,11 +232,13 @@ local function tree_rows(files, dir_kind, in_review)
       if f.old then
         -- Same length as the flat label, so spans laid over it still fit.
         row.text = ('%s <- %s'):format(f.path, f.old)
+        row.subject_end = #f.path
+        local old_at = #f.path + #' <- '
         local parent = f.path:sub(1, n.col)
         if f.old:sub(1, n.col) == parent and not f.old:find('/', n.col + 1, true) then
-          local old_at = #f.path + #' <- '
-          spans[2] = { from = old_at, to = old_at + n.col, conceal = true }
+          spans[#spans + 1] = { from = old_at, to = old_at + n.col, conceal = true }
         end
+        spans[#spans + 1] = { from = #f.path, to = #row.text, group = 'GitviewRenameSource', over = true }
       end
       row.spans = vim.list_extend(
         vim.tbl_filter(function(sp)
@@ -493,6 +501,9 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- A file checked off in a review has been read, and steps back as a pushed
   -- commit does.
   set('GitviewReviewed', { link = 'Comment' })
+  -- Where a renamed file came from, set apart from both the name and a read
+  -- file's fade, so it reads the same in a row of either.
+  set('GitviewRenameSource', { link = 'NonText' })
   -- The mark itself is not faded with the row: it is what says the file is
   -- done, and a faded one would be hard to pick out.
   set('GitviewReviewedMark', { link = 'DiagnosticOk' })
@@ -651,7 +662,7 @@ function M.draw(buf, model)
         end_col = span.to,
         conceal = span.conceal and '' or nil,
         hl_group = span.group,
-        priority = vim.hl.priorities.user,
+        priority = span.over and vim.hl.priorities.user + 1 or vim.hl.priorities.user,
       })
     end
   end
@@ -691,7 +702,7 @@ function M.paint_cursor(buf, row)
     return
   end
   vim.api.nvim_buf_set_extmark(buf, cursor_ns, row - 1, r.subject, {
-    end_col = #r.text,
+    end_col = r.subject_end or #r.text,
     hl_group = 'GitviewListCursor',
     priority = CURSOR_PRIORITY,
   })

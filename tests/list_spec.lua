@@ -524,6 +524,34 @@ test('list: a rename across directories keeps its old path whole', function()
   eq(4, rows[3].subject)
 end)
 
+-- The old path is a note on the name: dimmed, and left so where the row is
+-- faded or the cursor paints the name.
+test('list: a rename keeps its old path dimmed, faded or under the cursor', function()
+  local buf = list.create_buffer()
+  local scope = looking_into({ change('R', 'dest/bar', 'src/bar') }).scope
+  list.draw(buf, {
+    pane = 'files',
+    root = '/tmp/repo',
+    tree = true,
+    review = { scope = scope, checks = { ['dest/bar'] = {} } },
+  })
+  local text = vim.api.nvim_buf_get_lines(buf, 2, 3, true)[1]
+  eq('dest/bar <- src/bar', text)
+  local marks = vim.api.nvim_buf_get_extmarks(buf, -1, { 2, 0 }, { 2, -1 }, { details = true })
+  local function mark(group)
+    return vim.tbl_filter(function(mk)
+      return mk[4].hl_group == group
+    end, marks)[1]
+  end
+  local source, fade = mark('GitviewRenameSource'), mark('GitviewReviewed')
+  eq({ 8, #text }, { source[3], source[4].end_col })
+  assert(source[4].priority > fade[4].priority, 'the old path must keep its color over the fade')
+  -- the cursor paints the new name and stops short of the old path
+  list.paint_cursor(buf, 3)
+  eq({ from = 5, to = 8 }, { from = cursor_paint(buf, 3).from, to = cursor_paint(buf, 3).to })
+  vim.api.nvim_buf_delete(buf, { force = true })
+end)
+
 test('list: a commit file renamed across directories names its new path first', function()
   local m = looking_into({ change('R', 'dest/foo/bar', 'src/foo/bar') })
   m.tree = true
