@@ -155,6 +155,32 @@ test("a rename's header is bold on its name alone", function()
   }, spans)
 end)
 
+test('the winbar names a rename by its new path alone', function()
+  local renamed = vim.tbl_extend('force', LUA, { label = 'new.lua <- old.lua', name_end = #'new.lua' })
+  local buf, view = build({ renamed })
+  local win = vim.api.nvim_open_win(buf, false, {
+    relative = 'editor',
+    width = 60,
+    height = 10,
+    row = 1,
+    col = 1,
+  })
+  render.set_window_defaults(win)
+  render.fix_window(win)
+  vim.g.statusline_winid = win
+  vim.api.nvim_win_call(win, function()
+    vim.wo.foldenable = false
+    vim.fn.winrestview({ topline = view.files[1].row + 1, lnum = view.files[1].row + 1 })
+  end)
+
+  local bar = render.winbar()
+  local head = '%#GitviewWinBarText# %#GitviewFileHeader#new.lua%#GitviewWinBarText# @ '
+  eq(head, bar:sub(1, #head))
+  assert(not bar:find('old.lua', 1, true), bar)
+
+  vim.api.nvim_win_close(win, true)
+end)
+
 test('the winbar names the file the top of the window is in', function()
   local buf, view = build({ LUA, PERL })
   local win = vim.api.nvim_open_win(buf, false, {

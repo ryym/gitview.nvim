@@ -1170,9 +1170,13 @@ function M.winbar()
   -- color, as any other window's winbar is, though not in its bold.
   local head, head_text = WINBAR_TEXT .. ' ', ' '
   if file then
-    head_text = (' %s @ '):format(file.label)
+    -- A rename by its name alone: the header that says where it came from is
+    -- one scroll away, and the room is the rev's.
+    local name_end = view.lines[file.row].name_end
+    local name = name_end and file.label:sub(1, name_end) or file.label
+    head_text = (' %s @ '):format(name)
     head = WINBAR_TEXT
-      .. (' %%#GitviewFileHeader#%s%s @ '):format(util.escape_statusline(file.label), WINBAR_TEXT)
+      .. (' %%#GitviewFileHeader#%s%s @ '):format(util.escape_statusline(name), WINBAR_TEXT)
   end
   local tail = ''
   if #view.files > 1 then
