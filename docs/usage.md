@@ -18,9 +18,8 @@ windows switches which list the diff follows.
   repository goes back to the one already open.
 
 The upper window has one row per file, with the two status letters
-`git status --short` prints. A file changed both in the index and in the working
-tree is still one row. Only the letters are drawn; the row itself is the path, so
-yanking one gives something pasteable.
+`git status --short` prints, laid out as a [tree of directories](#files-as-a-tree).
+A file changed both in the index and in the working tree is still one row.
 
 ### Staying up to date
 
@@ -253,8 +252,8 @@ show, such as one that one side deleted, says so in place of the view.
 
 ## Files as a tree
 
-With `list_style = 'tree'`, the files window and the files of a commit looked into are
-laid out as a tree instead, under a root row `./`:
+The files window and the files of a commit looked into are laid out as a tree, under
+a root row `./`:
 
 ```
 ▼ ./
@@ -265,11 +264,10 @@ laid out as a tree instead, under a root row `./`:
 │ │  M list.lua
 ```
 
-The status letters move from the left edge to the front of each name. The rows are
-still whole paths, with the parent directory's part hidden and the letters only
-drawn, so yanking one still gives the full path. A directory holding nothing but
-another directory shares its row, as `lua/gitview/` does. The root's files sit beside
-it rather than below.
+The status letters sit in front of each name. The rows are whole paths, with the
+parent directory's part hidden and the letters only drawn, so yanking one gives the
+full path. A directory holding nothing but another directory shares its row, as
+`lua/gitview/` does. The root's files sit beside it rather than below.
 
 The order is git's, not a file manager's: directories are not put first, and `a.lua`
 comes before `a/`. It is the order `git diff` lists the files in, and the order `]f`
@@ -280,6 +278,9 @@ listed, once the cursor has rested on it for a moment. Lines cannot be staged in
 `s` and `u` on the row take every file in the directory instead. A directory holding
 an unresolved conflict is refused either way, since staging the conflicted file would
 mark it resolved unseen.
+
+With `list_style = 'flat'`, the files are listed by their whole paths instead, with
+no directory rows and the status letters at the left edge.
 
 ## Commits
 
@@ -396,7 +397,7 @@ require('gitview').setup({
   linematch = 0,
   ignore_whitespace = false,
   layer = 'both',
-  list_style = 'flat',
+  list_style = 'tree',
   list_ratio = 0.25,
   commit_count = 100,
   commit_ratio = 0.4,

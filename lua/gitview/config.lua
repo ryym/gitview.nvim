@@ -30,7 +30,7 @@ M.values = {
   commit_count = 100,
   commit_ratio = 0.4,
   no_highlight = {},
-  list_style = 'flat',
+  list_style = 'tree',
   default_keymaps = true,
 }
 
