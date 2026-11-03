@@ -69,7 +69,7 @@ test('status: a binary flag on either side marks the entry', function()
 end)
 
 test('status: labels name both sides of a rename only', function()
-  eq('old.txt -> new.txt', status.label({ path = 'new.txt', head_path = 'old.txt' }))
+  eq('new.txt <- old.txt', status.label({ path = 'new.txt', head_path = 'old.txt' }))
   eq('a.txt', status.label({ path = 'a.txt', head_path = 'a.txt' }))
   eq('a.txt', status.label({ path = 'a.txt' }))
 end)

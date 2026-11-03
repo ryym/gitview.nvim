@@ -230,8 +230,7 @@ local function tree_rows(files, dir_kind, in_review)
       spans[1] = { from = 0, to = n.col, conceal = true }
       row.subject = n.col
       if f.old then
-        -- Same length as the flat label, so spans laid over it still fit.
-        row.text = ('%s <- %s'):format(f.path, f.old)
+        -- The text is the flat row's label already, `new <- old`.
         row.subject_end = #f.path
         local old_at = #f.path + #' <- '
         local parent = f.path:sub(1, n.col)

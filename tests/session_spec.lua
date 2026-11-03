@@ -511,7 +511,7 @@ test('session: a change with no lines says so instead of showing nothing', funct
     repo.commit('init')
     repo.git('mv', 'doc.md', 'guide.md')
   end, function(s)
-    eq({ 'doc.md -> guide.md   (no textual change)' }, diff_rows(s))
+    eq({ 'guide.md <- doc.md   (no textual change)' }, diff_rows(s))
     eq(nil, require('gitview.diff.render').view_of(s.diff_buf))
   end)
 end)
@@ -3221,7 +3221,7 @@ test('session: a commit lists the files it leaves out below its header', functio
     local n = assert(view.header_rows)
     eq({
       [n + 2] = 'logo.png             (binary file)',
-      [n + 3] = 'doc.md -> guide.md   (no textual change)',
+      [n + 3] = 'guide.md <- doc.md   (no textual change)',
     }, rows_of_kind(s, 'skipped'))
     eq('', diff_rows(s)[n + 4])
     eq('a.lua', diff_rows(s)[n + 5])
@@ -3249,7 +3249,7 @@ test('session: a view without a header lists the files it leaves out at its top'
     s.selected = { kind = 'worktree', index = 1 }
     session.show_selected(s)
     eq(
-      { 'doc.md -> guide.md   (no textual change)', '', 'a.lua' },
+      { 'guide.md <- doc.md   (no textual change)', '', 'a.lua' },
       vim.list_slice(diff_rows(s), 1, 3)
     )
     eq(3, diff_view(s).files[1].row)
@@ -3270,7 +3270,7 @@ test('session: a commit with nothing to show lists its files under its header', 
     eq({}, view.files)
     eq('second', diff_rows(s)[1])
     eq(
-      { [view.header_rows + 2] = 'doc.md -> guide.md   (no textual change)' },
+      { [view.header_rows + 2] = 'guide.md <- doc.md   (no textual change)' },
       rows_of_kind(s, 'skipped')
     )
   end)

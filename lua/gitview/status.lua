@@ -212,12 +212,14 @@ function M.list(root)
 end
 
 --- The name to show for an entry. A rename is the one case where the file has
---- two names worth printing.
+--- two names worth printing, and it names the file as it is now first, as
+--- `new.lua <- old.lua`: that is the name to look for, and where it came from
+--- is a note on it.
 --- @param e gitview.StatusEntry
 --- @return string
 function M.label(e)
   if e.head_path and e.head_path ~= e.path then
-    return ('%s -> %s'):format(e.head_path, e.path)
+    return ('%s <- %s'):format(e.path, e.head_path)
   end
   return e.path
 end
@@ -229,7 +231,7 @@ end
 --- @return string
 function M.change_label(c)
   if c.status == 'R' or c.status == 'C' then
-    return ('%s -> %s'):format(c.old_path, c.path)
+    return ('%s <- %s'):format(c.path, c.old_path)
   end
   return c.path
 end

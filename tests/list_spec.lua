@@ -40,7 +40,7 @@ test('list: rows are paths, without their status letters', function()
 end)
 
 test('list: a rename names both sides', function()
-  eq({ 'old.txt -> new.txt' }, texts(list.content({ pane = 'files', entries = { entry('R', ' ', 'new.txt', 'old.txt') } })))
+  eq({ 'new.txt <- old.txt' }, texts(list.content({ pane = 'files', entries = { entry('R', ' ', 'new.txt', 'old.txt') } })))
 end)
 
 test('list: every row maps back to its entry', function()
@@ -408,7 +408,7 @@ end)
 
 test('list: a commit file names both sides of a rename', function()
   local rows = list.content(looking_into({ change('R', 'new.txt', 'old.txt') }))
-  eq('old.txt -> new.txt', rows[1].text)
+  eq('new.txt <- old.txt', rows[1].text)
 end)
 
 -- `git commit --allow-empty` makes one, and it would otherwise show a header
