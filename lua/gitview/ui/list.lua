@@ -183,10 +183,12 @@ end
 ---
 --- A row's text stays the whole path, so yanking one still gives something
 --- pasteable: the parent directory's part is concealed and the depth drawn in
---- front as an indent. A rename is placed where its new path is. When both
---- sides are in that directory, both drop the directory's part, which reads
---- `old.lua -> new.lua`; otherwise the whole label is shown, since it says
---- where the file came from.
+--- front as an indent. A rename is placed where its new path is and names that
+--- path first, as `new.lua <- src/old.lua`: the name the row is placed by stays
+--- in line with the others, and a long old path cut off at the window's edge
+--- loses only where the file came from. The old path drops the directory's
+--- part only when it is in that directory too, since otherwise it says where
+--- the file came from.
 ---
 --- The status letters move from the gutter to the front of the name. At the
 --- left edge they would sit further from the name the deeper the file is.
@@ -219,15 +221,16 @@ local function tree_rows(files, dir_kind, in_review)
       local f = files[n.index]
       row = f.row
       local spans = {}
-      local parent = f.path:sub(1, n.col)
-      if not f.old then
-        spans[1] = { from = 0, to = n.col, conceal = true }
-        row.subject = n.col
-      elseif f.old:sub(1, n.col) == parent and not f.old:find('/', n.col + 1, true) then
-        local new_at = #f.old + #' -> '
-        spans[1] = { from = 0, to = n.col, conceal = true }
-        spans[2] = { from = new_at, to = new_at + n.col, conceal = true }
-        row.subject = n.col
+      spans[1] = { from = 0, to = n.col, conceal = true }
+      row.subject = n.col
+      if f.old then
+        -- Same length as the flat label, so spans laid over it still fit.
+        row.text = ('%s <- %s'):format(f.path, f.old)
+        local parent = f.path:sub(1, n.col)
+        if f.old:sub(1, n.col) == parent and not f.old:find('/', n.col + 1, true) then
+          local old_at = #f.path + #' <- '
+          spans[2] = { from = old_at, to = old_at + n.col, conceal = true }
+        end
       end
       row.spans = vim.list_extend(
         vim.tbl_filter(function(sp)

@@ -499,27 +499,37 @@ test('list: a directory row stands for the first file in it', function()
   eq({ kind = 'file', index = 3 }, rows[6].target)
 end)
 
+-- The new name comes first, so it lines up with the other names in the
+-- directory and a long old path cut off at the edge loses only its tail.
 test('list: a rename within a directory hides the directory on both sides', function()
   local rows = list.content({
     pane = 'files',
     tree = true,
     entries = { entry('R', ' ', 'src/new.lua', 'src/old.lua') },
   })
-  eq('src/old.lua -> src/new.lua', rows[3].text)
+  eq('src/new.lua <- src/old.lua', rows[3].text)
   eq({ { from = 0, to = 4 }, { from = 15, to = 19 } }, concealed(rows, 3))
   eq(4, rows[3].subject)
 end)
 
 -- Where the file came from is part of what the rename says.
-test('list: a rename across directories is shown whole', function()
+test('list: a rename across directories keeps its old path whole', function()
   local rows = list.content({
     pane = 'files',
     tree = true,
     entries = { entry('R', ' ', 'src/new.lua', 'lib/old.lua') },
   })
-  eq('lib/old.lua -> src/new.lua', rows[3].text)
-  eq({}, concealed(rows, 3))
-  eq(0, rows[3].subject)
+  eq('src/new.lua <- lib/old.lua', rows[3].text)
+  eq({ { from = 0, to = 4 } }, concealed(rows, 3))
+  eq(4, rows[3].subject)
+end)
+
+test('list: a commit file renamed across directories names its new path first', function()
+  local m = looking_into({ change('R', 'dest/foo/bar', 'src/foo/bar') })
+  m.tree = true
+  local rows = list.content(m)
+  eq('dest/foo/bar <- src/foo/bar', rows[3].text)
+  eq({ { from = 0, to = 9 } }, concealed(rows, 3))
 end)
 
 test('list: a commit looked into lists its files as a tree too', function()
