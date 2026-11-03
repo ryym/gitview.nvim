@@ -74,6 +74,14 @@ test('status: labels name both sides of a rename only', function()
   eq('a.txt', status.label({ path = 'a.txt' }))
 end)
 
+test("status: a rename's label says where its name ends", function()
+  eq({ 'new.txt <- old.txt', #'new.txt' }, { status.label({ path = 'new.txt', head_path = 'old.txt' }) })
+  eq({ 'a.txt' }, { status.label({ path = 'a.txt' }) })
+  local renamed = { status = 'R', path = 'new.txt', old_path = 'old.txt' }
+  eq({ 'new.txt <- old.txt', #'new.txt' }, { status.change_label(renamed) })
+  eq({ 'a.txt' }, { status.change_label({ status = 'M', path = 'a.txt', old_path = 'a.txt' }) })
+end)
+
 test('status: a NUL byte near the start means binary', function()
   helpers.with_repo(function(repo)
     repo.write('text.txt', { 'plain', 'lines' })

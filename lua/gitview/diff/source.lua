@@ -13,6 +13,7 @@ local M = {}
 --- @class gitview.Source
 --- @field path string absolute path
 --- @field label string
+--- @field name_end integer? see `status.label`
 --- @field ft string filetype, resolved here so that building a view needs no
 ---       editor state. Empty for a file that is not to be highlighted.
 --- @field old_lines string[]
@@ -143,9 +144,11 @@ local function range_sources(range, changes, root)
     else
       new_lines = c.status == 'D' and {} or M.working_lines(path)
     end
+    local label, name_end = status.change_label(c)
     sources[#sources + 1] = {
       path = path,
-      label = status.change_label(c),
+      label = label,
+      name_end = name_end,
       ft = M.filetype_of(path),
       old_lines = old_spec[i] and blobs[old_spec[i]] or {},
       new_lines = new_lines,
@@ -221,9 +224,11 @@ local function sources_of(entries, root)
     if status.has_unstaged(e) then
       work_lines = status.is_deleted(e) and {} or M.working_lines(path)
     end
+    local label, name_end = status.label(e)
     sources[#sources + 1] = {
       path = path,
-      label = status.label(e),
+      label = label,
+      name_end = name_end,
       ft = M.filetype_of(path),
       old_lines = head_spec[i] and blobs[head_spec[i]] or {},
       index_lines = index_lines,
@@ -245,9 +250,11 @@ end
 --- @return gitview.Source
 local function conflict_source(entry, root)
   local path = vim.fs.joinpath(root, entry.path)
+  local label, name_end = status.label(entry)
   return {
     path = path,
-    label = status.label(entry),
+    label = label,
+    name_end = name_end,
     ft = M.filetype_of(path),
     old_lines = {},
     new_lines = M.working_lines(path),

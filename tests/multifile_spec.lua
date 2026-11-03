@@ -6,7 +6,7 @@ local test, eq = _G.test, _G.eq
 
 --- Assemble a view the way init.build_view does, so the concatenation rules are
 --- exercised without needing a git repository.
---- @param sources {label:string, lang:string, old:string[], new:string[]}[]
+--- @param sources {label:string, name_end:integer?, lang:string, old:string[], new:string[]}[]
 --- @return integer bufnr, gitview.View
 local function build(sources)
   local lines, files, hunk_rows = {}, {}, {}
@@ -16,7 +16,7 @@ local function build(sources)
     if #lines > 0 then
       lines[#lines + 1] = { text = '', kind = 'blank' }
     end
-    lines[#lines + 1] = { text = src.label, kind = 'file' }
+    lines[#lines + 1] = { text = src.label, kind = 'file', name_end = src.name_end }
     local offset = #lines
     files[#files + 1] = {
       path = '/tmp/' .. src.label,
@@ -132,6 +132,27 @@ test('headers and gaps are highlighted as whole lines', function()
       eq('GitviewFileHeader', groups[i], 'row ' .. i)
     end
   end
+end)
+
+-- Bold cannot be taken away by a group laid over it, so the name alone is bold
+-- and the old path has no mark at all.
+test("a rename's header is bold on its name alone", function()
+  local renamed = vim.tbl_extend('force', LUA, { label = 'new.lua <- old.lua', name_end = #'new.lua' })
+  local buf, view = build({ renamed })
+  local ns = vim.api.nvim_get_namespaces()['gitview.diff']
+  local row0 = view.files[1].row - 1
+  local spans = {}
+  for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, { row0, 0 }, { row0, -1 }, { details = true })) do
+    if m[2] == row0 and m[4].hl_group ~= 'GitviewFileHeaderBg' then
+      spans[#spans + 1] = { m[3], m[4].end_row == row0 and m[4].end_col or nil, m[4].hl_group }
+    end
+  end
+  table.sort(spans, function(a, b)
+    return a[1] < b[1]
+  end)
+  eq({
+    { 0, #'new.lua', 'GitviewFileHeader' },
+  }, spans)
 end)
 
 test('the winbar names the file the top of the window is in', function()

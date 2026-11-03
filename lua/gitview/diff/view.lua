@@ -60,7 +60,7 @@ function M.build(sources, rev, context, diff_opts)
       if #lines > 0 then
         lines[#lines + 1] = { text = '', kind = 'blank' }
       end
-      lines[#lines + 1] = { text = src.label, kind = 'file' }
+      lines[#lines + 1] = { text = src.label, kind = 'file', name_end = src.name_end }
       local offset = #lines
 
       files[#files + 1] = {

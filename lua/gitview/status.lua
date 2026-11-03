@@ -216,10 +216,12 @@ end
 --- `new.lua <- old.lua`: that is the name to look for, and where it came from
 --- is a note on it.
 --- @param e gitview.StatusEntry
---- @return string
+--- @return string label
+--- @return integer? name_end a rename's only: where the name ends in `label`,
+---         for what shows the note apart from it
 function M.label(e)
   if e.head_path and e.head_path ~= e.path then
-    return ('%s <- %s'):format(e.path, e.head_path)
+    return ('%s <- %s'):format(e.path, e.head_path), #e.path
   end
   return e.path
 end
@@ -228,10 +230,11 @@ end
 --- live here because the list, a view's file header and the notice shown in
 --- place of a diff all have to agree on what a file is called.
 --- @param c gitview.Change
---- @return string
+--- @return string label
+--- @return integer? name_end
 function M.change_label(c)
   if c.status == 'R' or c.status == 'C' then
-    return ('%s <- %s'):format(c.path, c.old_path)
+    return ('%s <- %s'):format(c.path, c.old_path), #c.path
   end
   return c.path
 end

@@ -665,7 +665,17 @@ function M.draw(buf, view)
         priority = 9,
       })
     end
-    if line_hl then
+    if l.name_end then
+      -- A rename's header is bold up to the end of its name alone. Where the
+      -- file came from is a note on the name, and no group laid over the bold
+      -- could take it away but by dropping every other attribute with it. It
+      -- keeps the text's color: a dim one would all but vanish on the band.
+      vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, 0, {
+        end_col = l.name_end,
+        hl_group = line_hl,
+        priority = 10,
+      })
+    elseif line_hl then
       vim.api.nvim_buf_set_extmark(buf, ns_diff, row0 - 1, 0, {
         end_row = row0,
         end_col = 0,

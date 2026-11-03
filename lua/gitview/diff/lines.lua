@@ -24,6 +24,8 @@ local M = {}
 ---       only in a mixed view
 --- @field row integer? 0-based row of `text` in its version
 --- @field file integer? index into `gitview.View.files`
+--- @field name_end integer? a file header only, of a rename: where the file's
+---       name ends in `text` and the note of where it came from begins
 --- @field folded true? a `context` line away from every change, which starts
 ---       out folded away. Each run of them is one fold.
 --- @field stage 'staged'|'unstaged'|'index'? which layer a change belongs to, in
