@@ -362,7 +362,7 @@ end)
 
 test('review: `gr` in the files pane starts nothing', function()
   with_session(history, function(s)
-    eq({ 'a review is started from the commits pane' }, notified(function()
+    eq({ 'a review is started from the commits window' }, notified(function()
       press(s, 'gr')
     end))
     eq(nil, s.review)

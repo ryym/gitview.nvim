@@ -94,6 +94,10 @@ however it closes.
 
 ### Panes
 
+A pane is one of the three roles a session gives a window: files, commits or diff. The user
+documents call them windows, as users know them; the code and these documents say pane, since
+a tab page can hold windows that are no pane, and a pane is told by its buffer.
+
 - **Two list panes rather than two sections of one**, so that a long working tree does not push
   the history off the screen, and each pane carries only the keys that mean something in it.
   What this costs is that neither cursor moves when the focus does, so entering a pane is what

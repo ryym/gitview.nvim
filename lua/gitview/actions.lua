@@ -143,7 +143,7 @@ function M.start_review()
     return false
   end
   if pane == 'files' then
-    util.info('a review is started from the commits pane')
+    util.info('a review is started from the commits window')
     return true
   end
   return require('gitview.ui.session').start_review(s)
@@ -188,7 +188,7 @@ function M.toggle_check()
     return true
   end
   leave_visual()
-  util.info(s.review and 'the files under review are in the files pane'
+  util.info(s.review and 'the files under review are in the files window'
     or 'files are checked off during a review')
   return true
 end

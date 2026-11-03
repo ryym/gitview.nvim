@@ -8,16 +8,16 @@ people using the plugin; how it is built is under [dev/](README.md#for-developer
 `:Gitview` opens a tab with a sidebar on the left and the diff on the right. The
 sidebar is split in two: the uncommitted changes above, the recent commits below.
 Moving the cursor in either draws whatever it lands on, and moving between the two
-panes switches which list the diff follows.
+windows switches which list the diff follows.
 
-- **The row the diff is showing has its name colored**, only in the pane it
+- **The row the diff is showing has its name colored**, only in the window it
   follows, so which one that is can be read even while the focus is in the diff.
 - **Coming back to a row shown before** puts the diff's cursor back on the line it
   was left on, or the one nearest it once the file has changed since.
 - **There is one tab page per repository.** Running `:Gitview` again in the same
   repository goes back to the one already open.
 
-The upper pane has one row per file, with the two status letters
+The upper window has one row per file, with the two status letters
 `git status --short` prints. A file changed both in the index and in the working
 tree is still one row. Only the letters are drawn; the row itself is the path, so
 yanking one gives something pasteable.
@@ -38,31 +38,31 @@ HEAD without writing the index, such as `git reset --soft`.
 `s`, `u`, `x` and `gy` also work on a visual selection. Each key can be changed;
 see [Mapping keys](#mapping-keys).
 
-| key         | action                        | in the files pane | in the commits pane  | in the diff             |
-| ----------- | ----------------------------- | ----------------- | -------------------- | ----------------------- |
-| `<CR>`      | `focus_diff`                  | focus the diff    | on a commit's file   |                         |
-| `<CR>`      | `look_into`                   |                   | look into the commit |                         |
-| `<BS>`      | `end_review`                  | end the review    |                      |                         |
-| `<BS>`      | `back_out`                    |                   | back out of it       |                         |
-| `m`         | `start_range`                 |                   | mark, for a range    |                         |
-| `<Esc>`     | `clear_range`                 |                   | clear the mark       |                         |
-| `gr`        | `start_review`                |                   | review the commit    |                         |
-| `x`         | `toggle_check`                | check off rows    |                      | check off files         |
-| `]x` / `[x` | `next_unread` / `prev_unread` | next file to read |                      | next file to read       |
-| `s` / `u`   | `stage` / `unstage`           | whole files       |                      | lines                   |
-| `S` / `U`   | `stage_hunk` / `unstage_hunk` |                   |                      | a hunk                  |
-| `gs`        | `cycle_layer`                 | staged / unstaged | staged / unstaged    | staged / unstaged       |
-| `gw`        | `toggle_ignore_whitespace`    | ignore whitespace | ignore whitespace    | ignore whitespace       |
-| `]f` / `[f` | `next_file` / `prev_file`     | next / prev file  | next / prev file     | next / prev file        |
-| `]r` / `[r` | `next_commit` / `prev_commit` |                   |                      | next / prev commit      |
-| `]c` / `[c` | `next_hunk` / `prev_hunk`     |                   |                      | next / prev hunk        |
-| `gf`        | `open_file`                   | open the file     | open the file        | open it at this line    |
-| `gy`        | `copy_location`               |                   |                      | copy the file and lines |
-| `R`         | `refresh`                     | re-read           | re-read              | re-read                 |
-| `q`         | `close`                       | close             | close                | close                   |
+| key         | action                        | in the files window | in the commits window | in the diff             |
+| ----------- | ----------------------------- | ------------------- | --------------------- | ----------------------- |
+| `<CR>`      | `focus_diff`                  | focus the diff      | on a commit's file    |                         |
+| `<CR>`      | `look_into`                   |                     | look into the commit  |                         |
+| `<BS>`      | `end_review`                  | end the review      |                       |                         |
+| `<BS>`      | `back_out`                    |                     | back out of it        |                         |
+| `m`         | `start_range`                 |                     | mark, for a range     |                         |
+| `<Esc>`     | `clear_range`                 |                     | clear the mark        |                         |
+| `gr`        | `start_review`                |                     | review the commit     |                         |
+| `x`         | `toggle_check`                | check off rows      |                       | check off files         |
+| `]x` / `[x` | `next_unread` / `prev_unread` | next file to read   |                       | next file to read       |
+| `s` / `u`   | `stage` / `unstage`           | whole files         |                       | lines                   |
+| `S` / `U`   | `stage_hunk` / `unstage_hunk` |                     |                       | a hunk                  |
+| `gs`        | `cycle_layer`                 | staged / unstaged   | staged / unstaged     | staged / unstaged       |
+| `gw`        | `toggle_ignore_whitespace`    | ignore whitespace   | ignore whitespace     | ignore whitespace       |
+| `]f` / `[f` | `next_file` / `prev_file`     | next / prev file    | next / prev file      | next / prev file        |
+| `]r` / `[r` | `next_commit` / `prev_commit` |                     |                       | next / prev commit      |
+| `]c` / `[c` | `next_hunk` / `prev_hunk`     |                     |                       | next / prev hunk        |
+| `gf`        | `open_file`                   | open the file       | open the file         | open it at this line    |
+| `gy`        | `copy_location`               |                     |                       | copy the file and lines |
+| `R`         | `refresh`                     | re-read             | re-read               | re-read                 |
+| `q`         | `close`                       | close               | close                 | close                   |
 
 `]f` and `[f` in a list move its cursor to the next file's row, passing over
-directories, and in the commits pane only among the files of a commit looked into.
+directories, and in the commits window only among the files of a commit looked into.
 In the diff they move to the next file's header, or, when it shows one file, the
 list's cursor to the next file.
 
@@ -184,7 +184,7 @@ Where the key is pressed decides what it acts on.
   covers, and `S` and `U` take the whole change the cursor is in.
 
 The two directions are never ambiguous even inside one hunk: `s` acts on the rows
-that are not staged yet and `u` on the rows that are. Both panes are re-read from git
+that are not staged yet and `u` on the rows that are. Both lists are re-read from git
 afterwards. Until they have been, another `s` or `u` is refused.
 
 ### Staged or unstaged alone
@@ -192,7 +192,7 @@ afterwards. Until they have been, another `s` or `u` is refused.
 `gs`, from any of the three windows, shows the staged changes alone, then the
 unstaged ones alone, then both again.
 
-- **The files pane lists the files with a change of that layer**, still with both
+- **The files window lists the files with a change of that layer**, still with both
   status letters, and its winbar counts them as `5 staged` or `5 unstaged`. An
   untracked file is unstaged, and so is an unresolved conflict, which has nothing a
   commit would take.
@@ -226,7 +226,7 @@ at all. `gw` again puts it back.
 
 While it is on, `s` and `u` **in the diff** refuse: the rows on screen no longer
 state the file faithfully, so staging them would leave it still modified. `s` and
-`u` in the files pane are unaffected, since they take the file as it is.
+`u` in the files window are unaffected, since they take the file as it is.
 
 ## Merge conflicts
 
@@ -253,7 +253,7 @@ show, such as one that one side deleted, says so in place of the view.
 
 ## Files as a tree
 
-With `list_style = 'tree'`, the files pane and the files of a commit looked into are
+With `list_style = 'tree'`, the files window and the files of a commit looked into are
 laid out as a tree instead, under a root row `./`:
 
 ```
@@ -283,7 +283,7 @@ mark it resolved unseen.
 
 ## Commits
 
-The lower pane lists the most recent commits, and putting the cursor on one draws what
+The lower window lists the most recent commits, and putting the cursor on one draws what
 that commit changed: the ordinary diff of
 [several files in one buffer](#several-files-in-one-buffer). A merge is compared with
 its first parent, the way `git show` does, and the winbar says `first parent`. A
@@ -309,12 +309,12 @@ two commits has no one message and shows no header.
 
 ### Looking into a commit
 
-`<CR>` on a commit goes one level in: the pane is replaced by the files that commit
+`<CR>` on a commit goes one level in: the list is replaced by the files that commit
 changed, and selecting one shows that file's diff by itself. The uncommitted changes
 above stay in view. `<BS>` comes back out, onto the commit you were looking at.
 
 `]r` and `[r` in the diff move to the next and previous commit without leaving it, as
-`j` and `k` would in the commits pane. Next is the row below, the older commit, since
+`j` and `k` would in the commits window. Next is the row below, the older commit, since
 the list is newest first.
 
 - **With a mark set**, only the cursor's end moves, so the range grows or shrinks.
@@ -344,7 +344,7 @@ diff leaves it out and undoes whatever its branch did, and the winbar says `dive
 
 The list is headed by a faded row of zeros standing for the working tree. On its own it
 shows every uncommitted file in one view, staged and unstaged at once or the one layer
-the files pane shows, and `<CR>` there moves to the files pane.
+the files window shows, and `<CR>` there moves to the files window.
 
 It is also an end a range can have, and the newest one. `m` on `HEAD~3` with the cursor
 on the zeros reads that commit and everything since, committed or not, the way
@@ -355,10 +355,10 @@ are made.
 
 ## Reviewing a range
 
-`gr` in the commits pane reviews what `<CR>` would look into: one commit, a range from
+`gr` in the commits window reviews what `<CR>` would look into: one commit, a range from
 the mark, or the working tree. Its files take the place of the uncommitted ones in the
-files pane, and each can be checked off once read, so that what is left to read is plain
-however many commits and edits the range takes in. The commits pane stays as it is, and
+files window, and each can be checked off once read, so that what is left to read is plain
+however many commits and edits the range takes in. The commits window stays as it is, and
 other commits can be looked into meanwhile. `gr` while looking into a range reviews that
 range instead.
 
@@ -369,16 +369,16 @@ range instead.
   checks off again once all of them are checked. In the diff it checks off the file being
   read, or every file a selection touches, and goes on to the next one still to be read.
   `]x` and `[x` go to the next and previous one, round from the other end, in the diff
-  and in the files pane alike.
+  and in the files window alike.
 - **A file checked off is marked `✓` and faded**, in the list and on its header in the
-  diff. A directory is marked and faded once every file in it is. The files pane's winbar
+  diff. A directory is marked and faded once every file in it is. The files window's winbar
   counts them, as `3/12`.
 - **A file that changes after it was checked off is marked `!`**, rather than unchecked,
   and counted apart, as `3/12 !1`. It is read again, and checked again with `x`, and a
   directory with such a file in it is marked `!` too. Only a range ending at the working
   tree can change. What a check records is what the diff showed, so a file rewritten while
   it was being read is not taken as read.
-- **`<BS>` in the files pane ends the review**, and the checks go with it. A review only
+- **`<BS>` in the files window ends the review**, and the checks go with it. A review only
   part way through asks first, and so do `gr` starting another and `q`; a finished one
   does not.
 
@@ -407,19 +407,19 @@ require('gitview').setup({
 
 ### Options
 
-| option              | what it sets                                     |
-| ------------------- | ------------------------------------------------ |
-| `context`           | unchanged lines left open around each hunk       |
-| `algorithm`         | the `vim.diff()` algorithm                       |
-| `linematch`         | see below                                        |
-| `ignore_whitespace` | where every diff starts out                      |
-| `layer`             | `both`, `staged` or `unstaged`                   |
-| `list_style`        | `flat` or `tree`                                 |
+| option              | what it sets                                              |
+| ------------------- | --------------------------------------------------------- |
+| `context`           | unchanged lines left open around each hunk                |
+| `algorithm`         | the `vim.diff()` algorithm                                |
+| `linematch`         | see below                                                 |
+| `ignore_whitespace` | where every diff starts out                               |
+| `layer`             | `both`, `staged` or `unstaged`                            |
+| `list_style`        | `flat` or `tree`                                          |
 | `list_ratio`        | share of the width the sidebar takes, 30 columns at least |
-| `commit_count`      | how many recent commits it lists                 |
-| `commit_ratio`      | share of the sidebar height the commit list takes |
-| `no_highlight`      | filetypes left unhighlighted; see below          |
-| `default_keymaps`   | see [Mapping keys](#mapping-keys)                |
+| `commit_count`      | how many recent commits it lists                          |
+| `commit_ratio`      | share of the sidebar height the commit list takes         |
+| `no_highlight`      | filetypes left unhighlighted; see below                   |
+| `default_keymaps`   | see [Mapping keys](#mapping-keys)                         |
 
 - **`linematch`**: Neovim's pass that re-pairs lines inside a hunk and splits it,
   disagreeing with git. It is off so that hunk boundaries match `git diff`, and can be
@@ -451,7 +451,7 @@ one, and say so when it has none.
 
 Everything a key does in the tab page is a Lua function of `require('gitview.actions')`,
 named in the [table of keys](#keys). Each acts on the tab page of the current one, in the
-pane the cursor is in. Two more have no key: `set_layer(layer)` and
+window the cursor is in. Two more have no key: `set_layer(layer)` and
 `set_ignore_whitespace(bool)`.
 
 The actions, the subcommands and the filetypes may still change in name or arguments until
@@ -460,14 +460,15 @@ the plugin is stable.
 - **`close()` asks first** if a review is part way through, as `q` does.
   `close({ force = true })` does not.
 - **`gs`, `gw`, `R`, `q` and the two setters work in any window of the tab page**, such as
-  help opened there, as well as the panes. The other actions do nothing outside their panes.
-- **`look_into` on the working tree** focuses the files pane, as `<CR>` does.
+  help opened there, as well as its three windows. The other actions do nothing outside the
+  windows they work in.
+- **`look_into` on the working tree** focuses the files window, as `<CR>` does.
 - **`start_review`, `toggle_check`, `stage` and `unstage` say why they do nothing** in a
-  pane where they mean nothing, as the default keys do in the commits pane.
+  window where they mean nothing, as the default keys do in the commits window.
 
 Every action returns whether it did anything. `true` covers a message saying why it could
 not; `false` means nothing happened and nothing was said, so the key is free for something
-else. That is the case with no tab page, outside the panes the action works in, and where
+else. That is the case with no tab page, outside the windows the action works in, and where
 there is nothing to do: `clear_range` with no range, `back_out` with nothing looked into,
 `end_review` with no review, `look_into` while looking into a commit already, a move with
 nowhere to go, or a setter given the value already set.
@@ -475,19 +476,19 @@ nowhere to go, or a setter given the value already set.
 What an action sets off may not be over when it returns. The action itself is: the cursor
 has moved, or the index has been written, or the file checked off. Re-reading the status
 and drawing the diff can come later. After `stage()`, for one, the index has changed but
-the panes have not, and another `stage()` is refused until they have. `refresh()` is all
+the windows have not, and another `stage()` is refused until they have. `refresh()` is all
 of it later.
 
 ### Filetypes
 
-| pane             | filetype          |
-| ---------------- | ----------------- |
-| the files pane   | `gitview-files`   |
-| the commits pane | `gitview-commits` |
-| the diff         | `gitview-diff`    |
+| window             | filetype          |
+| ------------------ | ----------------- |
+| the files window   | `gitview-files`   |
+| the commits window | `gitview-commits` |
+| the diff           | `gitview-diff`    |
 
-`FileType` runs in the pane's window, once its default keys are mapped. A key mapped from
-there replaces the default one, and a window option set there is the pane's.
+`FileType` runs in that window, once its default keys are mapped. A key mapped from
+there replaces the default one, and a window option set there applies to that window.
 
 ### Mapping keys
 
@@ -533,10 +534,10 @@ vim.api.nvim_create_autocmd('FileType', {
   end, opts)
   ```
 
-- **`vim.keymap.del` fails on a key the pane does not map.** The panes map different keys;
+- **`vim.keymap.del` fails on a key the window does not map.** The windows map different keys;
   see the [table of keys](#keys).
-- **`<CR>` and `<BS>` are different actions by pane.** A key mapped in more than one pane
-  picks its action by `ev.match`. The default `<CR>` of the commits pane is
+- **`<CR>` and `<BS>` are different actions by window.** A key mapped in more than one window
+  picks its action by `ev.match`. The default `<CR>` of the commits window is
   `a.look_into() or a.focus_diff()`.
 
 `default_keymaps = false` turns every default key off, so that you can map them all
@@ -560,28 +561,28 @@ A `FileType` autocommand does the same, if it is created before the tab page is 
 
 ### Window options
 
-The panes are given some window options before their filetype is set, which an ftplugin can
+The three windows are given some window options before their filetype is set, which an ftplugin can
 change:
 
-| pane    | options                                           |
-| ------- | ------------------------------------------------- |
-| files   | `'wrap'`, `'cursorline'`                          |
-| commits | `'wrap'`                                          |
-| diff    | `'wrap'`, `'cursorline'`, line numbers            |
+| window  | options                                |
+| ------- | -------------------------------------- |
+| files   | `'wrap'`, `'cursorline'`               |
+| commits | `'wrap'`                               |
+| diff    | `'wrap'`, `'cursorline'`, line numbers |
 
 The rest of the options they are drawn with are set after it, over whatever an ftplugin set:
 
 - **Both lists**: `'statuscolumn'`, `'winbar'`, `'number'`, `'relativenumber'`,
   `'signcolumn'`, `'conceallevel'`, `'concealcursor'`, `'winfixwidth'` and `'winfixbuf'`.
-- **The commits pane**, as well: `'cursorline'`, which is off while a range is shown, and
+- **The commits window**, as well: `'cursorline'`, which is off while a range is shown, and
   `'winfixheight'`.
 - **The diff**: `'statuscolumn'`, `'winbar'`, `'signcolumn'`, `'foldcolumn'`, `'foldmethod'`,
   `'foldexpr'`, `'foldtext'`, `'foldenable'`, `'foldlevel'`, `'foldminlines'` and `'winfixbuf'`.
 
 The gutter is drawn by `'statuscolumn'`, so `'signcolumn'`, `'foldcolumn'` and, in the lists,
-the line numbers would only take room beside it. Options the panes are not given, such as
+the line numbers would only take room beside it. Options these windows are not given, such as
 `'scrolloff'` or `'colorcolumn'`, are yours as they would be in any other window. `:setlocal`
-once a pane is open is not stopped, though changing an option it is drawn with can leave it
+once a window is open is not stopped, though changing an option it is drawn with can leave it
 drawn wrong.
 
 ### Highlight groups
@@ -589,21 +590,21 @@ drawn wrong.
 Every group is defined the first time it is needed, and redefined on `ColorScheme`. Defining
 any of them yourself takes precedence, whether or not `setup()` is called.
 
-| where                | groups |
-| -------------------- | ------ |
-| the diff             | `GitviewAdd`, `GitviewDelete`, `GitviewAddText`, `GitviewDeleteText` |
-| the gutter           | `GitviewOldLnum`, `GitviewNewLnum`, `GitviewAddLnum`, `GitviewDeleteLnum`, `GitviewFoldBar` |
-| staged lines         | `GitviewStagedAdd`, `GitviewStagedDelete`, `GitviewStagedAddText`, `GitviewStagedDeleteText`, `GitviewStagedAddBar`, `GitviewStagedDeleteBar` |
-| conflicted lines     | `GitviewConflictOurs`, `GitviewConflictTheirs`, `GitviewConflictBase` |
-| conflict markers     | `GitviewConflictOursMarker`, `GitviewConflictBaseMarker`, `GitviewConflictSeparator`, `GitviewConflictTheirsMarker` |
-| a file's header      | `GitviewFileHeader`, `GitviewFileHeaderBg`, `GitviewFileHeaderStatAdd`, `GitviewFileHeaderStatDelete`, `GitviewFileHeaderConflictCount`, `GitviewSeparator` |
-| a commit's header    | `GitviewCommitSubject`, `GitviewCommitAuthor`, `GitviewStatAdd`, `GitviewStatDelete` |
-| files left out       | `GitviewSkipped` |
-| the sidebar          | `GitviewStatusStaged`, `GitviewStatusUnstaged`, `GitviewStatusUntracked`, `GitviewListCursor`, `GitviewRange` |
-| commits              | `GitviewCommitSha`, `GitviewCommitShaPushed`, `GitviewCommitWorktree`, `GitviewUpstream`, `GitviewUpstreamRule` |
-| a tree               | `GitviewDirectory`, `GitviewIndent` |
-| a review             | `GitviewReviewedMark`, `GitviewReviewed`, `GitviewReviewChanged` |
-| the diff's winbar    | `GitviewCommitSha`, `GitviewWinBarText` |
+| where             | groups                                                                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the diff          | `GitviewAdd`, `GitviewDelete`, `GitviewAddText`, `GitviewDeleteText`                                                                                        |
+| the gutter        | `GitviewOldLnum`, `GitviewNewLnum`, `GitviewAddLnum`, `GitviewDeleteLnum`, `GitviewFoldBar`                                                                 |
+| staged lines      | `GitviewStagedAdd`, `GitviewStagedDelete`, `GitviewStagedAddText`, `GitviewStagedDeleteText`, `GitviewStagedAddBar`, `GitviewStagedDeleteBar`               |
+| conflicted lines  | `GitviewConflictOurs`, `GitviewConflictTheirs`, `GitviewConflictBase`                                                                                       |
+| conflict markers  | `GitviewConflictOursMarker`, `GitviewConflictBaseMarker`, `GitviewConflictSeparator`, `GitviewConflictTheirsMarker`                                         |
+| a file's header   | `GitviewFileHeader`, `GitviewFileHeaderBg`, `GitviewFileHeaderStatAdd`, `GitviewFileHeaderStatDelete`, `GitviewFileHeaderConflictCount`, `GitviewSeparator` |
+| a commit's header | `GitviewCommitSubject`, `GitviewCommitAuthor`, `GitviewStatAdd`, `GitviewStatDelete`                                                                        |
+| files left out    | `GitviewSkipped`                                                                                                                                            |
+| the sidebar       | `GitviewStatusStaged`, `GitviewStatusUnstaged`, `GitviewStatusUntracked`, `GitviewListCursor`, `GitviewRange`                                               |
+| commits           | `GitviewCommitSha`, `GitviewCommitShaPushed`, `GitviewCommitWorktree`, `GitviewUpstream`, `GitviewUpstreamRule`                                             |
+| a tree            | `GitviewDirectory`, `GitviewIndent`                                                                                                                         |
+| a review          | `GitviewReviewedMark`, `GitviewReviewed`, `GitviewReviewChanged`                                                                                            |
+| the diff's winbar | `GitviewCommitSha`, `GitviewWinBarText`                                                                                                                     |
 
 The defaults follow the colorscheme:
 

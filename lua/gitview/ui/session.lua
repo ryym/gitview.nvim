@@ -1550,7 +1550,7 @@ end
 --- read in the background instead, behind a placeholder drawn at once. A file
 --- row costs a single file's view and is drawn at once.
 --- @param s gitview.Session
---- @param win integer the pane whose cursor decides the selection
+--- @param win integer the window whose cursor decides the selection
 --- @param force boolean? draw even when the selection has not moved
 --- @param keep_unchanged boolean? passed on to `show_selected`
 local function sync_selection(s, win, force, keep_unchanged)
@@ -1933,7 +1933,7 @@ end
 --- happened to be on.
 ---
 --- @param s gitview.Session
---- @param win integer the pane whose cursor decides the selection
+--- @param win integer the window whose cursor decides the selection
 function M.follow_cursor(s, win)
   if s.commits_stale then
     local buf = vim.api.nvim_win_get_buf(win)
@@ -2404,7 +2404,7 @@ function M.open_listed(s, win)
     item = scope and scope.changes[target.index]
   end
   if target and target.kind == 'worktree' then
-    util.info('the uncommitted changes are many files; open one from the files pane')
+    util.info('the uncommitted changes are many files; open one from the files window')
     return
   end
   if target and (target.kind == 'dir' or target.kind == 'commit_dir') then
