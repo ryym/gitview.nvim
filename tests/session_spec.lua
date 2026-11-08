@@ -304,6 +304,33 @@ test('session: closing a pane in the only tab page leaves one window', function(
   end)
 end)
 
+-- The panes are closed one by one there, and closing the one the cursor is in
+-- would enter another pane while the session is half gone.
+test('session: closing the only tab page from any pane', function()
+  for _, pane in ipairs({ 'commits_win', 'diff_win' }) do
+    with_session(base, function(s)
+      vim.cmd.tabonly()
+      vim.api.nvim_set_current_win(s[pane])
+      local quit = rawget(vim.cmd, 'quit')
+      local quitted = false
+      rawset(vim.cmd, 'quit', function()
+        quitted = true
+      end)
+      local ok, err = pcall(session.close, s)
+      rawset(vim.cmd, 'quit', quit)
+      -- Dropped while this is still the only tab page, as `:quit` would have
+      -- left it.
+      local dropped, drop_err = pcall(wait_dropped, s)
+      -- Somewhere for the harness's own close to go back to, before anything
+      -- can fail: in the only tab page that close would `:quit` for real.
+      vim.cmd.tabnew()
+      assert(ok, err)
+      assert(dropped, drop_err)
+      eq(true, quitted)
+    end)
+  end
+end)
+
 test('session: a pane refuses to show another buffer', function()
   with_session(base, function(s)
     for _, win in ipairs({ s.files_win, s.commits_win, s.diff_win }) do

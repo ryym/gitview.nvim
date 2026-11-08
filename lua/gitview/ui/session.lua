@@ -2345,6 +2345,12 @@ function M.close(s)
     vim.api.nvim_set_current_tabpage(s.tab)
     vim.cmd.tabclose()
   else
+    -- From the files pane, the last to go, so that closing the others never
+    -- moves the cursor: entering a pane follows its cursor into the commits
+    -- pane, which may be gone by then.
+    if vim.api.nvim_win_is_valid(s.files_win) then
+      vim.api.nvim_set_current_win(s.files_win)
+    end
     for _, win in ipairs({ s.diff_win, s.commits_win }) do
       if vim.api.nvim_win_is_valid(win) then
         vim.api.nvim_win_close(win, true)
