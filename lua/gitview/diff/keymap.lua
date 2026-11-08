@@ -257,22 +257,63 @@ function M.copy_references(buf, root, first, last, reg)
   util.info(#refs == 1 and ('copied %s'):format(refs[1]) or ('copied %d files'):format(#refs))
 end
 
---- Edit a file in the current window and put the cursor on a line of it, in
---- the middle of the window so that what is around it shows either way.
+--- Scroll the current window so that the cursor's line shows on its `row`th
+--- screen row, or as near to it as the window can scroll.
+---
+--- `topline` is a line, not a screen row: wrapped lines, folds and virtual
+--- lines above the cursor make the two differ. So the window starts with the
+--- cursor's line at its top and takes in the lines above one at a time, for as
+--- long as that keeps the cursor on or above the row. Where a line of several
+--- rows would carry it past, it stays above: a little higher reads better than
+--- off the bottom.
+--- @param row integer 1-based
+local function scroll_to_row(row)
+  local lnum = vim.api.nvim_win_get_cursor(0)[1]
+  local top = lnum
+  vim.fn.winrestview({ topline = top })
+  while top > 1 and vim.fn.winline() < row do
+    vim.fn.winrestview({ topline = top - 1 })
+    if vim.fn.winline() > row then
+      vim.fn.winrestview({ topline = top })
+      break
+    end
+    top = top - 1
+  end
+end
+
+--- Edit a file in the current window and put the cursor on a line of it.
 ---
 --- The line is clamped to the file: a line number taken from a commit can be
 --- past the end of the file as it is now.
+---
+--- Without `at`, the line is put in the middle of the window, so that what is
+--- around it shows either way. With it, the cursor takes the place it had in
+--- the window it came from:
+--- - `at.winline`: the screen row, as far as the window can scroll to it.
+--- - `at.col`: the byte column, only when the line reads `at.text`. Otherwise
+---   the column means nothing here: the line came from a commit or the index
+---   and has changed since, or stands in for a deleted line.
 --- @param path string
 --- @param lnum integer
-function M.edit_at(path, lnum)
+--- @param at? { winline: integer, col: integer, text: string? }
+function M.edit_at(path, lnum, at)
   if vim.fn.bufnr(path) ~= vim.api.nvim_get_current_buf() then
     vim.cmd.edit(vim.fn.fnameescape(path))
   end
   -- `:edit` records the jump by itself, but not when the file was already here.
   vim.cmd("normal! m'")
   local last = vim.api.nvim_buf_line_count(0)
-  vim.api.nvim_win_set_cursor(0, { math.max(1, math.min(lnum, last)), 0 })
-  vim.cmd('normal! zz')
+  lnum = math.max(1, math.min(lnum, last))
+  local col = 0
+  if at and at.text and vim.api.nvim_buf_get_lines(0, lnum - 1, lnum, false)[1] == at.text then
+    col = at.col
+  end
+  vim.api.nvim_win_set_cursor(0, { lnum, col })
+  if at then
+    scroll_to_row(math.min(at.winline, vim.api.nvim_win_get_height(0)))
+  else
+    vim.cmd('normal! zz')
+  end
 end
 
 --- Whether the fold over `first`..`last` is the run of unchanged lines a file

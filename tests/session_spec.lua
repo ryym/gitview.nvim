@@ -1548,29 +1548,71 @@ test('session: `gf` in the diff opens the file at the line under the cursor', fu
   end)
 end)
 
--- Left to itself, the window would scroll only as far as it must, which puts a
--- line just past the first screenful at the bottom.
-test('session: `gf` in the diff puts the line in the middle of the window', function()
+--- A hundred lines, of which the thirtieth is changed to `x`.
+local long_edited = function(repo)
   local lines = {}
   for i = 1, 100 do
     lines[i] = 'l' .. i
   end
+  repo.write('f.txt', lines)
+  repo.commit('init')
+  lines[30] = 'x'
+  repo.write('f.txt', lines)
+end
+
+-- Left to itself, the window would scroll only as far as it must, which puts a
+-- line just past the first screenful at the bottom.
+test('session: `gf` in the diff keeps the screen row the cursor was on', function()
+  with_session(long_edited, function(s)
+    vim.api.nvim_set_current_win(s.diff_win)
+    for _, keep in ipairs({ 3, 5 }) do
+      vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'x', 'add'), 0 })
+      vim.fn.winrestview({ topline = row_of_text(s, 'x', 'add') - keep + 1 })
+      eq(keep, vim.fn.winline())
+      vim.cmd.normal('gf')
+      local lnum = vim.api.nvim_win_get_cursor(0)[1]
+      local row = vim.fn.winline()
+      wipe_opened()
+      eq({ 30, keep }, { lnum, row })
+      vim.api.nvim_set_current_tabpage(s.tab)
+      vim.api.nvim_set_current_win(s.diff_win)
+    end
+  end)
+end)
+
+test('session: `gf` in the diff keeps the column the cursor was on', function()
   with_session(function(repo)
-    repo.write('f.txt', lines)
+    repo.write('f.txt', { 'one', 'two' })
     repo.commit('init')
-    lines[30] = 'x'
-    repo.write('f.txt', lines)
+    repo.write('f.txt', { 'one', 'two', '\tthree four' })
   end, function(s)
-    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'x', 'add'), 0 })
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, '\tthree four', 'add'), 7 })
     vim.api.nvim_set_current_win(s.diff_win)
     vim.cmd.normal('gf')
-    local lnum = vim.api.nvim_win_get_cursor(0)[1]
-    local height = vim.api.nvim_win_get_height(0)
-    local row = vim.fn.winline()
+    local cursor = vim.api.nvim_win_get_cursor(0)
     wipe_opened()
-    eq(30, lnum)
-    assert(height < 30, 'the window should not show the line from the top')
-    assert(math.abs(row - (height + 1) / 2) <= 1, ('line %d of %d rows'):format(row, height))
+    eq({ 3, 7 }, cursor)
+  end)
+end)
+
+-- The column is of the line the commit had, which the working tree may have
+-- changed since; the same column of another text points at nothing meant.
+test('session: `gf` drops the column when the line has changed since', function()
+  with_session(function(repo)
+    repo.write('f.txt', { 'abcdef' })
+    repo.commit('init')
+    repo.write('f.txt', { 'abcdefgh' })
+    repo.commit('longer')
+    repo.write('f.txt', { 'xy' })
+    repo.commit('shorter')
+  end, function(s)
+    show_commit(s, 2)
+    vim.api.nvim_win_set_cursor(s.diff_win, { row_of_text(s, 'abcdefgh', 'add'), 6 })
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.cmd.normal('gf')
+    local cursor = vim.api.nvim_win_get_cursor(0)
+    wipe_opened()
+    eq({ 1, 0 }, cursor)
   end)
 end)
 

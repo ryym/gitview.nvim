@@ -5,6 +5,7 @@
 --- redrawn when the repository changes underneath it — which it does by itself
 --- on entering its tab page — and to follow the cursor from one file to the next.
 local config = require('gitview.config')
+local dlib = require('gitview.diff.lines')
 local git = require('gitview.git')
 local index = require('gitview.index')
 local keymap = require('gitview.diff.keymap')
@@ -2377,7 +2378,8 @@ end
 --- @param s gitview.Session
 --- @param path string absolute
 --- @param lnum integer
-function M.open_file(s, path, lnum)
+--- @param at? { winline: integer, col: integer, text: string? } see `keymap.edit_at`
+function M.open_file(s, path, lnum, at)
   if vim.fn.filereadable(path) == 0 then
     util.warn(('%s is not in the working tree'):format(vim.fs.relpath(s.root, path) or path))
     return
@@ -2389,7 +2391,7 @@ function M.open_file(s, path, lnum)
     vim.cmd('-tabnew')
     s.origin = vim.api.nvim_get_current_tabpage()
   end
-  local ok, err = pcall(keymap.edit_at, path, lnum)
+  local ok, err = pcall(keymap.edit_at, path, lnum, at)
   if not ok then
     -- `vim.cmd` wraps the Ex error in where it was raised from, which says
     -- nothing to the user.
@@ -2961,20 +2963,30 @@ function M.step_file(s, dir)
   return select_nth(s, like, (t and t.index or 1) + dir)
 end
 
---- Open the file the diff's cursor is in, at the line it stands on; see
---- `open_file`.
+--- Open the file the diff's cursor is in, at the line it stands on, with the
+--- cursor on the same column and screen row as in the diff; see `open_file`.
+---
+--- A diff row's text is its line's text as is, the signs being drawn in the
+--- gutter, so a column of the row is the same column of the line.
 --- @param s gitview.Session
 function M.open_shown(s)
   local view = render.view_of(s.diff_buf)
+  local cursor = vim.api.nvim_win_get_cursor(0)
   local path, lnum = nil, nil
   if view then
-    path, lnum = keymap.source_at(view, vim.api.nvim_win_get_cursor(0)[1])
+    path, lnum = keymap.source_at(view, cursor[1])
   end
   if not path then
     util.info('no file here')
     return
   end
-  M.open_file(s, path, assert(lnum))
+  local l = assert(view).lines[cursor[1]]
+  M.open_file(s, path, assert(lnum), {
+    winline = vim.fn.winline(),
+    col = cursor[2],
+    -- A file's header and the blank row after it are not lines of the file.
+    text = l and dlib.source_kinds[l.kind] and l.text or nil,
+  })
 end
 
 --- Whether the shared autocommands have been created.
