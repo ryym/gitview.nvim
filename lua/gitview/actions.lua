@@ -323,6 +323,19 @@ function M.prev_commit()
   return step_commit(-1)
 end
 
+--- Show again the diff focused before the one shown now, so that doing it
+--- again comes back. Only what the diff showed while the cursor was in it
+--- counts, however the lists were gone through meanwhile.
+--- @return boolean
+function M.show_last_focused_diff()
+  local s = at_cursor({ diff = true })
+  if not s then
+    return false
+  end
+  require('gitview.ui.session').show_last_focused(s)
+  return true
+end
+
 --- @param dir 1|-1
 --- @return boolean
 local function step_hunk(dir)

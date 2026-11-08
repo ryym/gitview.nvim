@@ -4070,3 +4070,72 @@ test('session: the working-tree row shows the layer the list does', function()
     eq(' HEAD, staged   [2 files]', diff_winbar(s))
   end)
 end)
+
+--- Put the commits pane's cursor on a commit and follow it, as `j` and `k` do.
+--- @param s gitview.Session
+--- @param index integer
+local function sweep_to(s, index)
+  vim.api.nvim_set_current_win(s.commits_win)
+  local row = assert(list.row_of(s.commits_buf, { kind = 'commit', index = index }))
+  vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  session.follow_cursor(s, s.commits_win)
+end
+
+--- Show the diff focused before, from the diff, as the action does.
+--- @param s gitview.Session
+local function show_last_focused(s)
+  vim.api.nvim_set_current_win(s.diff_win)
+  session.show_last_focused(s)
+  settle(s)
+end
+
+-- What was gone through in the list on the way was never focused, and does not
+-- count: only what the diff pane was entered on does.
+test('session: the last focused diff goes back and forth between the last two', function()
+  with_session(forked_history, function(s)
+    session.select(s, 1)
+    vim.api.nvim_set_current_win(s.diff_win)
+    sweep_to(s, 1)
+    sweep_to(s, 2)
+    show_last_focused(s)
+    eq({ kind = 'file', index = 1 }, s.selected)
+    eq(1, vim.api.nvim_win_get_cursor(s.files_win)[1])
+    eq(s.diff_win, vim.api.nvim_get_current_win())
+    show_last_focused(s)
+    eq({ kind = 'commit', index = 2 }, s.selected)
+    eq(s.diff_win, vim.api.nvim_get_current_win())
+  end)
+end)
+
+test('session: what was moved to from inside the diff counts as focused', function()
+  with_session(forked_history, function(s)
+    sweep_to(s, 1)
+    press_diff(s, ']r')
+    eq({ kind = 'commit', index = 2 }, s.selected)
+    show_last_focused(s)
+    eq({ kind = 'commit', index = 1 }, s.selected)
+    show_last_focused(s)
+    eq({ kind = 'commit', index = 2 }, s.selected)
+  end)
+end)
+
+test('session: the last focused diff is refused once no longer listed as it was', function()
+  with_session(forked_history, function(s)
+    local messages = notified(function()
+      show_last_focused(s)
+    end)
+    assert(messages[1]:find('no other diff has been focused', 1, true), messages[1])
+
+    sweep_to(s, 2)
+    session.enter(s)
+    eq('commit_file', s.selected.kind)
+    vim.api.nvim_set_current_win(s.diff_win)
+    vim.api.nvim_set_current_win(s.commits_win)
+    session.leave(s)
+    messages = notified(function()
+      show_last_focused(s)
+    end)
+    eq({ kind = 'commit', index = 2 }, s.selected)
+    assert(messages[1]:find('no longer listed', 1, true), messages[1])
+  end)
+end)

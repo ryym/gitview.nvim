@@ -77,6 +77,8 @@ local M = {}
 ---        what is shown, to be put back where it was last left
 --- @field positions table<string, gitview.Position> where the diff pane was
 ---        last left on each thing shown, by `position_key`
+--- @field focused gitview.Focused[] the last two things the diff pane showed
+---        while focused, the latest first; see `note_focused`
 --- @field generation integer bumped by every draw, so one read in the
 ---        background can tell whether it is still wanted
 --- @field pending {generation:integer, span:gitview.PerfSpan}? the view waiting
@@ -2336,6 +2338,53 @@ function M.step_commit(s, dir)
   M.follow_cursor(s, s.commits_win)
 end
 
+--- Something the diff pane showed while the cursor was in it.
+--- @class gitview.Focused
+--- @field id gitview.SelectionId
+--- @field key string `id` and what it was compared in; see `position_key`
+
+--- Note what the diff pane shows as focused, for `show_last_focused` to go
+--- back to.
+---
+--- Only what the cursor has been in the diff pane on counts. The diff follows the
+--- list's cursor, so counting everything shown would have a sweep over the
+--- commits make the row next to the last one the thing to go back to.
+--- @param s gitview.Session
+function M.note_focused(s)
+  local id, key = s.shown, s.shown_key
+  if not (id and key) or (s.focused[1] and s.focused[1].key == key) then
+    return
+  end
+  s.focused = { { id = id, key = key }, s.focused[1] }
+end
+
+--- Show again what the diff pane was focused on before what it shows now, so
+--- that doing it again comes back.
+---
+--- The list's cursor is put on it, which is what the diff follows, and the focus
+--- stays where it is. It is refused when no row names it as it was: a file
+--- committed since, or one of a commit no longer looked into, which would
+--- otherwise have to be looked into again behind the user's back.
+--- @param s gitview.Session
+function M.show_last_focused(s)
+  M.note_focused(s)
+  local before = s.focused[2]
+  if not before then
+    util.info('no other diff has been focused')
+    return
+  end
+  local target = target_of_id(s, before.id)
+  local win, buf = pane_of(s, before.id)
+  local row = target and position_key(s, before.id) == before.key and list.row_of(buf, target)
+  if not row then
+    util.info('the diff focused before is no longer listed')
+    return
+  end
+  vim.api.nvim_win_set_cursor(win, { row, 0 })
+  M.follow_cursor(s, win)
+  M.note_focused(s)
+end
+
 --- @param s gitview.Session
 function M.close(s)
   if not vim.api.nvim_tabpage_is_valid(s.tab) then
@@ -3201,6 +3250,7 @@ function M.open()
     range_reads = {},
     range_order = {},
     positions = {},
+    focused = {},
     ignore_whitespace = config.values.ignore_whitespace,
     layer = config.values.shown_changes,
     has_head = git.has_head(root),
@@ -3269,6 +3319,18 @@ function M.open()
       end,
     })
   end
+
+  vim.api.nvim_create_autocmd({ 'WinEnter', 'WinLeave' }, {
+    buffer = s.diff_buf,
+    callback = function()
+      if s.closing then
+        return
+      end
+      -- `WinLeave` as well, for what was moved to from inside the diff, as
+      -- `]f` and `]r` do.
+      M.note_focused(s)
+    end,
+  })
 
   M.sessions[s.tab] = s
   watch_index(s)

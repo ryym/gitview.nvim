@@ -115,32 +115,33 @@ whether the line exists in each version (HEAD, index, work tree).
 
 This table describes available actions in GitView with default key mappings.
 
-| key     | action                     | description                                        | files | commits | diff |
-| ------- | -------------------------- | -------------------------------------------------- | :---: | :-----: | :--: |
-| `<CR>`  | `focus_diff`               | Focus the diff of the file(s) or commit(s)         |   ✓   |    ✓    |      |
-| `<CR>`  | `look_into`                | Look into the commit                               |       |    ✓    |      |
-| `<BS>`  | `back_out`                 | Back out of the commit looked into                 |       |    ✓    |      |
-| `m`     | `start_range`              | Start the commit range selection                   |       |    ✓    |      |
-| `<Esc>` | `clear_range`              | Cancel the commit range selection                  |       |    ✓    |      |
-| `gr`    | `start_review`             | Start review mode                                  |       |    ✓    |      |
-| `s`     | `stage`                    | Stage the file(s) or line(s)                       |   ✓   |         |  ✓   |
-| `u`     | `unstage`                  | Unstage the file(s) or line(s)                     |   ✓   |         |  ✓   |
-| `S`     | `stage_hunk`               | Stage the hunk                                     |       |         |  ✓   |
-| `U`     | `unstage_hunk`             | Unstage the hunk                                   |       |         |  ✓   |
-| `gs`    | `cycle_shown_changes`      | Cycle shown changes (both, staged, unstaged)       |   ✓   |    ✓    |  ✓   |
-| `gw`    | `toggle_ignore_whitespace` | Toggle whether to ignore whitespace diff           |   ✓   |    ✓    |  ✓   |
-| `]f`    | `next_file`                | Go to the next file                                |   ✓   |    ✓    |  ✓   |
-| `[f`    | `prev_file`                | Go to the previous file                            |   ✓   |    ✓    |  ✓   |
-| `]r`    | `next_commit`              | Go to the next commit                              |       |         |  ✓   |
-| `[r`    | `prev_commit`              | Go to the previous commit                          |       |         |  ✓   |
-| `]c`    | `next_hunk`                | Go to the next hunk                                |       |         |  ✓   |
-| `[c`    | `prev_hunk`                | Go to the previous hunk                            |       |         |  ✓   |
-| `gf`    | `open_file`                | Open the file in the previous tab                  |   ✓   |    ✓    |  ✓   |
-| `gy`    | `copy_location`            | Copy the file path and lines                       |       |         |  ✓   |
-| `R`     | `refresh`                  | Refresh Gitview by re-reading the repository       |   ✓   |    ✓    |  ✓   |
-| `q`     | `close`                    | Close Gitview                                      |   ✓   |    ✓    |  ✓   |
-| (none)  | `set_shown_changes`        | Change the shown changes                           |   ✓   |    ✓    |  ✓   |
-| (none)  | `set_ignore_whitespace`    | Change whether to ignore whitespace diff           |   ✓   |    ✓    |  ✓   |
+| key     | action                     | description                                  | files | commits | diff |
+| ------- | -------------------------- | -------------------------------------------- | :---: | :-----: | :--: |
+| `<CR>`  | `focus_diff`               | Focus the diff of the file(s) or commit(s)   |   ✓   |    ✓    |      |
+| `<CR>`  | `look_into`                | Look into the commit                         |       |    ✓    |      |
+| `<BS>`  | `back_out`                 | Back out of the commit looked into           |       |    ✓    |      |
+| `m`     | `start_range`              | Start the commit range selection             |       |    ✓    |      |
+| `<Esc>` | `clear_range`              | Cancel the commit range selection            |       |    ✓    |      |
+| `gr`    | `start_review`             | Start review mode                            |       |    ✓    |      |
+| `s`     | `stage`                    | Stage the file(s) or line(s)                 |   ✓   |         |  ✓   |
+| `u`     | `unstage`                  | Unstage the file(s) or line(s)               |   ✓   |         |  ✓   |
+| `S`     | `stage_hunk`               | Stage the hunk                               |       |         |  ✓   |
+| `U`     | `unstage_hunk`             | Unstage the hunk                             |       |         |  ✓   |
+| `gs`    | `cycle_shown_changes`      | Cycle shown changes (both, staged, unstaged) |   ✓   |    ✓    |  ✓   |
+| `gw`    | `toggle_ignore_whitespace` | Toggle whether to ignore whitespace diff     |   ✓   |    ✓    |  ✓   |
+| `]f`    | `next_file`                | Go to the next file                          |   ✓   |    ✓    |  ✓   |
+| `[f`    | `prev_file`                | Go to the previous file                      |   ✓   |    ✓    |  ✓   |
+| `]r`    | `next_commit`              | Go to the next commit                        |       |         |  ✓   |
+| `[r`    | `prev_commit`              | Go to the previous commit                    |       |         |  ✓   |
+| `]c`    | `next_hunk`                | Go to the next hunk                          |       |         |  ✓   |
+| `[c`    | `prev_hunk`                | Go to the previous hunk                      |       |         |  ✓   |
+| `gf`    | `open_file`                | Open the file in the previous tab            |   ✓   |    ✓    |  ✓   |
+| `gy`    | `copy_location`            | Copy the file path and lines                 |       |         |  ✓   |
+| `R`     | `refresh`                  | Refresh Gitview by re-reading the repository |   ✓   |    ✓    |  ✓   |
+| `q`     | `close`                    | Close Gitview                                |   ✓   |    ✓    |  ✓   |
+| (none)  | `set_shown_changes`        | Change the shown changes                     |   ✓   |    ✓    |  ✓   |
+| (none)  | `set_ignore_whitespace`    | Change whether to ignore whitespace diff     |   ✓   |    ✓    |  ✓   |
+| (none)  | `show_last_focused_diff`   | Show the diff focused before the current one |       |         |  ✓   |
 
 ### Review mode
 
