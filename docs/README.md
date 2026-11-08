@@ -1,9 +1,5 @@
 # Documentation
 
-## For users
-
-[usage.md](usage.md) covers every view and key, configuration, and limitations.
-
 ## For developers
 
 | document                                   | what it covers                                     |
@@ -23,9 +19,7 @@ keeps to that. State each fact in one place, and link to it from elsewhere.
 
 ### User documents
 
-- `README.md`: a short overview of the Gitview.nvim.
-- `docs/usage.md`: The specification of what a user sees and can configure belongs in the user documents,
-  independent of how it is implemented. Users do not read the code.
+- `README.md`: The overview of Gitview.nvim.
 
 ### Developer documents
 

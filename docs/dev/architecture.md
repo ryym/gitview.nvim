@@ -1,8 +1,7 @@
 # Architecture
 
 A map for reading the code, for anyone changing the plugin: its parts, the rules
-they share, and what is known to be missing. What the plugin does for a user is in
-[usage.md](../usage.md).
+they share, and what is known to be missing.
 
 ## Premises
 
@@ -20,17 +19,17 @@ everything around it is drawn or concealed.
 
 ## Parts
 
-| part                            | responsibility                                |
-| ------------------------------- | --------------------------------------------- |
-| `init`, `command`, `config`     | The entry points and the configuration        |
-| `actions`, `keymaps`            | What keys can do, and which keys do it        |
-| `ui/session`                    | One tab page's state, and redrawing it        |
-| `ui/list`, `tree`               | A sidebar pane and its rows                   |
-| `diff/`                         | Turning versions of files into a drawn view   |
-| `git`, `status`                 | Every subprocess, and what is uncommitted     |
-| `stage`, `index`                | Writing to the index; see [staging](staging.md) |
-| `review`                        | Which files of a review are checked off       |
-| `util`, `perf`                  | Helpers, and timing; see [performance](performance.md) |
+| part                        | responsibility                                         |
+| --------------------------- | ------------------------------------------------------ |
+| `init`, `command`, `config` | The entry points and the configuration                 |
+| `actions`, `keymaps`        | What keys can do, and which keys do it                 |
+| `ui/session`                | One tab page's state, and redrawing it                 |
+| `ui/list`, `tree`           | A sidebar pane and its rows                            |
+| `diff/`                     | Turning versions of files into a drawn view            |
+| `git`, `status`             | Every subprocess, and what is uncommitted              |
+| `stage`, `index`            | Writing to the index; see [staging](staging.md)        |
+| `review`                    | Which files of a review are checked off                |
+| `util`, `perf`              | Helpers, and timing; see [performance](performance.md) |
 
 The dependencies run one way:
 

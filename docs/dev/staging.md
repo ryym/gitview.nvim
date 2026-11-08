@@ -1,8 +1,7 @@
 # Staging
 
 For anyone changing how the index is written: why it is done this way, the rules that
-keep it safe, and where it has holes. What staging looks like to a user is in
-[usage.md](../usage.md#staged-and-unstaged-in-one-view).
+keep it safe, and where it has holes.
 
 Staging a whole file runs a porcelain command. Staging part of one assembles the new
 index contents as lines, writes them as a blob and points the index entry at it. The
@@ -28,13 +27,13 @@ Every row of a mixed view carries its position in the index, so an operation is 
 entirely in index coordinates. A row read from the index is a line the operation takes
 out, and any other row is one it puts in.
 
-| row               | effect                    |
-| ----------------- | ------------------------- |
-| unstaged addition | insert at its position    |
-| unstaged deletion | drop that index line      |
-| staged addition   | drop that index line      |
-| staged deletion   | insert at its position    |
-| in the index only | drop that index line      |
+| row               | effect                 |
+| ----------------- | ---------------------- |
+| unstaged addition | insert at its position |
+| unstaged deletion | drop that index line   |
+| staged addition   | drop that index line   |
+| staged deletion   | insert at its position |
+| in the index only | drop that index line   |
 
 Positions are read off the rows rather than walked, so rows at the same position cannot
 shift each other and a selection applies in any order. Only the order of insertions at
@@ -77,10 +76,10 @@ from the index. So the row shows the index version while the working tree holds 
 writing the rows back leaves the file modified while the view shows nothing unstaged. With HEAD
 and the index at `a b c` and the working tree at `a "  b  " C`:
 
-| when staging every unstaged row | index afterwards                     |
-| ------------------------------- | ------------------------------------ |
+| when staging every unstaged row | index afterwards                        |
+| ------------------------------- | --------------------------------------- |
 | counting whitespace             | `a` `  b  ` `C`, equal to the work tree |
-| ignoring it                     | `a` `b` `C`, not equal               |
+| ignoring it                     | `a` `b` `C`, not equal                  |
 
 Comparing two alignments, one ignoring whitespace for display and one counting it for the index,
 would lift this. They do not correspond row for row, so it is not a small change.
