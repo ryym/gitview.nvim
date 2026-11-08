@@ -107,6 +107,8 @@ local M = {}
 --- @field empty_tree string? the empty tree's sha, once a range has needed it
 --- @field resized boolean? whether the screen was resized while another tab
 ---        page was current, leaving the sidebar to be laid out on return
+--- @field closing boolean? whether a pane has been closed, which ends the
+---        session; the panes left are no longer followed
 
 --- A range under review: its files in the files pane, one by one.
 ---
@@ -3243,6 +3245,11 @@ function M.open()
     vim.api.nvim_create_autocmd({ 'CursorMoved', 'WinEnter' }, {
       buffer = buf,
       callback = function()
+        -- A pane closed with the cursor in it hands the cursor to another,
+        -- with the session missing a pane it would draw into.
+        if s.closing then
+          return
+        end
         -- `WinEnter` as well as `CursorMoved`: moving between the two panes does
         -- not move either cursor, so nothing else would tell the diff that the
         -- selection is now the other pane's.
@@ -3299,6 +3306,9 @@ function M.open()
     group = group,
     pattern = { tostring(s.files_win), tostring(s.commits_win), tostring(s.diff_win) },
     callback = function()
+      -- Marked at once rather than with the close: the pane is gone before the
+      -- scheduled close runs, and another is entered in between.
+      s.closing = true
       -- Windows cannot be closed from inside WinClosed. Closing the tab page
       -- closes every pane, and each lands here, so all but the first find the
       -- session already gone.

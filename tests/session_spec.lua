@@ -288,6 +288,20 @@ test('session: closing a pane closes the session', function()
   end
 end)
 
+-- Closing the pane the cursor is in enters another while the session is
+-- missing the one just closed.
+test('session: closing the pane the cursor is in closes the session', function()
+  for _, pane in ipairs({ 'files_win', 'commits_win', 'diff_win' }) do
+    with_session(base, function(s)
+      local tab = s.tab
+      vim.api.nvim_set_current_win(s[pane])
+      vim.cmd.close()
+      wait_dropped(s)
+      eq(false, vim.api.nvim_tabpage_is_valid(tab))
+    end)
+  end
+end)
+
 -- `M.close` would `:quit` there, which would take Neovim with it.
 test('session: closing a pane in the only tab page leaves one window', function()
   with_session(base, function(s)
