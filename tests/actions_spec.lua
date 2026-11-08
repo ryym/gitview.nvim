@@ -64,7 +64,7 @@ local function goto_commit(s, index)
 end
 
 --- The arguments of the actions that need one.
-local ARGS = { set_layer = 'staged', set_ignore_whitespace = true }
+local ARGS = { set_shown_changes = 'staged', set_ignore_whitespace = true }
 
 test('actions: every one does nothing outside a session', function()
   for name, fn in pairs(actions) do
@@ -73,15 +73,15 @@ test('actions: every one does nothing outside a session', function()
 end)
 
 test('actions: the setters refuse what is no value of theirs', function()
-  assert(not pcall(actions.set_layer, 'all'))
+  assert(not pcall(actions.set_shown_changes, 'all'))
   assert(not pcall(actions.set_ignore_whitespace, 'on'))
 end)
 
 test('actions: a setter says nothing changed when it is set already', function()
   with_session(history, function(s)
     vim.api.nvim_set_current_win(s.files_win)
-    eq(false, actions.set_layer('both'))
-    eq(true, actions.set_layer('staged'))
+    eq(false, actions.set_shown_changes('both'))
+    eq(true, actions.set_shown_changes('staged'))
     eq('staged', s.layer)
     eq(false, actions.set_ignore_whitespace(false))
     eq(true, actions.set_ignore_whitespace(true))
@@ -125,15 +125,15 @@ test(':Gitview subcommands act on the session of the tab page', function()
   -- it: the session changes the directory.
   require('gitview.command')
   with_session(history, function(s)
-    run('layer')
+    run('shown-changes')
     eq('staged', s.layer)
-    run('layer both')
+    run('shown-changes both')
     eq('both', s.layer)
     run('whitespace on')
     eq(true, s.ignore_whitespace)
     run('whitespace')
     eq(false, s.ignore_whitespace)
-    eq({ 'layer takes both or staged or unstaged, not all' }, run('layer all'))
+    eq({ 'shown-changes takes both or staged or unstaged, not all' }, run('shown-changes all'))
     eq({ 'too many arguments to refresh' }, run('refresh now'))
     eq({ 'no such subcommand: stage' }, run('stage'))
     run('close')
@@ -144,12 +144,12 @@ end)
 
 test(':Gitview completes its subcommands and their arguments', function()
   local command = require('gitview.command')
-  eq({ 'close', 'layer', 'open', 'refresh', 'whitespace' }, command.complete('', 'Gitview '))
+  eq({ 'close', 'open', 'refresh', 'shown-changes', 'whitespace' }, command.complete('', 'Gitview '))
   eq({ 'refresh' }, command.complete('re', 'Gitview re'))
-  eq({ 'staged' }, command.complete('st', 'Gitview layer st'))
+  eq({ 'staged' }, command.complete('st', 'Gitview shown-changes st'))
   eq({ 'on', 'off' }, command.complete('', 'Gitview whitespace '))
   eq({}, command.complete('', 'Gitview refresh '))
-  eq({}, command.complete('', 'Gitview layer both '))
+  eq({}, command.complete('', 'Gitview shown-changes both '))
 end)
 
 test('actions: a window that is no pane takes only the actions on the session', function()

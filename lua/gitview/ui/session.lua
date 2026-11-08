@@ -1997,7 +1997,7 @@ function M.set_layer(s, layer)
   -- shows would change. What would is the files pane once the review is over,
   -- left filtered by a switch made while it could not be seen.
   if s.review then
-    util.info('the layer cannot be switched during a review')
+    util.info('the shown changes cannot be switched during a review')
     return true
   end
   local id = selection_id(s)
@@ -3190,7 +3190,7 @@ function M.open()
     range_order = {},
     positions = {},
     ignore_whitespace = config.values.ignore_whitespace,
-    layer = config.values.layer,
+    layer = config.values.shown_changes,
     has_head = git.has_head(root),
   }
   s.commits = read_commits(s)

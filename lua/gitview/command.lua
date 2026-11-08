@@ -29,14 +29,14 @@ local SUBCOMMANDS = {
       require('gitview.actions').refresh()
     end,
   },
-  layer = {
+  ['shown-changes'] = {
     args = { 'both', 'staged', 'unstaged' },
     run = function(arg)
       local actions = require('gitview.actions')
       if arg then
-        actions.set_layer(arg --[[@as gitview.Layer]])
+        actions.set_shown_changes(arg --[[@as gitview.Layer]])
       else
-        actions.cycle_layer()
+        actions.cycle_shown_changes()
       end
     end,
   },

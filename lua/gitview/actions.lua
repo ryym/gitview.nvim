@@ -396,10 +396,10 @@ function M.set_ignore_whitespace(ignore)
   return s ~= nil and require('gitview.ui.session').set_whitespace(s, ignore)
 end
 
---- Show the next layer of the uncommitted changes: both, staged alone, or
+--- Show the next set of the uncommitted changes: both, staged alone, or
 --- unstaged alone, and round again.
 --- @return boolean
-function M.cycle_layer()
+function M.cycle_shown_changes()
   local s = whole()
   if not s then
     return false
@@ -408,18 +408,18 @@ function M.cycle_layer()
   return true
 end
 
---- The layers of the uncommitted changes there are to show.
-local LAYERS = { both = true, staged = true, unstaged = true }
+--- The sets of the uncommitted changes there are to show.
+local SHOWN_CHANGES = { both = true, staged = true, unstaged = true }
 
---- Show both layers of the uncommitted changes, or one alone.
---- @param layer gitview.Layer `both`, `staged` or `unstaged`
---- @return boolean false when the layer is shown already
-function M.set_layer(layer)
-  if not LAYERS[layer] then
-    error(('gitview: no such layer: %s'):format(vim.inspect(layer)), 2)
+--- Show both staged and unstaged changes, or one of them alone.
+--- @param shown gitview.Layer `both`, `staged` or `unstaged`
+--- @return boolean false when those changes are shown already
+function M.set_shown_changes(shown)
+  if not SHOWN_CHANGES[shown] then
+    error(('gitview: no such shown changes: %s'):format(vim.inspect(shown)), 2)
   end
   local s = whole()
-  return s ~= nil and require('gitview.ui.session').set_layer(s, layer)
+  return s ~= nil and require('gitview.ui.session').set_layer(s, shown)
 end
 
 --- Re-read the repository. The panes are redrawn once it has been read.

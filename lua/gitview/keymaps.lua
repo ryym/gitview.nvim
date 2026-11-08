@@ -28,7 +28,7 @@ local SHARED = {
   { 'q', actions.close, 'close' },
   { 'R', actions.refresh, 'refresh' },
   { 'gw', actions.toggle_ignore_whitespace, 'toggle ignoring whitespace' },
-  { 'gs', actions.cycle_layer, 'show both layers, staged alone or unstaged alone' },
+  { 'gs', actions.cycle_shown_changes, 'show staged and unstaged changes, or one alone' },
 }
 
 --- The modes of the keys whose actions take a visual selection. They are

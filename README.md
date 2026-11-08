@@ -127,7 +127,7 @@ This table describes available actions in GitView with default key mappings.
 | `u`     | `unstage`                  | Unstage the file(s) or line(s)                     |   ✓   |         |  ✓   |
 | `S`     | `stage_hunk`               | Stage the hunk                                     |       |         |  ✓   |
 | `U`     | `unstage_hunk`             | Unstage the hunk                                   |       |         |  ✓   |
-| `gs`    | `cycle_layer`              | Cycle diff mode (staged only, unstaged only, both) |   ✓   |    ✓    |  ✓   |
+| `gs`    | `cycle_shown_changes`      | Cycle shown changes (both, staged, unstaged)       |   ✓   |    ✓    |  ✓   |
 | `gw`    | `toggle_ignore_whitespace` | Toggle whether to ignore whitespace diff           |   ✓   |    ✓    |  ✓   |
 | `]f`    | `next_file`                | Go to the next file                                |   ✓   |    ✓    |  ✓   |
 | `[f`    | `prev_file`                | Go to the previous file                            |   ✓   |    ✓    |  ✓   |
@@ -139,7 +139,7 @@ This table describes available actions in GitView with default key mappings.
 | `gy`    | `copy_location`            | Copy the file path and lines                       |       |         |  ✓   |
 | `R`     | `refresh`                  | Refresh Gitview by re-reading the repository       |   ✓   |    ✓    |  ✓   |
 | `q`     | `close`                    | Close Gitview                                      |   ✓   |    ✓    |  ✓   |
-| (none)  | `set_layer`                | Change the diff mode                               |   ✓   |    ✓    |  ✓   |
+| (none)  | `set_shown_changes`        | Change the shown changes                           |   ✓   |    ✓    |  ✓   |
 | (none)  | `set_ignore_whitespace`    | Change whether to ignore whitespace diff           |   ✓   |    ✓    |  ✓   |
 
 ### Review mode
@@ -158,7 +158,7 @@ Those actions take arguments:
 | action                  | arguments           | description                                    |
 | ----------------------- | ------------------- | ---------------------------------------------- |
 | `close`                 | `{ force = false }` | `force = true` skips confirmation before close |
-| `set_layer`             | `layer`             | `both` or `staged` or `unstaged`               |
+| `set_shown_changes`     | `shown`             | `both` or `staged` or `unstaged`               |
 | `set_ignore_whitespace` | `ignore`            | boolean                                        |
 
 ### Using actions
@@ -169,11 +169,11 @@ Every action is a Lua function of `require('gitview.actions')`.
 local actions = require('gitview.actions')
 
 actions.next_file()
-actions.set_layer('staged')
+actions.set_shown_changes('staged')
 actions.close({ force = true })
 
 vim.keymap.set('n', '<Leader>gu', function()
-  a.set_layer('unstaged')
+  a.set_shown_changes('unstaged')
 end)
 ```
 
@@ -240,7 +240,7 @@ require('gitview').setup({
   diff_algorithm = 'histogram',
   diff_linematch = 0,
   ignore_whitespace = false,
-  layer = 'both',
+  shown_changes = 'both',
   file_list_style = 'tree',
   sidebar_width_ratio = 0.25,
   commit_count = 100,
@@ -258,7 +258,7 @@ require('gitview').setup({
 | `diff_algorithm`         | the `vim.diff()` algorithm; see [diffopt]                                 |
 | `diff_linematch`         | how to decide hunk boundaries; see below                                  |
 | `ignore_whitespace`      | default of whether to ignore whitespace diff                              |
-| `layer`                  | what uncommitted diff displays by default; `both`, `staged` or `unstaged` |
+| `shown_changes`          | what uncommitted diff displays by default; `both`, `staged` or `unstaged` |
 | `file_list_style`        | file list style; `tree` or `flat`                                         |
 | `sidebar_width_ratio`    | share of the width the sidebar takes, 30 columns at least                 |
 | `commit_count`           | how many recent commits it initially lists                                |
@@ -276,16 +276,16 @@ require('gitview').setup({
 
 ### Commands
 
-| command                         | what it does                                                  |
-| ------------------------------- | ------------------------------------------------------------- |
-| `:Gitview`                      | open a new or existing Gitview tab for the current repository |
-| `:Gitview open`                 | the same as `:Gitview`                                        |
-| `:Gitview close`                | close a Gitview tab                                           |
-| `:Gitview refresh`              | refresh a Gitview tab                                         |
-| `:Gitview layer {layer}`        | change the shown layer; `both`, `staged` or `unstaged`        |
-| `:Gitview layer`                | cycle the layer                                               |
-| `:Gitview whitespace`           | toggle ignoring whitespace                                    |
-| `:Gitview whitespace {on\|off}` | ignore whitespace                                             |
+| command                          | what it does                                                  |
+| -------------------------------- | ------------------------------------------------------------- |
+| `:Gitview`                       | open a new or existing Gitview tab for the current repository |
+| `:Gitview open`                  | the same as `:Gitview`                                        |
+| `:Gitview close`                 | close a Gitview tab                                           |
+| `:Gitview refresh`               | refresh a Gitview tab                                         |
+| `:Gitview shown-changes {shown}` | change the shown changes; `both`, `staged` or `unstaged`      |
+| `:Gitview shown-changes`         | cycle the shown changes                                       |
+| `:Gitview whitespace`            | toggle ignoring whitespace                                    |
+| `:Gitview whitespace {on\|off}`  | ignore whitespace                                             |
 
 ### Window options
 
