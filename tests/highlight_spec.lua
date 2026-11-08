@@ -174,15 +174,15 @@ test('a ghost buffer sets syntax alone when the legacy path is needed', function
   assert(next(hl.collect(buf, 'perl')), 'legacy highlights should still work')
 end)
 
-test('a filetype listed in no_highlight counts as none', function()
+test('a filetype listed in no_highlight_filetypes counts as none', function()
   local config = require('gitview.config')
   local source = require('gitview.diff.source')
-  local kept = config.values.no_highlight
+  local kept = config.values.no_highlight_filetypes
   eq('scss', source.filetype_of('/tmp/a.scss'))
-  config.values.no_highlight = { 'scss' }
+  config.values.no_highlight_filetypes = { 'scss' }
   eq('', source.filetype_of('/tmp/a.scss'))
   eq('css', source.filetype_of('/tmp/a.css'))
-  config.values.no_highlight = kept
+  config.values.no_highlight_filetypes = kept
 end)
 
 test('a ghost buffer with no filetype is left unhighlighted', function()

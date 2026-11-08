@@ -56,7 +56,7 @@ file types so that Gitview can display its own `winbar`.
 │ │  M list.lua
 ```
 
-With `list_style = 'flat'`, the files are listed by their whole paths instead (see [Configuration](#configuration)).
+With `file_list_style = 'flat'`, the files are listed by their whole paths instead (see [Configuration](#configuration)).
 
 ## Commits window
 
@@ -236,41 +236,41 @@ Customize Gitview by `setup()`. Calling `setup()` is optional. The values below 
 
 ```lua
 require('gitview').setup({
-  context = 3,
-  algorithm = 'histogram',
-  linematch = 0,
+  diff_context = 3,
+  diff_algorithm = 'histogram',
+  diff_linematch = 0,
   ignore_whitespace = false,
   layer = 'both',
-  list_style = 'tree',
-  list_ratio = 0.25,
+  file_list_style = 'tree',
+  sidebar_width_ratio = 0.25,
   commit_count = 100,
-  commit_ratio = 0.4,
-  no_highlight = {},
+  commits_height_ratio = 0.4,
+  no_highlight_filetypes = {},
   default_keymaps = true,
 })
 ```
 
 ### Options
 
-| option              | what it sets                                                              |
-| ------------------- | ------------------------------------------------------------------------- |
-| `context`           | unchanged lines left open around each hunk                                |
-| `algorithm`         | the `vim.diff()` algorithm; see [diffopt]                                 |
-| `linematch`         | how to decide hunk boundaries; see below                                  |
-| `ignore_whitespace` | default of whether to ignore whitespace diff                              |
-| `layer`             | what uncommitted diff displays by default; `both`, `staged` or `unstaged` |
-| `list_style`        | file list style; `tree` or `flat`                                         |
-| `list_ratio`        | share of the width the sidebar takes, 30 columns at least                 |
-| `commit_count`      | how many recent commits it initially lists                                |
-| `commit_ratio`      | share of the sidebar height the commit list takes                         |
-| `no_highlight`      | filetypes left unhighlighted; see below                                   |
-| `default_keymaps`   | whether to define default key mappings                                    |
+| option                   | what it sets                                                              |
+| ------------------------ | ------------------------------------------------------------------------- |
+| `diff_context`           | unchanged lines left open around each hunk                                |
+| `diff_algorithm`         | the `vim.diff()` algorithm; see [diffopt]                                 |
+| `diff_linematch`         | how to decide hunk boundaries; see below                                  |
+| `ignore_whitespace`      | default of whether to ignore whitespace diff                              |
+| `layer`                  | what uncommitted diff displays by default; `both`, `staged` or `unstaged` |
+| `file_list_style`        | file list style; `tree` or `flat`                                         |
+| `sidebar_width_ratio`    | share of the width the sidebar takes, 30 columns at least                 |
+| `commit_count`           | how many recent commits it initially lists                                |
+| `commits_height_ratio`   | share of the sidebar height the commit list takes                         |
+| `no_highlight_filetypes` | filetypes left unhighlighted; see below                                   |
+| `default_keymaps`        | whether to define default key mappings                                    |
 
 [diffopt]: https://neovim.io/doc/user/options/#'diffopt'
 
-- **`linematch`**: One of the Neovim option specified in [diffopt]. Gitview specifies 0
+- **`diff_linematch`**: One of the Neovim option specified in [diffopt]. Gitview specifies 0
   to show the same diff as Git. Otherwise hunk boundaries don't match `git diff`.
-- **`no_highlight`**: Skip syntax highlight in the diff for the specified filetypes.
+- **`no_highlight_filetypes`**: Skip syntax highlight in the diff for the specified filetypes.
   A language without a Tree-sitter parser is highlighted through its
   Vim syntax file. Some are slow to load, especially with many highlight groups defined.
 

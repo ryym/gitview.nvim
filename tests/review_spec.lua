@@ -19,9 +19,9 @@ end
 --- @param fn fun(s: gitview.Session, repo: gitview.TestRepo)
 --- @param opts? {tree?:boolean} `tree` to lay the lists out as trees
 local function with_session(setup, fn, opts)
-  local style = config.values.list_style
+  local style = config.values.file_list_style
   if opts and opts.tree then
-    config.values.list_style = 'tree'
+    config.values.file_list_style = 'tree'
   end
   helpers.with_repo(function(repo)
     setup(repo)
@@ -42,7 +42,7 @@ local function with_session(setup, fn, opts)
       session.close(s)
     end
     vim.cmd.lcd(previous)
-    config.values.list_style = style
+    config.values.file_list_style = style
     if not ok then
       error(err, 0)
     end

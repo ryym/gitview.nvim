@@ -30,7 +30,7 @@ end
 _G.test, _G.eq = test, eq
 
 -- Most specs read the flat list; those about the tree switch to it themselves.
-require('gitview.config').values.list_style = 'flat'
+require('gitview.config').values.file_list_style = 'flat'
 
 for _, file in ipairs(vim.fn.glob('tests/*_spec.lua', false, true)) do
   io.write(file .. '\n')

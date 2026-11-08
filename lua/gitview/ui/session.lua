@@ -1003,7 +1003,7 @@ local function read_entries(s, entries)
   local rev = rev_of(s)
   return function()
     local view, left_out =
-      perf.measure('build', vlib.build, sources, rev, config.values.context, diff_opts(s))
+      perf.measure('build', vlib.build, sources, rev, config.values.diff_context, diff_opts(s))
     view = vlib.list_skipped(view, rev, skipped, left_out, no_view_reason(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(rev, no_view_reason(s)))
@@ -1057,7 +1057,7 @@ local function read_commit(s, target)
 
   return function()
     local view, left_out =
-      perf.measure('build', vlib.build, read.sources, label, config.values.context, diff_opts(s))
+      perf.measure('build', vlib.build, read.sources, label, config.values.diff_context, diff_opts(s))
     view = vlib.list_skipped(view, label, read.skipped, left_out, no_view_reason(s))
     if not view and detail then
       -- Nothing at all changed, as in an empty commit: there is no file left out
@@ -1126,7 +1126,7 @@ local function read_scope_dir(s, target)
   return function()
     local moved = see_sources(s, target, sources)
     local view, left_out =
-      perf.measure('build', vlib.build, sources, scope.label, config.values.context, diff_opts(s))
+      perf.measure('build', vlib.build, sources, scope.label, config.values.diff_context, diff_opts(s))
     view = vlib.list_skipped(view, scope.label, skipped, left_out, no_view_reason(s))
     if not view then
       render.notice(s.diff_buf, ('%s   %s'):format(scope.label, no_view_reason(s)))
@@ -1381,7 +1381,7 @@ local function show_commit_file(s, target)
   local src = perf.measure('source', source.for_range_change, scope.range, change, s.root)
   local moved = src and see_sources(s, target, { src })
   local view = src
-    and perf.measure('build', vlib.build, { src }, scope.label, config.values.context, diff_opts(s))
+    and perf.measure('build', vlib.build, { src }, scope.label, config.values.diff_context, diff_opts(s))
   if not view then
     -- a pure rename or a mode change: a real change with no lines to show
     render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
@@ -1490,7 +1490,7 @@ function M.show_selected(s, keep_unchanged, span)
   end
   local src = perf.measure('source', source.for_entry, entry, s.root)
   local view = src
-    and perf.measure('build', vlib.build, { src }, rev_of(s), config.values.context, diff_opts(s))
+    and perf.measure('build', vlib.build, { src }, rev_of(s), config.values.diff_context, diff_opts(s))
   if not view then
     -- A pure rename or a mode change is a real change with no lines to show. An
     -- unmerged file with no conflict marked out is still unresolved until it is
@@ -1687,7 +1687,7 @@ local function files_model(s)
     review = s.review,
     notice = s.files_notice,
     layer = s.layer,
-    tree = config.values.list_style == 'tree',
+    tree = config.values.file_list_style == 'tree',
   }
 end
 
@@ -1715,7 +1715,7 @@ end
 --- @param target gitview.ListTarget? where the cursor should end up
 --- @param keep_unchanged boolean? passed on to `show_selected`
 local function redraw_list(s, target, keep_unchanged)
-  local as_tree = config.values.list_style == 'tree'
+  local as_tree = config.values.file_list_style == 'tree'
   list.draw(s.files_buf, files_model(s))
   list.draw(s.commits_buf, {
     pane = 'commits',
@@ -3144,11 +3144,11 @@ local MIN_COMMITS_HEIGHT = 3
 --- width is left, and the files pane whatever height.
 --- @param s gitview.Session
 local function lay_out(s)
-  local width = math.floor(vim.o.columns * config.values.list_ratio)
+  local width = math.floor(vim.o.columns * config.values.sidebar_width_ratio)
   vim.api.nvim_win_set_width(s.files_win, math.max(MIN_LIST_WIDTH, width))
   local total = vim.api.nvim_win_get_height(s.files_win)
     + vim.api.nvim_win_get_height(s.commits_win)
-  local height = math.floor(total * config.values.commit_ratio)
+  local height = math.floor(total * config.values.commits_height_ratio)
   vim.api.nvim_win_set_height(s.commits_win, math.max(MIN_COMMITS_HEIGHT, height))
 end
 

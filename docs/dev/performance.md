@@ -54,11 +54,11 @@ alone. What that costs follows the configuration rather than the file: every `:h
 costs more the more groups are defined, and a syntax file including others searches every
 `'runtimepath'` entry. A commit with eight scss files in a real configuration:
 
-| scratch buffers get      | per buffer | the commit's view |
-| ------------------------ | ---------- | ----------------- |
-| `'filetype'`             | ~40 ms     | 630 ms            |
-| `'syntax'`               | ~20 ms     | 345 ms            |
-| nothing (`no_highlight`) | —          | ~0 ms             |
+| scratch buffers get                | per buffer | the commit's view |
+| ---------------------------------- | ---------- | ----------------- |
+| `'filetype'`                       | ~40 ms     | 630 ms            |
+| `'syntax'`                         | ~20 ms     | 345 ms            |
+| nothing (`no_highlight_filetypes`) | —          | ~0 ms             |
 
 Loading the syntax file without the ftplugin could color some text differently from the file's own
 buffer: a syntax file may depend on an ftplugin's `'iskeyword'`, and syntax added from a `FileType`

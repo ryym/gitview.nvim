@@ -45,7 +45,7 @@ end
 --- The filetype to highlight `path` with, or `''` when it is not to be
 --- highlighted.
 ---
---- A filetype listed in `no_highlight` counts as none. Highlighting a language
+--- A filetype listed in `no_highlight_filetypes` counts as none. Highlighting a language
 --- without a Tree-sitter parser means loading its syntax file into every ghost
 --- buffer, and some are costly enough that a view of many such files is slow to
 --- open; dropping the filetype here is what leaves the ghost buffers bare.
@@ -59,7 +59,7 @@ function M.filetype_of(path)
   else
     ft = vim.filetype.match({ filename = path }) or ''
   end
-  if vim.tbl_contains(config.values.no_highlight, ft) then
+  if vim.tbl_contains(config.values.no_highlight_filetypes, ft) then
     return ''
   end
   return ft

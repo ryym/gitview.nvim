@@ -632,7 +632,7 @@ local function sidebar_height(s)
 end
 
 test('session: the sidebar keeps its shares of a resized screen', function()
-  with_shares({ list_ratio = 0.25, commit_ratio = 0.4 }, function(s)
+  with_shares({ sidebar_width_ratio = 0.25, commits_height_ratio = 0.4 }, function(s)
     resize(200)
     eq(50, vim.api.nvim_win_get_width(s.files_win))
     eq(50, vim.api.nvim_win_get_width(s.commits_win))
@@ -643,7 +643,7 @@ test('session: the sidebar keeps its shares of a resized screen', function()
 end)
 
 test('session: the sidebar keeps its least size on a small screen', function()
-  with_shares({ list_ratio = 0.25, commit_ratio = 0.01 }, function(s)
+  with_shares({ sidebar_width_ratio = 0.25, commits_height_ratio = 0.01 }, function(s)
     resize(80)
     eq(30, vim.api.nvim_win_get_width(s.files_win))
     eq(3, vim.api.nvim_win_get_height(s.commits_win))
@@ -651,7 +651,7 @@ test('session: the sidebar keeps its least size on a small screen', function()
 end)
 
 test('session: a resize in another tab page lays the sidebar out on return', function()
-  with_shares({ list_ratio = 0.25 }, function(s)
+  with_shares({ sidebar_width_ratio = 0.25 }, function(s)
     vim.cmd.tabnew()
     resize(200)
     eq(30, vim.api.nvim_win_get_width(s.files_win))
@@ -661,7 +661,7 @@ test('session: a resize in another tab page lays the sidebar out on return', fun
 end)
 
 test('session: returning without a resize keeps a width set by hand', function()
-  with_shares({ list_ratio = 0.25 }, function(s)
+  with_shares({ sidebar_width_ratio = 0.25 }, function(s)
     vim.api.nvim_win_set_width(s.files_win, 40)
     vim.cmd.tabnew()
     vim.api.nvim_set_current_tabpage(s.tab)
@@ -3435,10 +3435,10 @@ end)
 --- @param fn fun(s: gitview.Session, repo: gitview.TestRepo)
 local function with_tree_session(setup, fn)
   local config = require('gitview.config')
-  local kept = config.values.list_style
-  config.values.list_style = 'tree'
+  local kept = config.values.file_list_style
+  config.values.file_list_style = 'tree'
   local ok, err = pcall(with_session, setup, fn)
-  config.values.list_style = kept
+  config.values.file_list_style = kept
   if not ok then
     error(err, 0)
   end
