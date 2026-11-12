@@ -87,6 +87,23 @@ newly added commits and uncommitted changes if you start a range from the first 
 the working tree) in the commits window.
 `<BS>` exit review mode.
 
+#### Reviewing a non-linear range
+
+Starting review mode from a ref lets you review what one ref changed since it diverged from another:
+
+- `:Gitview review <ref>` reviews `<ref>...working tree`
+- `:Gitview review <ref1> <ref2>` reviews `<ref1>...<ref2>`
+
+This is useful when you review a non-linear range. Example:
+
+1. Create a `feature` branch from `main`.
+2. Add commits `a` and `b` to `feature`.
+3. Merge `main` into `feature` to bring in its new changes.
+4. Add commits `c` and `d` to `feature`.
+
+In this situation, a range from `a` to `d` also shows the changes the merge brought in from `main`.
+To review only what the `feature` branch did, start review mode with `:Gitview review main` instead.
+
 ## Diff window
 
 Gitview displays the diff in a unified diff format.
@@ -287,6 +304,8 @@ require('gitview').setup({
 | `:Gitview shown-changes`         | cycle the shown changes                                       |
 | `:Gitview whitespace`            | toggle ignoring whitespace                                    |
 | `:Gitview whitespace {on\|off}`  | ignore whitespace                                             |
+| `:Gitview review {base}`         | review `{base}...working tree`                                |
+| `:Gitview review {base} {new}`   | review `{base}...{new}`                                       |
 
 ### Window options
 
