@@ -2250,6 +2250,51 @@ function M.start_review(s)
   return true
 end
 
+--- Review what `new` changed since it left `base`: from where the two meet to
+--- `new`, or to the working tree when there is no `new`. This is what `git diff
+--- base...new` compares, and what a pull request on GitHub shows.
+---
+--- Both ends are fixed by sha here, as every review's are, so that a ref moving
+--- meanwhile does not change the range. A range being looked into is left as
+--- it is, since it is not the one reviewed.
+---
+--- It is reviewed in the session of the current tab page, or else in the one
+--- `open` goes to or opens. A revision that names no commit opens nothing.
+--- @param base string a revision, as the user typed it
+--- @param new string? a revision; nil for the working tree
+function M.review_refs(base, new)
+  -- Resolve the revisions before opening a session, so that a mistyped one
+  -- leaves no new tab page behind.
+  local s = M.current()
+  local root = s and s.root or source.repo_root()
+  if not root then
+    return
+  end
+  local base_sha = git.resolve_commit(base, root)
+  if not base_sha then
+    util.warn(('%s is not a commit'):format(base))
+    return
+  end
+  local new_sha = git.resolve_commit(new or 'HEAD', root)
+  if not new_sha then
+    util.warn(('%s is not a commit'):format(new or 'HEAD'))
+    return
+  end
+  local from = git.merge_base(base_sha, new_sha, root)
+  if not from then
+    util.warn(('%s and %s have no history in common'):format(base, new or 'HEAD'))
+    return
+  end
+  s = s or M.open()
+  if not s then
+    return
+  end
+  local range = { old = from, new = new and new_sha or nil } --- @type gitview.Range
+  -- Give no older end to tell a fork by, since the range starts at a commit as
+  -- it stands rather than at a parent, and so never spans a fork.
+  begin_review(s, range, ('%s...%s'):format(base, new or 'working tree'))
+end
+
 --- End the review, and list the uncommitted files again with the cursor where
 --- it was before. The checks go with it, once it is confirmed; see
 --- `may_discard`.
