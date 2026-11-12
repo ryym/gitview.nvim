@@ -2165,47 +2165,25 @@ local function may_discard(s)
   return vim.fn.confirm(question, '&Yes\n&No', 2) == 1
 end
 
---- Review what the commits pane compares, as `<CR>` would look into it: its
---- files take the place of the uncommitted ones in the files pane, which gets
---- the focus. A range being looked into is reviewed instead, and looking into
---- it ends, since the same files would be listed twice.
----
---- The working tree on its own is reviewed from the commit HEAD is on now, and
---- that commit is the one named from then on, so that what is committed while
---- the review goes on stays in it.
+--- Review a range: its files take the place of the uncommitted ones in the files
+--- pane, which gets the focus. The range's ends are to be fixed by sha already.
 ---
 --- The mark is cleared: the range is the review's now, and a range still
 --- painted in the commits pane would look like one still being chosen.
 --- @param s gitview.Session
---- @return boolean handled false when the cursor is on no commit, or the
----         working tree has no commit to be reviewed from
-function M.start_review(s)
-  local scope = s.scope
-  local range, label, first
-  if scope then
-    range, label, first = scope.range, scope.label, scope.first
-  else
-    local target = selected_end(s)
-    if not target then
-      return false
-    end
-    range, label = range_of(s, target)
-    first = first_of(s, target)
-    if not range then
-      local head = git.head(s.root)
-      if not head then
-        return false
-      end
-      range, label = { old = head.full_sha }, head.sha .. '..working tree'
-    end
-  end
+--- @param range gitview.Range
+--- @param label string
+--- @param first string? see `gitview.ListScope`
+--- @param leave_scope boolean? whether to stop looking into the range the
+---        commits pane shows, which is the one reviewed
+local function begin_review(s, range, label, first, leave_scope)
   if not may_discard(s) then
-    return true
+    return
   end
   local changes, err = git.changed_between(range, s.root, untracked_paths(s))
   if not changes then
     util.git_error({ what = 'git diff ' .. label, stderr = err or '' })
-    return true
+    return
   end
   -- Tell whether the range spans a fork once, here: the ends are fixed, and so
   -- is whether they are on one line.
@@ -2229,7 +2207,7 @@ function M.start_review(s)
     before = before,
   }
   s.mark = nil
-  local back = scope and close_scope(s, scope)
+  local back = leave_scope and close_scope(s, assert(s.scope))
   redraw_list(s, { kind = 'commit_file', index = 1, review = true })
   local row = back and list.row_of(s.commits_buf, target_of_id(s, back))
   if row then
@@ -2238,6 +2216,37 @@ function M.start_review(s)
   -- Focus the files pane only once drawn, so that entering it finds the
   -- review's files there rather than drawing the uncommitted ones on the way.
   vim.api.nvim_set_current_win(s.files_win)
+end
+
+--- Review what the commits pane compares, as `<CR>` would look into it. A range
+--- being looked into is reviewed instead, and looking into it ends, since the
+--- same files would be listed twice.
+---
+--- The working tree on its own is reviewed from the commit HEAD is on now, and
+--- that commit is the one named from then on, so that what is committed while
+--- the review goes on stays in it.
+--- @param s gitview.Session
+--- @return boolean handled false when the cursor is on no commit, or the
+---         working tree has no commit to be reviewed from
+function M.start_review(s)
+  local scope = s.scope
+  if scope then
+    begin_review(s, scope.range, scope.label, scope.first, true)
+    return true
+  end
+  local target = selected_end(s)
+  if not target then
+    return false
+  end
+  local range, label = range_of(s, target)
+  if not range then
+    local head = git.head(s.root)
+    if not head then
+      return false
+    end
+    range, label = { old = head.full_sha }, head.sha .. '..working tree'
+  end
+  begin_review(s, range, label, first_of(s, target))
   return true
 end
 
