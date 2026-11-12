@@ -6,14 +6,15 @@
 --- with one.
 ---
 --- Nothing heavy is required at the top, so that completing a subcommand loads
---- nothing more than this.
+--- nothing more than this. Completing a ref runs git, and loads only the module
+--- that runs it.
 local M = {}
 
 --- @class gitview.Subcommand
 --- @field run fun(args: string[]) the arguments, as many as it takes
 --- @field args? string[] what the one argument it takes may be, if it takes one
 ---        from a fixed set
---- @field refs? true takes `<base> [<new>]` instead
+--- @field refs? true takes `<base> [<new>]` instead, completed to ref names
 --- @field opens? true opens a session rather than needing one
 
 --- @type table<string, gitview.Subcommand>
@@ -101,6 +102,21 @@ function M.run(fargs)
   sub.run(args)
 end
 
+--- What a ref may be completed to: `HEAD`, then the branches and the tags of
+--- the repository the command would act on.
+--- @return string[]
+local function ref_candidates()
+  local git = require('gitview.git')
+  -- Look for the session only when its module is loaded already, which it is
+  -- whenever there is one, so that completing loads nothing for it.
+  local session = package.loaded['gitview.ui.session']
+  local s = session and session.current()
+  local root = s and s.root or git.current_root()
+  local names = root and git.ref_names(root) or {}
+  table.insert(names, 1, 'HEAD')
+  return names
+end
+
 --- What the argument being typed may be completed to.
 --- @param arglead string
 --- @param cmdline string
@@ -112,11 +128,15 @@ function M.complete(arglead, cmdline)
   if #before == 1 then
     candidates = vim.tbl_keys(SUBCOMMANDS)
     table.sort(candidates)
-  elseif #before == 2 then
-    local sub = SUBCOMMANDS[before[2]]
-    candidates = sub and sub.args or {}
   else
-    candidates = {}
+    local sub = SUBCOMMANDS[before[2]]
+    if sub and sub.refs and #before <= 3 then
+      candidates = ref_candidates()
+    elseif sub and sub.args and #before == 2 then
+      candidates = sub.args
+    else
+      candidates = {}
+    end
   end
   return vim.tbl_filter(function(c)
     return vim.startswith(c, arglead)

@@ -65,12 +65,11 @@ function M.filetype_of(path)
   return ft
 end
 
---- The repository of the current buffer, falling back to that of the cwd.
+--- The repository Gitview acts on, as `git.current_root` finds it, saying so
+--- when there is none.
 --- @return string? root
 function M.repo_root()
-  local cwd = vim.fn.getcwd()
-  local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
-  local root = git.root(buf_dir ~= '' and buf_dir or cwd) or git.root(cwd)
+  local root = git.current_root()
   if not root then
     util.warn('not inside a git repository')
   end
