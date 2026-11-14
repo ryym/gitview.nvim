@@ -22,6 +22,8 @@ end
 
 --- @class gitview.GitResult
 --- @field ok boolean
+--- @field code integer the exit status, for a command whose failure is not all
+---        a non-zero one says
 --- @field stdout string
 --- @field stderr string what to show the user when `ok` is false
 
@@ -61,6 +63,7 @@ function M.run(cmd, cwd, opts)
   span:finish()
   return {
     ok = out.code == 0,
+    code = out.code,
     stdout = out.stdout or '',
     stderr = vim.trim(out.stderr or ''),
   }
@@ -800,6 +803,90 @@ function M.ref_names(cwd)
     'refs/tags',
   }, cwd)
   return res.ok and vim.split(res.stdout, '\n', { trimempty = true }) or {}
+end
+
+--- What `M.can_remerge` found, once it has asked.
+--- @type boolean?
+M.remerge_supported = nil
+
+--- Whether this git can redo a merge with `M.remerge`: 2.39 or later, where
+--- `merge-tree --write-tree -z` says which kind of conflict each path had in a
+--- form meant to be read.
+---
+--- Asked once, and remembered for the life of the editor.
+--- @param cwd string
+--- @return boolean
+function M.can_remerge(cwd)
+  if M.remerge_supported == nil then
+    local out = M.run({ 'git', 'version' }, cwd).stdout
+    local major, minor = out:match('(%d+)%.(%d+)')
+    major, minor = tonumber(major), tonumber(minor)
+    M.remerge_supported = major ~= nil and (major > 2 or (major == 2 and minor >= 39))
+  end
+  return M.remerge_supported
+end
+
+--- @class gitview.Remerge a merge redone by git, as `M.remerge` gives it
+--- @field tree string what the merge comes to before anyone touches it, with
+---        conflict markers in the files that conflicted
+--- @field conflicts table<string, string> the kind of conflict each path had, by
+---        path, as git names it: `CONFLICT (modify/delete)` and the like
+
+--- Parse what `git merge-tree --write-tree -z --name-only` writes.
+---
+--- The tree comes first, then the paths that conflicted, then an empty field,
+--- then a record per message: how many paths it is about, the paths, the kind of
+--- message and the message. Only the kind is read of a message, which git keeps
+--- stable; the message itself is free-form.
+--- @param out string
+--- @return gitview.Remerge
+function M.parse_remerge(out)
+  local f = vim.split(out, '\0', { plain = true })
+  local conflicted = {}
+  local i = 2
+  while f[i] and f[i] ~= '' do
+    conflicted[f[i]] = true
+    i = i + 1
+  end
+  local conflicts = {}
+  i = i + 1
+  while f[i] and f[i] ~= '' do
+    local n = tonumber(f[i]) or 0
+    local kind = f[i + n + 1] or ''
+    for j = i + 1, i + n do
+      if conflicted[f[j]] and not conflicts[f[j]] and vim.startswith(kind, 'CONFLICT') then
+        conflicts[f[j]] = kind
+      end
+    end
+    i = i + n + 3
+  end
+  -- Every conflicted path has a message saying why; this is in case one is not.
+  for path in pairs(conflicted) do
+    conflicts[path] = conflicts[path] or 'CONFLICT'
+  end
+  return { tree = f[1], conflicts = conflicts }
+end
+
+--- Redo the merge of two commits in the object database, as `git merge` would
+--- before anyone resolves it. Neither the working tree nor the index is touched.
+---
+--- The tree and the blobs it writes are referenced by nothing, and go at the
+--- next `git gc` once old enough. One already written is not written again.
+--- @param p1 string the first parent
+--- @param p2 string the second
+--- @param cwd string
+--- @return gitview.Remerge? remerge
+--- @return gitview.GitError? err
+function M.remerge(p1, p2, cwd)
+  -- Unrelated histories are refused rather than allowed: in a shallow clone the
+  -- merge base may only be out of reach, and merging from an empty base would
+  -- then make every difference a conflict.
+  local res = M.run({ 'git', 'merge-tree', '--write-tree', '-z', '--name-only', p1, p2 }, cwd)
+  -- 1 is a merge with conflicts, which is as good an answer as a clean one.
+  if res.code ~= 0 and res.code ~= 1 then
+    return nil, { what = 'git merge-tree', stderr = res.stderr }
+  end
+  return M.parse_remerge(res.stdout)
 end
 
 --- The tree with nothing in it, for a range to start from when the commit it

@@ -614,3 +614,62 @@ test('a range to the working tree sees a file rewritten as the index was written
     end, changes))
   end)
 end)
+
+-- Captured from `git merge-tree --write-tree -z --name-only` on a merge where
+-- `d` was deleted on one side and changed on the other, and `f` changed on both.
+test('parses a merge redone with conflicts', function()
+  local out = table.concat({
+    'tree',
+    'd',
+    'f',
+    '',
+    '1',
+    'd',
+    'CONFLICT (modify/delete)',
+    'CONFLICT (modify/delete): d deleted in b and modified in a.\n',
+    '1',
+    'f',
+    'Auto-merging',
+    'Auto-merging f\n',
+    '1',
+    'f',
+    'CONFLICT (contents)',
+    'CONFLICT (content): Merge conflict in f\n',
+    '',
+  }, '\0')
+  eq({
+    tree = 'tree',
+    conflicts = { d = 'CONFLICT (modify/delete)', f = 'CONFLICT (contents)' },
+  }, git.parse_remerge(out))
+end)
+
+test('parses a merge redone cleanly', function()
+  eq({ tree = 'tree', conflicts = {} }, git.parse_remerge('tree\0'))
+end)
+
+test('redoes a merge without touching the working tree or the index', function()
+  helpers.with_repo(function(repo)
+    repo.write('f', { 'a', 'b', 'c' })
+    repo.commit('base')
+    repo.git('branch', '-M', 'main')
+    repo.git('checkout', '-q', '-b', 'side')
+    repo.write('f', { 'a', 'B-side', 'c' })
+    repo.commit('side')
+    repo.git('checkout', '-q', 'main')
+    repo.write('f', { 'a', 'B-main', 'c' })
+    repo.write('g', { 'g' })
+    repo.commit('main')
+    local status = repo.git('status', '--porcelain')
+
+    local r = assert(git.remerge('main', 'side', repo.root))
+    eq({ f = 'CONFLICT (contents)' }, r.conflicts)
+    local merged = repo.git('show', r.tree .. ':f')
+    assert(merged:find('<<<<<<<', 1, true), merged)
+    eq('g\n', repo.git('show', r.tree .. ':g'))
+    eq(status, repo.git('status', '--porcelain'))
+    eq({ 'a', 'B-main', 'c' }, vim.fn.readfile(repo.root .. '/f'))
+
+    local clean = assert(git.remerge('main', 'main~1', repo.root))
+    eq({}, clean.conflicts)
+  end)
+end)
