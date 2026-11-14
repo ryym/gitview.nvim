@@ -46,7 +46,8 @@ local M = {}
 --- @field outdated boolean? whether the session has changed the index since the
 ---        panes were drawn. Staging from them then would write back the state
 ---        they show, undoing the change, so it waits for the read to catch up
---- @field commits gitview.Commit[] the tail of the history, newest first
+--- @field commits gitview.Commit[] the commits of the list the commits pane
+---        shows, newest first; see `listing`
 --- @field upstream gitview.Upstream? what the branch tracks; nil when nothing
 --- @field unpushed table<string, true>? which of `commits` the upstream does not
 ---        have, by full sha; nil when there is no upstream
@@ -64,6 +65,11 @@ local M = {}
 ---        parent
 --- @field scope gitview.ListScope? the range being looked into, whose files
 ---        replace the commits pane while it is set
+--- @field listing 'log'|'review' which list the commits pane shows: the tail of
+---        the history, or the commits a review covers. `commits`, `mark`,
+---        `scope` and `commits_stale` are that list's
+--- @field away gitview.CommitList? the list not shown, kept while a review is on
+---        for the commits pane to switch back to
 --- @field review gitview.Review? the range being reviewed, whose files replace
 ---        the uncommitted ones in the files pane while it is set
 --- @field selected gitview.ListTarget? what the diff pane is showing
@@ -113,7 +119,8 @@ local M = {}
 --- @field closing boolean? whether a pane has been closed, which ends the
 ---        session; the panes left are no longer followed
 
---- A range under review: its files in the files pane, one by one.
+--- A range under review: its files in the files pane, one by one, and its
+--- commits in the commits pane.
 ---
 --- Both ends are fixed when it starts. A review of the working tree alone starts
 --- at the commit HEAD was then rather than at HEAD, so that what is committed
@@ -121,6 +128,18 @@ local M = {}
 --- @class gitview.Review: gitview.ListReview
 --- @field before gitview.SelectionId? what the files pane had the cursor on
 ---        before, to go back to at the end
+--- @field from string? the commit whose history the review's commits leave out;
+---        nil to list every commit the newer end has
+--- @field on_head boolean whether the review's commits are of HEAD's history
+
+--- The state of one of the commits pane's lists, put away while the other is
+--- shown. Switching back brings all of it back.
+--- @class gitview.CommitList
+--- @field commits gitview.Commit[]
+--- @field stale boolean?
+--- @field mark string?
+--- @field scope gitview.ListScope?
+--- @field at gitview.SelectionId? the row the cursor was on
 
 --- @type table<integer, gitview.Session>
 M.sessions = {}
@@ -175,7 +194,25 @@ end
 --- @field anchor gitview.Anchor
 --- @field find fun(view: gitview.View, a: gitview.Anchor): integer?
 
---- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir', id:string, review:true?}
+--- What a row names, in terms that survive a redraw. `review` marks a file of
+--- the review in the files pane, and `in_review_list` a row of the review's list
+--- in the commits pane, so that the same thing in two lists is told apart.
+--- @alias gitview.SelectionId {kind:'file'|'commit'|'worktree'|'commit_file'|'dir'|'commit_dir', id:string, review:true?, in_review_list:true?}
+
+--- Whether a row is in the commits pane rather than the files pane.
+--- @param t gitview.ListTarget|gitview.SelectionId
+--- @return boolean
+local function in_commits_pane(t)
+  return not t.review and t.kind ~= 'file' and t.kind ~= 'dir'
+end
+
+--- Whether a row was named in the commits pane's list that is not shown now.
+--- @param s gitview.Session
+--- @param id gitview.SelectionId
+--- @return boolean
+local function in_list_away(s, id)
+  return in_commits_pane(id) and (id.in_review_list or false) ~= (s.listing == 'review')
+end
 
 --- The range a file or directory of a range belongs to: the one under review
 --- or the one looked into, which may be the same range in two lists.
@@ -222,7 +259,11 @@ local function id_of(s, t)
     local c = scope and scope.changes[t.index]
     named = c and c.path
   end
-  return named and { kind = t.kind, id = named, review = t.review } or nil
+  if not named then
+    return nil
+  end
+  local listed = in_commits_pane(t) and s.listing == 'review' or nil
+  return { kind = t.kind, id = named, review = t.review, in_review_list = listed }
 end
 
 --- @param s gitview.Session
@@ -292,8 +333,7 @@ local NO_CHANGE = '(no change)'
 --- @return integer win
 --- @return integer buf
 local function pane_of(s, target)
-  local kind = target.kind
-  if kind == 'file' or kind == 'dir' or target.review then
+  if not in_commits_pane(target) then
     return s.files_win, s.files_buf
   end
   return s.commits_win, s.commits_buf
@@ -320,7 +360,7 @@ local function position_key(s, id)
     local scope = scope_of(s, id)
     within = scope and (scope.range.old or '') .. '..' .. (scope.range.new or '') or ''
   end
-  return table.concat({ id.kind, id.id, within, id.review and 'review' or '' }, '\0')
+  return table.concat({ id.kind, id.id, within, id.review and 'review' or '', id.in_review_list and 'list' or '' }, '\0')
 end
 
 --- Keep where the diff pane is on what it has drawn, for when that is shown
@@ -538,7 +578,11 @@ local function place_next(s, find, row)
   end
 end
 
---- The commit list, or nothing when there is no HEAD to read one from.
+--- The commits of the list the commits pane shows, or nothing when there is no
+--- HEAD to read one from.
+---
+--- The review's list ends at HEAD as it is now when the review ends at the
+--- working tree, so that what is committed during the review is in it.
 ---
 --- `git log` fails outright in a repository with no commit rather than printing
 --- an empty log, so the question has to be asked before the command is run.
@@ -548,7 +592,12 @@ local function read_commits(s)
   if not s.has_head then
     return {}
   end
-  local commits, err = git.log(config.values.commit_count, s.root)
+  local span
+  if s.listing == 'review' then
+    local r = assert(s.review)
+    span = { from = r.from, to = r.scope.range.new }
+  end
+  local commits, err = git.log(config.values.commit_count, s.root, span)
   if not commits then
     util.git_error({ what = 'git log', stderr = err or '' })
     return {}
@@ -641,6 +690,15 @@ local function watch_upstream(s)
   s.watched_ref = ref
 end
 
+--- Paint which commits the upstream has, unless the list shown is of a review
+--- off HEAD's history: what is unpushed is known of HEAD's commits alone, and
+--- any other would be painted as pushed.
+--- @param s gitview.Session
+local function paint_upstream(s)
+  local off_head = s.listing == 'review' and not assert(s.review).on_head
+  list.paint_upstream(s.commits_buf, not off_head and s.upstream or nil, s.unpushed)
+end
+
 --- Read what the branch tracks again, and follow it with the watchers.
 --- @param s gitview.Session
 local function reread_upstream(s)
@@ -657,7 +715,7 @@ function on_upstream_poll(s)
     return
   end
   reread_upstream(s)
-  list.paint_upstream(s.commits_buf, s.upstream, s.unpushed)
+  paint_upstream(s)
 end
 
 --- Read the upstream again whenever the config is written, which is where what
@@ -723,10 +781,14 @@ end
 --- own row does not, but the row is still an end a range can be marked at, and
 --- such a range follows whatever is edited afterwards. Not before the status is
 --- in, though, since until then the row could not say what it stands for, nor
---- without a commit for it to be compared with.
+--- without a commit for it to be compared with. Nor in the list of a review
+--- that ends at a commit, which the working tree is no part of.
 --- @param s gitview.Session
 --- @return boolean
 local function has_worktree_row(s)
+  if s.listing == 'review' and assert(s.review).scope.range.new then
+    return false
+  end
   return s.has_head and not s.files_notice
 end
 
@@ -862,6 +924,17 @@ local function range_note(s, range, target, read)
   end
   if read.diverged[older.sha] then
     return 'diverged'
+  end
+  -- Say so of a merge in a range of the review's list, since the diff then holds
+  -- what it brought in from commits the list may leave out, those of the base.
+  if s.listing == 'review' then
+    local here = target.kind == 'worktree' and 0 or target.index
+    local at = assert(place_of(s, s.mark))
+    for i = math.max(1, math.min(here, at)), math.max(here, at) do
+      if #s.commits[i].parents > 1 then
+        return 'merge in range'
+      end
+    end
   end
   return nil
 end
@@ -1641,6 +1714,9 @@ local function target_of_id(s, id)
   if not id then
     return nil
   end
+  if in_list_away(s, id) then
+    return nil
+  end
   if id.kind == 'worktree' then
     return has_worktree_row(s) and { kind = 'worktree', index = 1 } or nil
   end
@@ -1726,10 +1802,11 @@ local function redraw_list(s, target, keep_unchanged)
     commits = s.commits,
     worktree = has_worktree_row(s),
     scope = s.scope,
+    listing = s.review and s.listing or nil,
     stale = s.commits_stale,
     tree = as_tree,
   })
-  list.paint_upstream(s.commits_buf, s.upstream, s.unpushed)
+  paint_upstream(s)
   clamp_cursor(s.files_win)
   clamp_cursor(s.commits_win)
 
@@ -1875,7 +1952,7 @@ local function read_status(s, report, keep_unchanged)
     s.files_notice = nil
     s.outdated = nil
     -- While a range is being looked into, the commits pane shows its files and
-    -- the log behind them is off screen, so re-reading it would buy nothing.
+    -- the list behind them is off screen, so re-reading it would buy nothing.
     -- Backing out is what reads it again.
     if not s.scope then
       read_log(s, id)
@@ -2126,8 +2203,9 @@ end
 local function close_scope(s, scope)
   s.scope = nil
   local kind = scope.at == list.WORKTREE and 'worktree' or 'commit'
-  local id = { kind = kind, id = assert(scope.at) } --- @type gitview.SelectionId
-  -- The log went unread while the range's files stood in front of it, and it may
+  local listed = s.listing == 'review' or nil
+  local id = { kind = kind, id = assert(scope.at), in_review_list = listed } --- @type gitview.SelectionId
+  -- The list went unread while the range's files stood in front of it, and it may
   -- have moved on since. Reading it here is also what decides whether the commit
   -- being backed out onto is still in it.
   read_log(s, id)
@@ -2145,6 +2223,43 @@ function M.leave(s)
   end
   redraw_list(s, target_of_id(s, close_scope(s, scope)))
   return true
+end
+
+--- What the commits pane's cursor is on.
+--- @param s gitview.Session
+--- @return gitview.SelectionId?
+local function commits_cursor_id(s)
+  return id_of(s, list.target_at(s.commits_buf, vim.api.nvim_win_get_cursor(s.commits_win)[1]))
+end
+
+--- The state of the list the commits pane shows, to put away while the other
+--- one is shown.
+--- @param s gitview.Session
+--- @param at gitview.SelectionId? the row the cursor is on
+--- @return gitview.CommitList
+local function put_away(s, at)
+  return { commits = s.commits, stale = s.commits_stale, mark = s.mark, scope = s.scope, at = at }
+end
+
+--- Make a list put away the one the commits pane shows, read again as `refresh`
+--- would: it went unread while away.
+--- @param s gitview.Session
+--- @param l gitview.CommitList
+--- @return gitview.ListTarget? target the row its cursor was on, if still there
+local function restore_list(s, l)
+  s.commits, s.commits_stale, s.mark, s.scope = l.commits, l.stale, l.mark, l.scope
+  if s.scope then
+    reread_scope(s, s.scope)
+  else
+    read_log(s, l.at)
+  end
+  return target_of_id(s, l.at)
+end
+
+--- Empty the list the commits pane shows, for a new one to be read into.
+--- @param s gitview.Session
+local function clear_list(s)
+  s.commits, s.commits_stale, s.mark, s.scope = {}, nil, nil, nil
 end
 
 --- Whether to go on with what throws the review's checks away, asking first
@@ -2200,19 +2315,32 @@ local function begin_review(s, range, label, first, leave_scope)
     local row = vim.api.nvim_win_get_cursor(s.files_win)[1]
     before = id_of(s, list.target_at(s.files_buf, row))
   end
+  -- Put the log away to come back to at the end. Starting over another review
+  -- leaves it where it is: away, or shown when this one starts from it.
+  if s.listing == 'log' then
+    s.mark = nil
+    local at = leave_scope and close_scope(s, assert(s.scope)) or commits_cursor_id(s)
+    s.away = put_away(s, at)
+  end
+  -- List every commit for a range from the empty tree, which starts at a root
+  -- commit and so leaves no history out.
+  local from = range.old
+  if from == s.empty_tree then
+    from = nil
+  end
   s.review = {
     scope = { range = range, label = label, first = first, changes = changes },
     note = note,
     checks = {},
     before = before,
+    from = from,
+    on_head = not range.new or git.is_ancestor(range.new, 'HEAD', s.root),
   }
-  s.mark = nil
-  local back = leave_scope and close_scope(s, assert(s.scope))
+  s.listing = 'review'
+  clear_list(s)
+  read_log(s, nil)
   redraw_list(s, { kind = 'commit_file', index = 1, review = true })
-  local row = back and list.row_of(s.commits_buf, target_of_id(s, back))
-  if row then
-    vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
-  end
+  vim.api.nvim_win_set_cursor(s.commits_win, { 1, 0 })
   -- Focus the files pane only once drawn, so that entering it finds the
   -- review's files there rather than drawing the uncommitted ones on the way.
   vim.api.nvim_set_current_win(s.files_win)
@@ -2229,6 +2357,12 @@ end
 --- @return boolean handled false when the cursor is on no commit, or the
 ---         working tree has no commit to be reviewed from
 function M.start_review(s)
+  -- Refuse in the review's list, where a review started would look like one
+  -- nested in this one, with `<BS>` going back to it, which it is not.
+  if s.listing == 'review' then
+    util.info('a review is started from the log; switch to it with gl')
+    return true
+  end
   local scope = s.scope
   if scope then
     begin_review(s, scope.range, scope.label, scope.first, true)
@@ -2308,13 +2442,39 @@ function M.end_review(s)
   if not may_discard(s) then
     return true
   end
-  s.review = nil
+  -- The log is shown again as it was left, whichever list is shown now.
+  local log = s.listing == 'log' and put_away(s, commits_cursor_id(s)) or assert(s.away)
+  s.review, s.away, s.listing = nil, nil, 'log'
+  local back = restore_list(s, log)
   local target = target_of_id(s, r.before)
   if not target and #s.entries > 0 then
     target = { kind = 'file', index = 1 }
   end
   redraw_list(s, target)
+  local row = back and list.row_of(s.commits_buf, back)
+  if row then
+    vim.api.nvim_win_set_cursor(s.commits_win, { row, 0 })
+  end
   return true
+end
+
+--- Switch the commits pane between the review's list and the log, each as it
+--- was left: its cursor, its mark and what it looks into. The diff pane shows
+--- what the list switched to has selected.
+--- @param s gitview.Session
+function M.switch_list(s)
+  if not s.review then
+    util.info('the log is the only list outside a review')
+    return
+  end
+  local there = assert(s.away)
+  s.away = put_away(s, commits_cursor_id(s))
+  s.listing = s.listing == 'log' and 'review' or 'log'
+  local target = restore_list(s, there)
+  if not target then
+    target = has_worktree_row(s) and { kind = 'worktree', index = 1 } or { kind = 'commit', index = 1 }
+  end
+  redraw_list(s, target)
 end
 
 --- Where the commit being looked into sits in the list, or nothing when the
@@ -2416,7 +2576,8 @@ end
 --- that doing it again comes back.
 ---
 --- The list's cursor is put on it, which is what the diff follows, and the focus
---- stays where it is. It is refused when no row names it as it was: a file
+--- stays where it is. The commits pane is switched to the list it was in, if
+--- that is the one put away. It is refused when no row names it as it was: a file
 --- committed since, or one of a commit no longer looked into, which would
 --- otherwise have to be looked into again behind the user's back.
 --- @param s gitview.Session
@@ -2427,10 +2588,18 @@ function M.show_last_focused(s)
     util.info('no other diff has been focused')
     return
   end
+  local switched = s.review ~= nil and in_list_away(s, before.id)
+  if switched then
+    M.switch_list(s)
+  end
   local target = target_of_id(s, before.id)
   local win, buf = pane_of(s, before.id)
   local row = target and position_key(s, before.id) == before.key and list.row_of(buf, target)
   if not row then
+    -- Leave the commits pane on the list it was on, as a refusal should.
+    if switched then
+      M.switch_list(s)
+    end
     util.info('the diff focused before is no longer listed')
     return
   end
@@ -3305,6 +3474,7 @@ function M.open()
     range_order = {},
     positions = {},
     focused = {},
+    listing = 'log',
     ignore_whitespace = config.values.ignore_whitespace,
     layer = config.values.shown_changes,
     has_head = git.has_head(root),
