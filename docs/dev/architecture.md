@@ -161,7 +161,8 @@ Each of these is guarded by a test. Breaking one is a regression even if everyth
 - Unstaging a rename leaves the index equal to HEAD.
 - An unmerged path is never written to the index.
 - A separator outside an open conflict is not a marker, and a conflict's markers get no syntax.
-- A merge is compared with its first parent only when shown alone.
+- A merge shown alone is compared with its automatic merge in a review's list, and otherwise with its
+  first parent, saying so.
 - A range across a fork is compared, and said to be across one.
 - A commit's view reads neither side from the working tree.
 - Nothing is staged while a commit or one of its files is selected.

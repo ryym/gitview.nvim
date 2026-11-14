@@ -238,10 +238,12 @@ function M.dispose(view)
 end
 
 --- The files a view leaves out, a line each, and why: the binary files, the
---- unmerged ones with no conflict to show, and those with no textual
---- difference. Dropping any silently would hide a real change: a pure rename or
---- a mode change produces no hunks, a binary file has no versions that can be
---- diffed, and an unmerged file is unresolved whatever its contents.
+--- unmerged ones with no conflict to show, a merge's conflicts left as git left
+--- them, and those with no textual difference. Dropping any silently would hide
+--- a real change: a pure rename or a mode change produces no hunks, a binary
+--- file has no versions that can be diffed, an unmerged file is unresolved
+--- whatever its contents, and a conflict settled by keeping one side drops the
+--- other.
 ---
 --- The reasons line up in one column after the names, as the stat's bars do.
 --- @param skipped gitview.Skipped
@@ -257,6 +259,11 @@ local function skipped_lines(skipped, left_out, unchanged_reason)
     end
   end
   add(skipped.binary, '(binary file)')
+  for _, c in ipairs(skipped.conflicts or {}) do
+    -- `CONFLICT (modify/delete)` reads as "modify/delete conflict".
+    local kind = c.kind:match('^CONFLICT %((.*)%)$')
+    add({ c.path }, ('(%s, resolved as git left it)'):format(kind and kind .. ' conflict' or c.kind))
+  end
   add(left_out.unmarked, '(unresolved conflict with no markers)')
   add(left_out.unchanged, unchanged_reason)
 

@@ -78,6 +78,9 @@ end
 
 --- @class gitview.Skipped paths left out of a view, by why they were
 --- @field binary string[]
+--- @field conflicts? {path:string, kind:string}[] paths of a merge that
+---        conflicted and were left as git left them, so that they have no diff
+---        to show; `kind` as `gitview.Remerge` names it
 
 --- A `Skipped` with every group empty: what the error paths report, and what
 --- `partition_showable` starts from.

@@ -107,8 +107,13 @@ local M = {}
 --- @field index_lines string[]? the selected file's index contents, for staging
 ---        part of it; nil whenever the pane shows a notice instead of a diff
 --- @field details table<string, gitview.CommitDetail> commits' messages and
----        stats by sha: a commit never changes, but its stat is read again
----        when the diff pane is no longer the width it was laid out for
+---        stats by `range_key` of what each is compared in: a commit never
+---        changes, but its stat is read again when the diff pane is no longer
+---        the width it was laid out for
+--- @field auto_merges table<string, gitview.Remerge|false|'failed'> what git
+---        merges the parents of a review's merges to on its own, by the merge's
+---        sha; false for a merge git cannot merge so, and 'failed' when it
+---        failed to. See `read_auto_merge`
 --- @field range_reads table<string, gitview.RangeRead> what the ranges between
 ---        two commits were last read as, by `range_key`, for `read_range`
 --- @field range_order string[] the keys of `range_reads`, least recently used
@@ -843,6 +848,68 @@ local function ends_of(s, target)
   return s.commits[math.max(here, at)], s.commits[math.min(here, at)]
 end
 
+--- Read what git merges a merge's parents to on its own, before anyone resolves
+--- a conflict, once per merge: see `whole_range`.
+--- @param s gitview.Session
+--- @param commit gitview.Commit a merge
+local function read_auto_merge(s, commit)
+  if s.auto_merges[commit.sha] ~= nil then
+    return
+  end
+  -- `merge-tree` takes two sides, so a merge of more cannot be merged so.
+  if #commit.parents > 2 or not git.can_remerge(s.root) then
+    s.auto_merges[commit.sha] = false
+    return
+  end
+  local r, err = git.remerge(commit.parents[1], commit.parents[2], s.root)
+  if not r then
+    util.git_error(assert(err))
+  end
+  s.auto_merges[commit.sha] = r or 'failed'
+end
+
+--- What a commit on its own is compared with, and what to say of it.
+---
+--- A commit is compared with its parent, and a merge in the log with its first
+--- parent, as `git show` does: nothing there says which side it is to be read
+--- against. In the review's list a merge is compared with its automatic merge,
+--- what git merges its parents to before anyone resolves a conflict, so that
+--- what merged cleanly is left out and what was done by hand is shown. One git
+--- cannot merge so is compared with its first parent, and says so as in the
+--- log.
+---
+--- The automatic merge is read with git, which only a caller that may wait on
+--- git asks for. Without it a merge whose automatic merge is not read yet has
+--- no range to give.
+--- @param s gitview.Session
+--- @param commit gitview.Commit
+--- @param may_read boolean? whether git may be run
+--- @return gitview.Range? range
+--- @return string? note
+local function whole_range(s, commit, may_read)
+  local first = git.commit_range(commit)
+  if #commit.parents < 2 then
+    return first
+  end
+  if s.listing ~= 'review' then
+    return first, 'first parent'
+  end
+  if may_read then
+    read_auto_merge(s, commit)
+  end
+  local r = s.auto_merges[commit.sha]
+  if r == nil then
+    return nil
+  end
+  if not r then
+    return first, 'first parent'
+  end
+  if r == 'failed' then
+    return first, 'first parent (remerge failed)'
+  end
+  return { old = r.tree, new = commit.sha }
+end
+
 --- What the commits pane compares, given the row under the cursor.
 ---
 --- With no mark set that is the commit against its own first parent, or
@@ -854,17 +921,19 @@ end
 ---
 --- @param s gitview.Session
 --- @param target gitview.ListTarget a commit or the working tree
+--- @param may_read boolean? whether git may be run; see `whole_range`
 --- @return gitview.Range? range nil for the working tree on its own, which is
----         not a range but the uncommitted changes as the files pane has them
+---         not a range but the uncommitted changes as the files pane has them,
+---         and, unless `may_read`, for a merge `whole_range` has none for yet
 --- @return string label
-local function range_of(s, target)
+local function range_of(s, target, may_read)
   local older, newer = ends_of(s, target)
   if not older then
     if target.kind == 'worktree' then
       return nil, rev_of(s)
     end
     local commit = s.commits[target.index]
-    return git.commit_range(commit), ('%s %s'):format(commit.sha, commit.subject)
+    return (whole_range(s, commit, may_read)), ('%s %s'):format(commit.sha, commit.subject)
   end
   local old = older.parents[1]
   if not old then
@@ -910,10 +979,7 @@ local function range_note(s, range, target, read)
   local older = ends_of(s, target)
   if not older then
     local commit = target.kind == 'commit' and s.commits[target.index] or nil
-    if commit and #commit.parents > 1 then
-      return 'first parent'
-    end
-    return nil
+    return commit and select(2, whole_range(s, commit)) or nil
   end
   -- The range starts at the older end's parent, so it holds the older end
   -- itself only when that is an ancestor of the newer one. Asked of the end
@@ -962,6 +1028,33 @@ local function range_key(range)
   return nil
 end
 
+--- What a view leaves out, with the conflicts of `remerge` that the files read
+--- show nothing of.
+--- @param s gitview.Session
+--- @param sources gitview.Source[]
+--- @param skipped gitview.Skipped
+--- @param remerge gitview.Remerge
+--- @return gitview.Skipped
+local function with_conflicts_left(s, sources, skipped, remerge)
+  local read = {}
+  for _, src in ipairs(sources) do
+    read[vim.fs.relpath(s.root, src.path) or src.path] = true
+  end
+  for _, path in ipairs(skipped.binary) do
+    read[path] = true
+  end
+  local conflicts = {}
+  for path, kind in pairs(remerge.conflicts) do
+    if not read[path] then
+      conflicts[#conflicts + 1] = { path = path, kind = kind }
+    end
+  end
+  table.sort(conflicts, function(a, b)
+    return a.path < b.path
+  end)
+  return { binary = skipped.binary, conflicts = conflicts }
+end
+
 --- The contents of a range, read from git the first time and kept after that:
 --- two commits never change, so neither does what lies between them.
 --- @param s gitview.Session
@@ -987,6 +1080,14 @@ local function read_range(s, range)
     perf.measure('source', source.for_range, range, s.root, untracked_paths(s))
   if not sources then
     return nil, err
+  end
+  -- A merge compared with its automatic merge lists the conflicts it left as git
+  -- left them. They have no diff, and listing them is what shows a side was
+  -- dropped: a file deleted on one side and kept by a modify/delete conflict
+  -- reads as nothing having happened to it.
+  local r = range.new and s.auto_merges[range.new]
+  if type(r) == 'table' and r.tree == range.old then
+    skipped = with_conflicts_left(s, sources, skipped, r)
   end
   local read = { sources = sources, skipped = skipped, diverged = {} } --- @type gitview.RangeRead
   if key then
@@ -1014,28 +1115,29 @@ end
 --- Only the next draw notices a resize: a header already shown keeps the
 --- width it was read for until its commit is drawn again.
 --- @param s gitview.Session
---- @param commit gitview.Commit
+--- @param range gitview.Range what the commit is compared in
 --- @return gitview.CommitDetail?
-local function kept_detail(s, commit)
-  local detail = s.details[commit.sha]
+local function kept_detail(s, range)
+  local detail = s.details[assert(range_key(range))]
   return detail and detail.stat_width == stat_width(s) and detail or nil
 end
 
 --- The message and stat of a commit, read on first use.
 --- @param s gitview.Session
 --- @param commit gitview.Commit
+--- @param range gitview.Range what it is compared in, which the stat is of
 --- @return gitview.CommitDetail?
-local function commit_detail(s, commit)
-  if not kept_detail(s, commit) then
-    local detail, err = git.commit_detail(commit, s.root, stat_width(s))
+local function commit_detail(s, commit, range)
+  if not kept_detail(s, range) then
+    local detail, err = git.commit_detail(commit, range, s.root, stat_width(s))
     if not detail then
       -- the diff under it is still worth showing
       util.git_error(assert(err))
       return nil
     end
-    s.details[commit.sha] = detail
+    s.details[assert(range_key(range))] = detail
   end
-  return s.details[commit.sha]
+  return s.details[assert(range_key(range))]
 end
 
 --- The files in a directory, with their indices, in list order.
@@ -1090,13 +1192,14 @@ local function read_entries(s, entries)
   end
 end
 
---- Whether the commits pane shows this commit on its own, against its first
---- parent, rather than as one end of a range.
+--- Whether the commits pane shows this commit on its own, rather than as one
+--- end of a range.
+--- @param s gitview.Session
 --- @param commit gitview.Commit?
 --- @param range gitview.Range?
 --- @return boolean
-local function is_whole_commit(commit, range)
-  return commit ~= nil and range ~= nil and vim.deep_equal(range, git.commit_range(commit))
+local function is_whole_commit(s, commit, range)
+  return commit ~= nil and range ~= nil and vim.deep_equal(range, (whole_range(s, commit)))
 end
 
 --- Read what the commits pane's cursor compares: one commit against its first
@@ -1115,7 +1218,7 @@ local function read_commit(s, target)
       render.notice(s.diff_buf, list.EMPTY_NOTICE)
     end
   end
-  local range, label = range_of(s, target)
+  local range, label = range_of(s, target, true)
   if not range then
     return read_entries(s, s.entries)
   end
@@ -1128,8 +1231,8 @@ local function read_commit(s, target)
   end
   local note = range_note(s, range, target, read)
   -- A range between two ends has no one message to show.
-  local detail = is_whole_commit(commit, range)
-    and perf.measure('detail', commit_detail, s, assert(commit))
+  local detail = is_whole_commit(s, commit, range)
+    and perf.measure('detail', commit_detail, s, assert(commit), range)
 
   return function()
     local view, left_out =
@@ -1173,7 +1276,12 @@ local function range_read_in(read, root, dir)
   local function under(path)
     return path:sub(1, #rel) == rel
   end
-  local skipped = { binary = vim.tbl_filter(under, read.skipped.binary) }
+  local skipped = {
+    binary = vim.tbl_filter(under, read.skipped.binary),
+    conflicts = vim.tbl_filter(function(c)
+      return under(c.path)
+    end, read.skipped.conflicts or {}),
+  }
   return sources, skipped
 end
 
@@ -1265,8 +1373,8 @@ local function is_kept(s, target)
   if not read then
     return false
   end
-  if is_whole_commit(commit, range) then
-    return kept_detail(s, commit) ~= nil
+  if is_whole_commit(s, commit, range) then
+    return kept_detail(s, range) ~= nil
   end
   local older = ends_of(s, target)
   return older == nil or read.diverged[older.sha] ~= nil
@@ -1289,8 +1397,10 @@ local function draw_loading(s, target)
   local commit = target.kind == 'commit' and s.commits[target.index] or nil
   local range, label = range_of(s, target)
   local header
-  if commit and is_whole_commit(commit, range) then
-    local detail = s.details[commit.sha]
+  -- Told by the ends rather than by the range, which a merge whose automatic
+  -- merge is not read yet has none of.
+  if commit and not ends_of(s, target) then
+    local detail = range and s.details[assert(range_key(range))]
     header = detail and vlib.commit_header(detail, commit) or vlib.commit_summary(commit)
   end
   render.draw(s.diff_buf, vlib.placeholder(label, LOADING, header))
@@ -2182,7 +2292,7 @@ function M.enter(s)
   if not target then
     return false
   end
-  local range, label = range_of(s, target)
+  local range, label = range_of(s, target, true)
   if not range then
     if s.review then
       util.info('the uncommitted files are not listed during a review')
@@ -2487,7 +2597,7 @@ end
 --- @return integer?
 local function scope_place(s, scope)
   local commit, at = commit_by_sha(s, scope.at)
-  if commit and scope.range.new == commit.sha and scope.range.old == commit.parents[1] then
+  if is_whole_commit(s, commit, scope.range) then
     return at
   end
   return nil
@@ -2541,7 +2651,7 @@ function M.step_commit(s, dir)
   if scope then
     local commit = s.commits[to]
     local label = ('%s %s'):format(commit.sha, commit.subject)
-    look_into(s, git.commit_range(commit), label, commit.sha, commit.sha)
+    look_into(s, assert((whole_range(s, commit, true))), label, commit.sha, commit.sha)
     return
   end
   local target = to == 0 and { kind = 'worktree', index = 1 } or { kind = 'commit', index = to }
@@ -3470,6 +3580,7 @@ function M.open()
     commits = {},
     generation = 0,
     details = {},
+    auto_merges = {},
     range_reads = {},
     range_order = {},
     positions = {},

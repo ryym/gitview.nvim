@@ -556,14 +556,12 @@ end
 --- @field new string? nil for the working tree. The two are never both nil: a
 ---        range ending at the working tree starts at a commit
 
---- The range one commit stands for: its first parent to itself.
+--- The range of one commit against its first parent.
 ---
---- A merge is compared with its first parent only, which is what `git show`
---- does. `git diff-tree -m` would instead concatenate one diff per parent, and
---- `--no-commit-id` removes the headers that would tell the blocks apart;
---- `--first-parent` is a rev-list option that `diff-tree` rejects. Naming the
---- parent explicitly avoids the question, and keeps the decision here rather
---- than in everything that reads a range.
+--- For a merge that is what `git show` does. `git diff-tree -m` would instead
+--- concatenate one diff per parent, and `--no-commit-id` removes the headers
+--- that would tell the blocks apart; `--first-parent` is a rev-list option that
+--- `diff-tree` rejects. Naming the parent explicitly avoids the question.
 ---
 --- @param commit gitview.Commit
 --- @return gitview.Range
@@ -702,11 +700,12 @@ end
 --- without a terminal to measure it takes the width to be 80 columns.
 ---
 --- @param commit gitview.Commit
+--- @param range gitview.Range what the commit is compared in, for its stat
 --- @param cwd string
 --- @param width integer columns the stat may take
 --- @return gitview.CommitDetail? detail
 --- @return gitview.GitError? err
-function M.commit_detail(commit, cwd, width)
+function M.commit_detail(commit, range, cwd, width)
   -- `log.showSignature` would put the signature check in front of the format.
   local log = M.run({
     'git',
@@ -721,7 +720,6 @@ function M.commit_detail(commit, cwd, width)
   end
   local f = vim.split(log.stdout, '\31', { plain = true })
 
-  local range = M.commit_range(commit)
   local cmd = range_command(range)
   -- `color.ui = always` colors output that is not going to a terminal as well.
   -- The graph would otherwise take up to 40 columns, which is a lot of `+` to

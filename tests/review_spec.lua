@@ -714,6 +714,188 @@ test('review: its commits off HEAD are not painted as pushed', function()
   end)
 end)
 
+--- A feature branch that merged main with a conflict in each of two files:
+---
+---   f: changed on both sides, resolved by hand to `B-resolved`
+---   d: deleted on main and changed on feature, kept as feature had it
+---   g: added on main, merged cleanly
+---
+--- The merge is at HEAD, after `on feature` and main's tip.
+local function conflicted_history(repo)
+  repo.write('f', { 'a', 'b', 'c' })
+  repo.write('d', { 'x' })
+  repo.commit('first')
+  repo.git('branch', '-M', 'main')
+  repo.git('checkout', '-q', '-b', 'feature')
+  repo.write('f', { 'a', 'B-feature', 'c' })
+  repo.write('d', { 'y' })
+  repo.commit('on feature')
+  repo.git('checkout', '-q', 'main')
+  repo.write('f', { 'a', 'B-main', 'c' })
+  vim.fn.delete(repo.root .. '/d')
+  repo.write('g', { 'g' })
+  repo.commit('on main')
+  repo.git('checkout', '-q', 'feature')
+  -- Fails on the conflicts, which is the point.
+  vim.system({ 'git', 'merge', '-q', 'main' }, { cwd = repo.root }):wait()
+  repo.write('f', { 'a', 'B-resolved', 'c' })
+  repo.git('add', '-A')
+  repo.git('commit', '-q', '--no-edit')
+end
+
+--- The diff pane's rows once what is selected has been read and drawn.
+--- @param s gitview.Session
+--- @return string
+local function drawn_text(s)
+  vim.wait(5000, function()
+    return not s.loading and not s.pending
+  end)
+  return table.concat(diff_rows(s), '\n')
+end
+
+test('review: a merge in its list shows what was done by hand', function()
+  with_session(conflicted_history, function(s)
+    session.review_refs('main')
+    settle(s)
+    goto_commit(s, index_of(s, "Merge branch 'main' into feature"))
+    local text = drawn_text(s)
+    -- the resolution, from the markers git would have left
+    assert(text:find('B-resolved', 1, true), text)
+    assert(text:find('<<<<<<<', 1, true), text)
+    -- not what merged cleanly, which the log's view of it has
+    assert(not vim.list_contains(diff_rows(s), 'g'), text)
+    -- the conflict settled by keeping one side
+    assert(text:find('d   (modify/delete conflict, resolved as git left it)', 1, true), text)
+    assert(not winbar(s, s.diff_win):find('first parent', 1, true), winbar(s, s.diff_win))
+  end)
+end)
+
+test('review: a merge in the log is still compared with its first parent', function()
+  with_session(conflicted_history, function(s)
+    session.review_refs('main')
+    settle(s)
+    press(s, 'gl', s.commits_win)
+    goto_commit(s, index_of(s, "Merge branch 'main' into feature"))
+    local text = drawn_text(s)
+    assert(not text:find('<<<<<<<', 1, true), text)
+    assert(vim.list_contains(diff_rows(s), 'g'), text)
+    assert(winbar(s, s.diff_win):find('first parent', 1, true), winbar(s, s.diff_win))
+  end)
+end)
+
+test('review: a merge looked into in its list lists what was done by hand', function()
+  with_session(conflicted_history, function(s)
+    session.review_refs('main')
+    settle(s)
+    goto_commit(s, index_of(s, "Merge branch 'main' into feature"))
+    press(s, '<CR>', s.commits_win)
+    eq({ 'f' }, commit_rows(s))
+  end)
+end)
+
+test('review: a merge git cannot merge automatically falls back to its first parent', function()
+  with_session(conflicted_history, function(s)
+    local git = require('gitview.git')
+    local supported = git.remerge_supported
+    git.remerge_supported = false
+    local ok, err = pcall(function()
+      session.review_refs('main')
+      settle(s)
+      goto_commit(s, index_of(s, "Merge branch 'main' into feature"))
+      drawn_text(s)
+      assert(vim.list_contains(diff_rows(s), 'g'), vim.inspect(diff_rows(s)))
+      assert(winbar(s, s.diff_win):find('first parent$'), winbar(s, s.diff_win))
+    end)
+    git.remerge_supported = supported
+    assert(ok, err)
+  end)
+end)
+
+test('review: an octopus merge in its list falls back to its first parent', function()
+  with_session(function(repo)
+    repo.write('base.txt', { 'base' })
+    repo.commit('first')
+    repo.git('branch', '-M', 'main')
+    for _, name in ipairs({ 'one', 'two' }) do
+      repo.git('checkout', '-q', '-b', name, 'main')
+      repo.write(name .. '.txt', { name })
+      repo.commit(name)
+    end
+    repo.git('checkout', '-q', 'main')
+    repo.git('merge', '-q', '--no-ff', 'one', 'two', '-m', 'octopus')
+  end, function(s)
+    session.review_refs('main~1', 'main')
+    goto_commit(s, index_of(s, 'octopus'))
+    drawn_text(s)
+    assert(winbar(s, s.diff_win):find('first parent', 1, true), winbar(s, s.diff_win))
+  end)
+end)
+
+-- What a merge with no merge base is: unrelated histories joined, or in a
+-- shallow clone a base out of reach, which an empty base would make all conflict.
+test('review: a merge git fails to merge automatically falls back, saying so each time', function()
+  with_session(function(repo)
+    repo.write('base.txt', { 'base' })
+    repo.commit('first')
+    repo.git('branch', '-M', 'main')
+    repo.git('checkout', '-q', '--orphan', 'other')
+    repo.git('rm', '-rqf', '.')
+    repo.write('other.txt', { 'other' })
+    repo.commit('other')
+    repo.git('checkout', '-q', 'main')
+    repo.git('merge', '-q', '--allow-unrelated-histories', 'other', '-m', 'join')
+  end, function(s)
+    session.review_refs('main~1', 'main')
+    local join = index_of(s, 'join')
+    local messages = notified(function()
+      goto_commit(s, join)
+      drawn_text(s)
+    end)
+    eq(1, #messages)
+    assert(messages[1]:find('git merge-tree failed', 1, true), messages[1])
+    assert(winbar(s, s.diff_win):find('first parent (remerge failed)', 1, true), winbar(s, s.diff_win))
+    -- the second time it is not told again, but still noted
+    goto_commit(s, index_of(s, 'other'))
+    drawn_text(s)
+    eq({}, notified(function()
+      goto_commit(s, join)
+      -- A view read before is drawn a moment later.
+      vim.wait(5000, function()
+        return winbar(s, s.diff_win):find('join', 1, true) ~= nil
+      end)
+    end))
+    assert(winbar(s, s.diff_win):find('first parent (remerge failed)', 1, true), winbar(s, s.diff_win))
+  end)
+end)
+
+test('review: moving onto a merge in its list reads its automatic merge in the background', function()
+  with_session(conflicted_history, function(s)
+    session.review_refs('main')
+    settle(s)
+    local merge = s.commits[index_of(s, "Merge branch 'main' into feature")]
+    goto_commit(s, index_of(s, "Merge branch 'main' into feature"))
+    eq(nil, s.auto_merges[merge.sha])
+    drawn_text(s)
+    assert(s.auto_merges[merge.sha], 'never read')
+  end)
+end)
+
+test('review: a merge looked into as a tree lists its conflicts left as git left them', function()
+  with_session(conflicted_history, function(s)
+    session.review_refs('main')
+    settle(s)
+    goto_commit(s, index_of(s, "Merge branch 'main' into feature"))
+    press(s, '<CR>', s.commits_win)
+    goto_row(s, { kind = 'commit_dir', index = 1, path = '' })
+    -- A directory is drawn a moment after the cursor stops on it.
+    local line = 'd   (modify/delete conflict, resolved as git left it)'
+    local found = vim.wait(5000, function()
+      return vim.list_contains(diff_rows(s), line)
+    end)
+    assert(found, drawn_text(s))
+  end, { tree = true })
+end)
+
 local checks = require('gitview.review')
 
 test('review.toggle checks every path, or takes them off once all are', function()
