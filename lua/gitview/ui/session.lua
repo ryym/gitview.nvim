@@ -3511,9 +3511,14 @@ end
 --- which a session opens in, carries the plain name. Buffer names must be unique,
 --- so a session on another repository opened while one is still around takes a
 --- numbered set, the same number for all three buffers.
+---
+--- The names are URIs. A plain name is a path relative to the current directory,
+--- and where a directory goes by it (case aside, on macOS) netrw takes the pane
+--- over as a listing of that directory. The label shortens what comes before the
+--- last `/`, so it reads `g//Gitview`.
 --- @param s gitview.Session
 local function name_buffers(s)
-  local names = { 'Gitview', 'Gitview:commits', 'Gitview:diff' }
+  local names = { 'gitview://Gitview', 'gitview://Gitview:commits', 'gitview://Gitview:diff' }
   local suffix, n = '', 1
   while
     vim.iter(names):any(function(name)

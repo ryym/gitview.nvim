@@ -179,7 +179,11 @@ end
 --- The panes by their buffer names, which is how they are told apart from
 --- outside. Which pane a session starts in depends on whether there is
 --- anything uncommitted.
-local PANES = { Gitview = 'files', ['Gitview:commits'] = 'commits', ['Gitview:diff'] = 'diff' }
+local PANES = {
+  ['gitview://Gitview'] = 'files',
+  ['gitview://Gitview:commits'] = 'commits',
+  ['gitview://Gitview:diff'] = 'diff',
+}
 
 --- The keys from one pane to another. Each goes straight there: passing
 --- through a list on the way would select its row and replace the diff.

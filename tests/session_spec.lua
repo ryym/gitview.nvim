@@ -89,9 +89,21 @@ end)
 
 test('session: names its buffers for the tab page label', function()
   with_session(base, function(s)
-    eq('Gitview', vim.fn.bufname(s.files_buf))
-    eq('Gitview:commits', vim.fn.bufname(s.commits_buf))
-    eq('Gitview:diff', vim.fn.bufname(s.diff_buf))
+    eq('gitview://Gitview', vim.fn.bufname(s.files_buf))
+    eq('gitview://Gitview:commits', vim.fn.bufname(s.commits_buf))
+    eq('gitview://Gitview:diff', vim.fn.bufname(s.diff_buf))
+  end)
+end)
+
+test('session: names no buffer after a directory of the same name', function()
+  -- Where a buffer's name is a directory, netrw takes the buffer over.
+  with_session(function(repo)
+    base(repo)
+    vim.fn.mkdir(repo.root .. '/Gitview')
+  end, function(s)
+    for _, buf in ipairs({ s.files_buf, s.commits_buf, s.diff_buf }) do
+      eq(0, vim.fn.isdirectory(vim.api.nvim_buf_get_name(buf)))
+    end
   end)
 end)
 
@@ -128,7 +140,11 @@ test('session: a session on another repository takes numbered buffer names', fun
       session.close(s)
       vim.api.nvim_set_current_tabpage(scratch)
       vim.cmd.tabclose()
-      eq({ 'Gitview (2)', 'Gitview:commits (2)', 'Gitview:diff (2)' }, names)
+      eq({
+        'gitview://Gitview (2)',
+        'gitview://Gitview:commits (2)',
+        'gitview://Gitview:diff (2)',
+      }, names)
     end)
   end)
 end)
