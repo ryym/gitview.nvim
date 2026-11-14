@@ -105,6 +105,27 @@ This is useful when you review a non-linear range. Example:
 In this situation, a range from `a` to `d` also shows the changes the merge brought in from `main`.
 To review only what the `feature` branch did, start review mode with `:Gitview review main` instead.
 
+#### Merge commits in review mode
+
+In the list of commits under review, a merge commit shows only what was done in the merge itself:
+how its conflicts were resolved, and any other changes made in it.
+This is the same diff as `git show --remerge-diff`.
+
+<details>
+<summary>Caveats about merge commits in review mode</summary>
+
+- To get the merge as Git makes it before any resolution, Gitview redoes it with `git merge-tree --write-tree`.
+  This writes the merged tree and files into the repository's object database (not the working tree or the index).
+  Nothing refers to them, and `git gc` removes them eventually.
+- The merge is redone by your current Git and config, so a merge made with other settings
+  (`-X ours`, a custom merge driver, rerere, etc.) shows the difference as if it were done by hand.
+- Git 2.39+ is required. With an older Git, or for a merge with more than two parents, the merge commit is
+  compared with its first parent, and the diff window says so.
+  The same goes when Git fails to redo the merge, such as for unrelated histories or in a shallow clone
+  that lacks the merge base.
+
+</details>
+
 ## Diff window
 
 Gitview displays the diff in a unified diff format.
