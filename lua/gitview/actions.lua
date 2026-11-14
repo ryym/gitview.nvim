@@ -156,6 +156,17 @@ function M.end_review()
   return s ~= nil and require('gitview.ui.session').end_review(s)
 end
 
+--- Switch the commits pane between the commits under review and the log.
+--- @return boolean
+function M.toggle_commit_list()
+  local s = at_cursor({ commits = true })
+  if not s then
+    return false
+  end
+  require('gitview.ui.session').switch_list(s)
+  return true
+end
+
 --- Make the commit under the cursor the far end of a range, whose near end is
 --- wherever the cursor goes.
 --- @return boolean false on no commit

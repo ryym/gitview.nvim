@@ -136,8 +136,11 @@ account for it:
 ### Reviews and ranges
 
 - **A review's ends are fixed by sha when it starts**, or what is committed meanwhile would leave it.
-- **The same range can be both reviewed and looked into**, so which list a row is in is part of what
-  the diff pane shows and of the key a cursor position is kept under.
+- **The same range can be both reviewed and looked into, and the same commit listed twice**, so which
+  list a row is in is part of what the diff pane shows and of the key a cursor position is kept under.
+- **During a review the commits pane holds two lists**, the review's commits and the log. Each keeps
+  its own cursor, mark and what it looks into while the other is shown, and what is selected always
+  belongs to the list shown.
 - **A check records what was read, not that something was.** A file that changed is told apart by a
   hash of what the view showed. Nothing is skipped by modification time, since a change missed would
   leave unread content marked as read.

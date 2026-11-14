@@ -82,6 +82,7 @@ local PANES = {
     -- doing rather than act on a row. Mapped with `<nowait>`, so that Neovim's
     -- own `grn` and the like do not hold it up.
     { 'gr', actions.start_review, 'review the commit or range' },
+    { 'gl', actions.toggle_commit_list, 'switch between the commits under review and the log' },
     -- `<Esc>` is commonly mapped already, to `:nohlsearch` above all, and this
     -- map hides it in the pane: with no range to clear it does what it would
     -- have done.

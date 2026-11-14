@@ -44,6 +44,8 @@ local M = {}
 --- @field worktree boolean? the commits pane, with a row for the working tree
 ---        above the commits
 --- @field scope gitview.ListScope? the commits pane, looking into a range
+--- @field listing ('log'|'review')? the commits pane during a review, which of
+---        its two lists it shows
 --- @field stale boolean? the commits pane, holding a list `git log` no longer
 ---        agrees with; see `ui.session`
 --- @field tree boolean? files laid out as a tree of directories rather than
@@ -614,6 +616,10 @@ function M.winbar()
       text = text .. '   (history changed)'
     end
   end
+  -- During a review the pane switches between two lists that can look alike.
+  if state.listing then
+    text = (' %s:%s'):format(state.listing, text)
+  end
   return util.escape_statusline(text)
 end
 
@@ -676,6 +682,7 @@ function M.draw(buf, model)
     layer = model.layer,
     commits = model.commits or {},
     scope = model.scope,
+    listing = model.listing,
     stale = model.stale,
     tree = model.tree,
     rows = rows,
