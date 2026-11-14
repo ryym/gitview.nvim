@@ -167,6 +167,29 @@ function M.toggle_commit_list()
   return true
 end
 
+--- Fold the `fixup!` and `amend!` commits from the commit under the cursor up
+--- to HEAD into the commits they name, as `git rebase -i --autosquash` does. It
+--- runs in the background, and the panes are read again once it ends. A visual
+--- selection is refused rather than taken for its cursor's commit.
+--- @return boolean false on no commit
+function M.autosquash()
+  local s, pane = in_panes(ALL)
+  if not s then
+    return false
+  end
+  local selecting = in_visual()
+  leave_visual()
+  if pane ~= 'commits' then
+    util.info('an autosquash starts from a commit in the commits window')
+    return true
+  end
+  if selecting then
+    util.info('an autosquash starts from one commit, not a selection')
+    return true
+  end
+  return require('gitview.ui.session').autosquash(s)
+end
+
 --- Make the commit under the cursor the far end of a range, whose near end is
 --- wherever the cursor goes.
 --- @return boolean false on no commit
