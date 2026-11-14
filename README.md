@@ -67,64 +67,15 @@ With `file_list_style = 'flat'`, the files are listed by their whole paths inste
 
 ### Comparing two commits
 
-Selecting a range of commits by `m` displays the diff between the range (`oldest^..newest`).  
+Selecting a range of commits by `m` displays the diff between the range (`oldest^..newest`).
 Including the first line (`0000 uncommitted changes`; the working tree) in a range makes the diff _live_:
 whenever uncommitted files are edited or new commits are added, the diff of the range reflects
 them. This is especially useful when you review the diff interactively in local:
 you give feedback to your AI agent, the agent addresses it, the diff is automatically updated,
 and you review it again.
 
-### Review mode
-
-When you want to review the diff more carefully, enter review mode by `gr` after selecting a range.
-It lists files to review in the files window. In review mode, you can:
-
-- check off each file by `x` to track whether you reviewed the file.
-- The commits window lists only the commits under review.
-  `gl` switches it to the whole log and back without losing the review state.
-
-Like the case of [Comparing two commits](#comparing-two-commits), the diff automatically includes
-newly added commits and uncommitted changes if you start a range from the first line (`0000 uncommitted changes`;
-the working tree) in the commits window.
-`<BS>` exit review mode.
-
-#### Reviewing a non-linear range
-
-Starting review mode from a ref lets you review what one ref changed since it diverged from another:
-
-- `:Gitview review <ref>` reviews `<ref>...working tree`
-- `:Gitview review <ref1> <ref2>` reviews `<ref1>...<ref2>`
-
-This is useful when you review a non-linear range. Example:
-
-1. Create a `feature` branch from `main`.
-2. Add commits `a` and `b` to `feature`.
-3. Merge `main` into `feature` to bring in its new changes.
-4. Add commits `c` and `d` to `feature`.
-
-In this situation, a range from `a` to `d` also shows the changes the merge brought in from `main`.
-To review only what the `feature` branch did, start review mode with `:Gitview review main` instead.
-
-#### Merge commits in review mode
-
-In the list of commits under review, a merge commit shows only what was done in the merge itself:
-how its conflicts were resolved, and any other changes made in it.
-This is the same diff as `git show --remerge-diff`.
-
-<details>
-<summary>Caveats about merge commits in review mode</summary>
-
-- To get the merge as Git makes it before any resolution, Gitview redoes it with `git merge-tree --write-tree`.
-  This writes the merged tree and files into the repository's object database (not the working tree or the index).
-  Nothing refers to them, and `git gc` removes them eventually.
-- The merge is redone by your current Git and config, so a merge made with other settings
-  (`-X ours`, a custom merge driver, rerere, etc.) shows the difference as if it were done by hand.
-- Git 2.39+ is required. With an older Git, or for a merge with more than two parents, the merge commit is
-  compared with its first parent, and the diff window says so.
-  The same goes when Git fails to redo the merge, such as for unrelated histories or in a shallow clone
-  that lacks the merge base.
-
-</details>
+When selecting a range, `<CR>` looks into the details; allow you to see the diff per file in the diff.
+Or `gr` to enter [review mode](#review-mode).
 
 ## Diff window
 
@@ -149,6 +100,58 @@ whether the line exists in each version (HEAD, index, work tree).
 | added, staged                | 🟢 green | 🟢 green    |          | yes       | yes           |
 | deleted, staged              | 🔴 red   | 🔴 red      | yes      |           |               |
 | added, staged, deleted again | 🔴 red   | 🟢 green    |          | yes       |               |
+
+## Review mode
+
+When you review the diff carefully, enter review mode from the commits window by `gr` after selecting a range.
+It lists files to review in the files window. In review mode, you can:
+
+- check off each file by `x` to track whether you reviewed the file.
+- The commits window lists only the commits under review.
+  `gl` switches it to the whole log and back without losing the review state.
+
+Like the case of [Comparing two commits](#comparing-two-commits), the diff automatically includes
+newly added commits and uncommitted changes if you start a range from the first line (`0000 uncommitted changes`;
+the working tree) in the commits window.
+`<BS>` exit review mode.
+
+### Reviewing a non-linear range
+
+Starting review mode from a ref lets you review what one ref changed since it diverged from another:
+
+- `:Gitview review <ref>` reviews `<ref>...working tree`
+- `:Gitview review <ref1> <ref2>` reviews `<ref1>...<ref2>`
+
+This is useful when you review a non-linear range. Example:
+
+1. Create a `feature` branch from `main`.
+2. Add commits `a` and `b` to `feature`.
+3. Merge `main` into `feature` to bring in its new changes.
+4. Add commits `c` and `d` to `feature`.
+
+In this situation, a range from `a` to `d` also shows the changes the merge brought in from `main`.
+To review only what the `feature` branch did, start review mode with `:Gitview review main` instead.
+
+### Merge commits in review mode
+
+In the list of commits under review, a merge commit shows only what was done in the merge itself:
+how its conflicts were resolved, and any other changes made in it.
+This is the same diff as `git show --remerge-diff`.
+
+<details>
+<summary>Caveats about merge commits in review mode</summary>
+
+- To get the merge as Git makes it before any resolution, Gitview redoes it with `git merge-tree --write-tree`.
+  This writes the merged tree and files into the repository's object database (not the working tree or the index).
+  Nothing refers to them, and `git gc` removes them eventually.
+- The merge is redone by your current Git and config, so a merge made with other settings
+  (`-X ours`, a custom merge driver, rerere, etc.) shows the difference as if it were done by hand.
+- Git 2.39+ is required. With an older Git, or for a merge with more than two parents, the merge commit is
+  compared with its first parent, and the diff window says so.
+  The same goes when Git fails to redo the merge, such as for unrelated histories or in a shallow clone
+  that lacks the merge base.
+
+</details>
 
 ## Actions
 
@@ -182,7 +185,7 @@ This table describes available actions in GitView with default key mappings.
 | (none)  | `set_ignore_whitespace`    | Change whether to ignore whitespace diff     |   ✓   |    ✓    |  ✓   |
 | (none)  | `show_last_focused_diff`   | Show the diff focused before the current one |       |         |  ✓   |
 
-### Review mode
+### Review mode actions
 
 | key    | action               | description                               | files | commits | diff |
 | ------ | -------------------- | ----------------------------------------- | :---: | :-----: | :--: |
