@@ -219,6 +219,31 @@ test('lists the log of a real repository, newest first', function()
   end)
 end)
 
+test('lists the log of a span, without what its start has', function()
+  helpers.with_repo(function(repo)
+    for _, msg in ipairs({ 'first', 'second', 'third' }) do
+      repo.write('a.txt', { msg })
+      repo.commit(msg)
+    end
+    local function subjects(span)
+      return vim.tbl_map(function(c)
+        return c.subject
+      end, assert(git.log(10, repo.root, span)))
+    end
+    eq({ 'third', 'second' }, subjects({ from = 'HEAD~2' }))
+    eq({ 'second' }, subjects({ from = 'HEAD~2', to = 'HEAD~1' }))
+    eq({ 'second', 'first' }, subjects({ to = 'HEAD~1' }))
+  end)
+end)
+
+test('lists the log beside a file named HEAD', function()
+  helpers.with_repo(function(repo)
+    repo.write('HEAD', { 'a file' })
+    repo.commit('first')
+    eq('first', assert(git.log(10, repo.root))[1].subject)
+  end)
+end)
+
 -- A local branch serves as the upstream as well as a remote one would: what is
 -- asked is only which commits one has and the other does not.
 test('lists the commits the upstream does not have', function()

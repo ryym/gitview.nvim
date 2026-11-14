@@ -472,10 +472,20 @@ end
 ---
 --- @param count integer how many to ask for
 --- @param cwd string
+--- @param span? {from:string?, to:string?} the log of `from..to` rather than of
+---        HEAD: `to`, HEAD by default, without what `from` has
 --- @return gitview.Commit[]? commits
 --- @return string? err
-function M.log(count, cwd)
-  local res = M.run({ 'git', 'log', '-z', '--format=' .. LOG_FORMAT, '-n', tostring(count) }, cwd)
+function M.log(count, cwd, span)
+  local cmd = { 'git', 'log', '-z', '--format=' .. LOG_FORMAT, '-n', tostring(count) }
+  cmd[#cmd + 1] = span and span.to or 'HEAD'
+  if span and span.from then
+    cmd[#cmd + 1] = '^' .. span.from
+  end
+  -- End the revisions, or a file named as one, such as `HEAD`, makes them
+  -- ambiguous.
+  cmd[#cmd + 1] = '--'
+  local res = M.run(cmd, cwd)
   if not res.ok then
     return nil, res.stderr
   end
