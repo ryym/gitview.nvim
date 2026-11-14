@@ -109,8 +109,13 @@ end
 ---         is in one
 function M.current_root()
   local cwd = vim.fn.getcwd()
+  -- A buffer named by a URI, such as a Gitview pane or a terminal, has no
+  -- directory, and git cannot be run in one that does not exist.
   local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
-  return M.root(buf_dir ~= '' and buf_dir or cwd) or M.root(cwd)
+  if vim.fn.isdirectory(buf_dir) == 0 then
+    return M.root(cwd)
+  end
+  return M.root(buf_dir) or M.root(cwd)
 end
 
 --- @param cwd string
