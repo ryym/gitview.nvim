@@ -2,19 +2,25 @@
 ---
 --- Only what acts on a whole session is here, and nothing that depends on where
 --- the cursor is: those are actions to map keys to rather than commands to type.
---- With no argument a subcommand goes round, or toggles, and with one it sets.
+--- A setting's subcommand goes round, or toggles, with no argument, and sets
+--- with one.
 ---
 --- Nothing heavy is required at the top, so that completing a subcommand loads
---- nothing more than this.
+--- nothing more than this. Completing a ref runs git, and loads only the module
+--- that runs it.
 local M = {}
 
 --- @class gitview.Subcommand
---- @field run fun(arg: string?) the argument one of `args`, if given
---- @field args? string[] what the one argument it takes may be, if any
+--- @field run fun(args: string[]) the arguments, as many as it takes
+--- @field args? string[] what the one argument it takes may be, if it takes one
+---        from a fixed set
+--- @field refs? true takes `<base> [<new>]` instead, completed to ref names
+--- @field opens? true opens a session rather than needing one
 
 --- @type table<string, gitview.Subcommand>
 local SUBCOMMANDS = {
   open = {
+    opens = true,
     run = function()
       require('gitview').open()
     end,
@@ -31,10 +37,10 @@ local SUBCOMMANDS = {
   },
   ['shown-changes'] = {
     args = { 'both', 'staged', 'unstaged' },
-    run = function(arg)
+    run = function(args)
       local actions = require('gitview.actions')
-      if arg then
-        actions.set_shown_changes(arg --[[@as gitview.Layer]])
+      if args[1] then
+        actions.set_shown_changes(args[1] --[[@as gitview.Layer]])
       else
         actions.cycle_shown_changes()
       end
@@ -42,13 +48,20 @@ local SUBCOMMANDS = {
   },
   whitespace = {
     args = { 'on', 'off' },
-    run = function(arg)
+    run = function(args)
       local actions = require('gitview.actions')
-      if arg then
-        actions.set_ignore_whitespace(arg == 'on')
+      if args[1] then
+        actions.set_ignore_whitespace(args[1] == 'on')
       else
         actions.toggle_ignore_whitespace()
       end
+    end,
+  },
+  review = {
+    refs = true,
+    opens = true,
+    run = function(args)
+      require('gitview.ui.session').review_refs(args[1], args[2])
     end,
   },
 }
@@ -67,22 +80,41 @@ function M.run(fargs)
     error_out(('no such subcommand: %s'):format(name))
     return
   end
-  local arg = fargs[2]
-  if #fargs > (sub.args and 2 or 1) then
+  local args = vim.list_slice(fargs, 2)
+  if sub.refs then
+    if #args < 1 or #args > 2 then
+      error_out(('usage: :Gitview %s <base> [<new>]'):format(name))
+      return
+    end
+  elseif #args > (sub.args and 1 or 0) then
     error_out(('too many arguments to %s'):format(name))
     return
-  end
-  if arg and not vim.list_contains(sub.args, arg) then
-    error_out(('%s takes %s, not %s'):format(name, table.concat(sub.args, ' or '), arg))
+  elseif args[1] and not vim.list_contains(sub.args, args[1]) then
+    error_out(('%s takes %s, not %s'):format(name, table.concat(sub.args, ' or '), args[1]))
     return
   end
   -- Said here rather than left to the action, which says nothing when there is
   -- no session, as a key mapped to it would want.
-  if name ~= 'open' and not require('gitview.ui.session').current() then
+  if not sub.opens and not require('gitview.ui.session').current() then
     vim.notify('gitview: no session in this tab page', vim.log.levels.INFO)
     return
   end
-  sub.run(arg)
+  sub.run(args)
+end
+
+--- What a ref may be completed to: `HEAD`, then the branches and the tags of
+--- the repository the command would act on.
+--- @return string[]
+local function ref_candidates()
+  local git = require('gitview.git')
+  -- Look for the session only when its module is loaded already, which it is
+  -- whenever there is one, so that completing loads nothing for it.
+  local session = package.loaded['gitview.ui.session']
+  local s = session and session.current()
+  local root = s and s.root or git.current_root()
+  local names = root and git.ref_names(root) or {}
+  table.insert(names, 1, 'HEAD')
+  return names
 end
 
 --- What the argument being typed may be completed to.
@@ -96,11 +128,15 @@ function M.complete(arglead, cmdline)
   if #before == 1 then
     candidates = vim.tbl_keys(SUBCOMMANDS)
     table.sort(candidates)
-  elseif #before == 2 then
-    local sub = SUBCOMMANDS[before[2]]
-    candidates = sub and sub.args or {}
   else
-    candidates = {}
+    local sub = SUBCOMMANDS[before[2]]
+    if sub and sub.refs and #before <= 3 then
+      candidates = ref_candidates()
+    elseif sub and sub.args and #before == 2 then
+      candidates = sub.args
+    else
+      candidates = {}
+    end
   end
   return vim.tbl_filter(function(c)
     return vim.startswith(c, arglead)

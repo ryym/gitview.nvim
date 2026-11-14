@@ -100,6 +100,16 @@ function M.root(cwd)
   return res.ok and vim.trim(res.stdout) or nil
 end
 
+--- The repository Gitview acts on: that of the current buffer, or else that of
+--- the current directory.
+--- @return string? root absolute path of the repository root; nil when neither
+---         is in one
+function M.current_root()
+  local cwd = vim.fn.getcwd()
+  local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
+  return M.root(buf_dir ~= '' and buf_dir or cwd) or M.root(cwd)
+end
+
 --- @param cwd string
 --- @return string? dir absolute path of the directory git keeps the repository in
 function M.dir(cwd)
@@ -733,6 +743,53 @@ end
 --- @return boolean
 function M.is_ancestor(a, b, cwd)
   return M.run({ 'git', 'merge-base', '--is-ancestor', a, b }, cwd).ok
+end
+
+--- The commit a revision names, by full sha: a branch, a tag, a sha, `HEAD~2`
+--- and the like.
+---
+--- @param rev string
+--- @param cwd string
+--- @return string? sha nil when it names no commit
+function M.resolve_commit(rev, cwd)
+  -- `^{commit}` peels an annotated tag to the commit it points at, and turns
+  -- down a tree or a blob, which `--verify` alone would let through.
+  local res = M.run(
+    { 'git', 'rev-parse', '--verify', '--quiet', '--end-of-options', rev .. '^{commit}' },
+    cwd
+  )
+  return res.ok and vim.trim(res.stdout) or nil
+end
+
+--- The best common ancestor of two commits.
+---
+--- When there are several, as after a criss-cross merge, git gives one of them,
+--- and that one is taken: any of them leaves out what both sides have.
+---
+--- @param a string
+--- @param b string
+--- @param cwd string
+--- @return string? sha nil when the two share no history
+function M.merge_base(a, b, cwd)
+  local res = M.run({ 'git', 'merge-base', a, b }, cwd)
+  return res.ok and vim.trim(res.stdout) or nil
+end
+
+--- The names of the branches, the remote ones too, and of the tags, as they
+--- would be typed.
+---
+--- @param cwd string
+--- @return string[]
+function M.ref_names(cwd)
+  local res = M.run({
+    'git',
+    'for-each-ref',
+    '--format=%(refname:short)',
+    'refs/heads',
+    'refs/remotes',
+    'refs/tags',
+  }, cwd)
+  return res.ok and vim.split(res.stdout, '\n', { trimempty = true }) or {}
 end
 
 --- The tree with nothing in it, for a range to start from when the commit it
