@@ -348,7 +348,7 @@ test('reads the whole message of a commit and its stat', function()
     repo.git('commit', '-qm', 'second\n\nwhy it changed\n\nand more\n')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
+    local detail = assert(git.commit_detail(commits[1], git.commit_range(commits[1]), repo.root, 80))
     eq('test <test@example.com>', detail.author)
     assert(detail.date ~= '', 'the date should be read')
     -- the trailing newline git keeps after the body is not a line of it
@@ -370,7 +370,7 @@ test('reads the stat of a root commit without colors', function()
     repo.commit('first')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
+    local detail = assert(git.commit_detail(commits[1], git.commit_range(commits[1]), repo.root, 80))
     eq({ 'first' }, detail.message)
     eq({ ' a.txt | 1 +', ' 1 file changed, 1 insertion(+)' }, detail.stat)
   end)
@@ -386,7 +386,7 @@ test('keeps the stat graph short', function()
     repo.commit('first')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
+    local detail = assert(git.commit_detail(commits[1], git.commit_range(commits[1]), repo.root, 80))
     eq(' a.txt | 100 ' .. ('+'):rep(30), detail.stat[1])
   end)
 end)
@@ -399,9 +399,9 @@ test('lays the stat out to the width it is given', function()
     repo.commit('first')
 
     local commits = assert(git.log(1, repo.root))
-    local narrow = assert(git.commit_detail(commits[1], repo.root, 60))
+    local narrow = assert(git.commit_detail(commits[1], git.commit_range(commits[1]), repo.root, 60))
     assert(narrow.stat[1]:find('^ %.%.%.'), 'a narrow stat should shorten the path')
-    local wide = assert(git.commit_detail(commits[1], repo.root, 200))
+    local wide = assert(git.commit_detail(commits[1], git.commit_range(commits[1]), repo.root, 200))
     eq((' %s | 1 +'):format(path), wide.stat[1])
   end)
 end)
@@ -420,7 +420,7 @@ test('reads the stat of a merge against its first parent', function()
     repo.git('merge', '--no-ff', 'side', '-m', 'merge side')
 
     local commits = assert(git.log(1, repo.root))
-    local detail = assert(git.commit_detail(commits[1], repo.root, 80))
+    local detail = assert(git.commit_detail(commits[1], git.commit_range(commits[1]), repo.root, 80))
     eq({ ' side.txt | 1 +', ' 1 file changed, 1 insertion(+)' }, detail.stat)
   end)
 end)
@@ -612,5 +612,64 @@ test('a range to the working tree sees a file rewritten as the index was written
     eq({ 'a.txt', 'new.txt' }, vim.tbl_map(function(c)
       return c.path
     end, changes))
+  end)
+end)
+
+-- Captured from `git merge-tree --write-tree -z --name-only` on a merge where
+-- `d` was deleted on one side and changed on the other, and `f` changed on both.
+test('parses a merge redone with conflicts', function()
+  local out = table.concat({
+    'tree',
+    'd',
+    'f',
+    '',
+    '1',
+    'd',
+    'CONFLICT (modify/delete)',
+    'CONFLICT (modify/delete): d deleted in b and modified in a.\n',
+    '1',
+    'f',
+    'Auto-merging',
+    'Auto-merging f\n',
+    '1',
+    'f',
+    'CONFLICT (contents)',
+    'CONFLICT (content): Merge conflict in f\n',
+    '',
+  }, '\0')
+  eq({
+    tree = 'tree',
+    conflicts = { d = 'CONFLICT (modify/delete)', f = 'CONFLICT (contents)' },
+  }, git.parse_remerge(out))
+end)
+
+test('parses a merge redone cleanly', function()
+  eq({ tree = 'tree', conflicts = {} }, git.parse_remerge('tree\0'))
+end)
+
+test('redoes a merge without touching the working tree or the index', function()
+  helpers.with_repo(function(repo)
+    repo.write('f', { 'a', 'b', 'c' })
+    repo.commit('base')
+    repo.git('branch', '-M', 'main')
+    repo.git('checkout', '-q', '-b', 'side')
+    repo.write('f', { 'a', 'B-side', 'c' })
+    repo.commit('side')
+    repo.git('checkout', '-q', 'main')
+    repo.write('f', { 'a', 'B-main', 'c' })
+    repo.write('g', { 'g' })
+    repo.commit('main')
+    local status = repo.git('status', '--porcelain')
+
+    local r = assert(git.remerge('main', 'side', repo.root))
+    eq({ f = 'CONFLICT (contents)' }, r.conflicts)
+    local merged = repo.git('show', r.tree .. ':f')
+    assert(merged:find('<<<<<<<', 1, true), merged)
+    eq('g\n', repo.git('show', r.tree .. ':g'))
+    eq(status, repo.git('status', '--porcelain'))
+    eq({ 'a', 'B-main', 'c' }, vim.fn.readfile(repo.root .. '/f'))
+
+    local clean = assert(git.remerge('main', 'main~1', repo.root))
+    eq({}, clean.conflicts)
   end)
 end)
