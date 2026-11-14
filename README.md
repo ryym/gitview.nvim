@@ -80,7 +80,8 @@ When you want to review the diff more carefully, enter review mode by `gr` after
 It lists files to review in the files window. In review mode, you can:
 
 - check off each file by `x` to track whether you reviewed the file.
-- view each commit in the commit window without losing the review state.
+- The commits window lists only the commits under review.
+  `gl` switches it to the whole log and back without losing the review state.
 
 Like the case of [Comparing two commits](#comparing-two-commits), the diff automatically includes
 newly added commits and uncommitted changes if you start a range from the first line (`0000 uncommitted changes`;
@@ -162,12 +163,13 @@ This table describes available actions in GitView with default key mappings.
 
 ### Review mode
 
-| key    | action         | description                        | files | commits | diff |
-| ------ | -------------- | ---------------------------------- | :---: | :-----: | :--: |
-| `<BS>` | `end_review`   | End review mode                    |   ✓   |         |      |
-| `x`    | `toggle_check` | Mark the file(s) as reviewed       |   ✓   |         |  ✓   |
-| `]x`   | `next_unread`  | Go to the next unreviewed file     |   ✓   |         |  ✓   |
-| `[x`   | `prev_unread`  | Go to the previous unreviewed file |   ✓   |         |  ✓   |
+| key    | action               | description                               | files | commits | diff |
+| ------ | -------------------- | ----------------------------------------- | :---: | :-----: | :--: |
+| `<BS>` | `end_review`         | End review mode                           |   ✓   |         |      |
+| `gl`   | `toggle_commit_list` | Switch between review commits and the log |       |    ✓    |      |
+| `x`    | `toggle_check`       | Mark the file(s) as reviewed              |   ✓   |         |  ✓   |
+| `]x`   | `next_unread`        | Go to the next unreviewed file            |   ✓   |         |  ✓   |
+| `[x`   | `prev_unread`        | Go to the previous unreviewed file        |   ✓   |         |  ✓   |
 
 ### Actions with arguments
 
