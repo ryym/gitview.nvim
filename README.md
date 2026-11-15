@@ -205,27 +205,30 @@ This table describes available actions in GitView with default key mappings.
 
 ### Actions with arguments
 
-Those actions take arguments:
+Those actions take arguments, as one table of options:
 
-| action                  | arguments           | description                                    |
-| ----------------------- | ------------------- | ---------------------------------------------- |
-| `close`                 | `{ force = false }` | `force = true` skips confirmation before close |
-| `set_shown_changes`     | `shown`             | `both` or `staged` or `unstaged`               |
-| `set_ignore_whitespace` | `ignore`            | boolean                                        |
+| action                  | options              | description                                    |
+| ----------------------- | -------------------- | ---------------------------------------------- |
+| `close`                 | `{ force = false }`  | `force = true` skips confirmation before close |
+| `set_shown_changes`     | `{ shown = 'both' }` | `both` or `staged` or `unstaged`               |
+| `set_ignore_whitespace` | `{ ignore = false }` | boolean                                        |
+
+An option the action does not take, or of another type, is an error.
 
 ### Using actions
 
-Every action is a Lua function of `require('gitview.actions')`.
+Every action is a Lua function of `require('gitview.actions')`, and can be run by
+[`:Gitview run`](#commands) as well.
 
 ```lua
 local actions = require('gitview.actions')
 
 actions.next_file()
-actions.set_shown_changes('staged')
+actions.set_shown_changes({ shown = 'staged' })
 actions.close({ force = true })
 
 vim.keymap.set('n', '<Leader>gu', function()
-  a.set_shown_changes('unstaged')
+  actions.set_shown_changes({ shown = 'unstaged' })
 end)
 ```
 
@@ -328,18 +331,26 @@ require('gitview').setup({
 
 ### Commands
 
-| command                          | what it does                                                  |
-| -------------------------------- | ------------------------------------------------------------- |
-| `:Gitview`                       | open a new or existing Gitview tab for the current repository |
-| `:Gitview open`                  | the same as `:Gitview`                                        |
-| `:Gitview close`                 | close a Gitview tab                                           |
-| `:Gitview refresh`               | refresh a Gitview tab                                         |
-| `:Gitview shown-changes {shown}` | change the shown changes; `both`, `staged` or `unstaged`      |
-| `:Gitview shown-changes`         | cycle the shown changes                                       |
-| `:Gitview whitespace`            | toggle ignoring whitespace                                    |
-| `:Gitview whitespace {on\|off}`  | ignore whitespace                                             |
-| `:Gitview review {base}`         | review `{base}...working tree`                                |
-| `:Gitview review {base} {new}`   | review `{base}...{new}`                                       |
+| command                             | what it does                                    |
+| ----------------------------------- | ----------------------------------------------- |
+| `:Gitview`                          | open a new or existing Gitview tab for the repo |
+| `:Gitview run {action} [{options}]` | run an [action](#actions) in the Gitview tab    |
+| `:Gitview review {base}`            | review `{base}...working tree`                  |
+| `:Gitview review {base} {new}`      | review `{base}...{new}`                         |
+
+`:Gitview run` passes [the options of an action](#actions-with-arguments) as `key=value` words:
+
+- `true` and `false` are booleans. Any other value is a string.
+- A bare `key` is the same as `key=true`.
+
+```vim
+:Gitview run refresh
+:Gitview run set_shown_changes shown=staged
+:Gitview run close force
+```
+
+Caveats: From the command line, an action that works on the lines selected in visual mode
+(e.g. `stage` and `unstage`) works on the cursor line instead. `'<,'>` is ignored.
 
 ### Window options
 
