@@ -53,6 +53,7 @@ local PANES = {
     -- explicitly.
     { 's', actions.stage, 'stage the files or directories selected', modes = NX },
     { 'u', actions.unstage, 'unstage the files or directories selected', modes = NX },
+    { 'A', actions.autosquash, 'nothing to autosquash here', modes = NX },
     -- As in the diff, so that a list laid out as a tree can be gone through
     -- file by file, and the files still to be read found from the list.
     { ']f', actions.next_file, 'next file' },
@@ -62,9 +63,10 @@ local PANES = {
   },
 
   -- Separating the panes is what lets each one carry only the keys that mean
-  -- something in it. `s`, `u` and `x` are the exception: they are mapped in
-  -- order to say why they do nothing, since leaving them unmapped would let
-  -- them reach a buffer that cannot be modified and error, in visual mode too.
+  -- something in it. `s`, `u` and `x` are the exception, as `A` is in the
+  -- other panes: they are mapped in order to say why they do nothing, since
+  -- leaving them unmapped would let them reach a buffer that cannot be modified
+  -- and error, in visual mode too.
   commits = {
     { 'gf', actions.open_file, 'open the file under the cursor in the previous tab page' },
     {
@@ -87,6 +89,12 @@ local PANES = {
     -- map hides it in the pane: with no range to clear it does what it would
     -- have done.
     { '<Esc>', actions.clear_range, 'clear the range', fallback = true },
+    {
+      'A',
+      actions.autosquash,
+      'fold the fixup! commits from this commit up to HEAD',
+      modes = NX,
+    },
     { 's', actions.stage, 'nothing to stage here', modes = NX },
     { 'u', actions.unstage, 'nothing to stage here', modes = NX },
     { 'x', actions.toggle_check, 'nothing to check off here', modes = NX },
@@ -110,6 +118,7 @@ local PANES = {
     { 'u', actions.unstage, 'unstage the selected lines', modes = NX },
     { 'S', actions.stage_hunk, 'stage this hunk' },
     { 'U', actions.unstage_hunk, 'unstage this hunk' },
+    { 'A', actions.autosquash, 'nothing to autosquash here', modes = NX },
     { 'x', actions.toggle_check, 'check off the files under review selected', modes = NX },
     { ']x', actions.next_unread, 'next file still to be read' },
     { '[x', actions.prev_unread, 'previous file still to be read' },

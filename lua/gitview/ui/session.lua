@@ -4,6 +4,7 @@
 --- A session outlives the moment it was opened in. It keeps enough state to be
 --- redrawn when the repository changes underneath it — which it does by itself
 --- on entering its tab page — and to follow the cursor from one file to the next.
+local autosquash = require('gitview.autosquash')
 local config = require('gitview.config')
 local dlib = require('gitview.diff.lines')
 local git = require('gitview.git')
@@ -123,6 +124,9 @@ local M = {}
 ---        page was current, leaving the sidebar to be laid out on return
 --- @field closing boolean? whether a pane has been closed, which ends the
 ---        session; the panes left are no longer followed
+--- @field autosquash {from:gitview.SelectionId}? the autosquash under way, and
+---        the commit it started from. Nothing is read from the repository
+---        meanwhile; see `M.autosquash`
 
 --- A range under review: its files in the files pane, one by one, and its
 --- commits in the commits pane.
@@ -705,8 +709,13 @@ local function paint_upstream(s)
 end
 
 --- Read what the branch tracks again, and follow it with the watchers.
+--- Does nothing while an autosquash runs; the read when it ends covers what is
+--- skipped.
 --- @param s gitview.Session
 local function reread_upstream(s)
+  if s.autosquash then
+    return
+  end
   s.upstream, s.unpushed = read_upstream(s)
   watch_upstream(s)
 end
@@ -1956,9 +1965,15 @@ end
 --- commit that row now holds would silently be selected in its place. The old
 --- list is kept until the cursor leaves it, and the pane says so in its winbar.
 ---
+--- Does nothing while an autosquash runs; the read when it ends covers what is
+--- skipped.
+---
 --- @param s gitview.Session
 --- @param id gitview.SelectionId? what is selected, named before the re-read
 local function read_log(s, id)
+  if s.autosquash then
+    return
+  end
   -- Re-read rather than kept from `open`: the first commit can be made while
   -- the session is open, and it is one process against the several `status.list`
   -- already spends.
@@ -1986,10 +2001,12 @@ end
 --- List again what a range ending at the working tree changed, since the working
 --- tree may have moved on. A range between commits cannot have, and is left as
 --- it is; so is the list when it cannot be read, being the best there is.
+--- Does nothing while an autosquash runs; the read when it ends covers what is
+--- skipped.
 --- @param s gitview.Session
 --- @param scope gitview.ListScope
 local function reread_scope(s, scope)
-  if scope.range.new then
+  if scope.range.new or s.autosquash then
     return
   end
   local changes = git.changed_between(scope.range, s.root, untracked_paths(s))
@@ -2027,10 +2044,20 @@ end
 --- single cheap process, and reading it along with the status keeps the two
 --- panes describing the same moment.
 ---
+--- Does nothing while an autosquash runs; the read when it ends covers what is
+--- skipped.
+---
 --- @param s gitview.Session
 --- @param report boolean whether to tell the user when git fails
 --- @param keep_unchanged boolean? passed on to `show_selected`
-local function read_status(s, report, keep_unchanged)
+--- @param follow? {from:gitview.SelectionId, to:gitview.SelectionId} what to
+---        select in place of `from`, should it still be selected once read: the
+---        commit an autosquash rewrote, which would otherwise hold the old list
+---        open
+local function read_status(s, report, keep_unchanged, follow)
+  if s.autosquash then
+    return
+  end
   s.reads = s.reads + 1
   local read = s.reads
   s.reading = true
@@ -2054,6 +2081,11 @@ local function read_status(s, report, keep_unchanged)
       return
     end
     local id = selection_id(s)
+    -- Follow only while the original is still selected and no range is being
+    -- chosen: what the user went on to look at meanwhile is theirs to keep.
+    if follow and not s.mark and vim.deep_equal(id, follow.from) then
+      id = follow.to
+    end
     -- The first list read puts the cursor on the first file rather than the
     -- first row, which in a tree is the root and shows nothing.
     local first = s.files_notice ~= nil and #s.entries == 0
@@ -2108,6 +2140,14 @@ local REFRESH_THROTTLE_MS = 300
 ---        pane alone when what it shows cannot have changed.
 function M.refresh(s, opts)
   local auto = opts and opts.auto or false
+  -- Skip while an autosquash runs, saying so only when asked: it reads
+  -- everything again when it ends.
+  if s.autosquash then
+    if not auto then
+      util.info('an autosquash is running; the repository is read again once it ends')
+    end
+    return
+  end
   local now = math.floor(vim.uv.hrtime() / 1000000)
   if auto and s.refreshed_at and now - s.refreshed_at < REFRESH_THROTTLE_MS then
     return
@@ -2372,6 +2412,17 @@ local function clear_list(s)
   s.commits, s.commits_stale, s.mark, s.scope = {}, nil, nil, nil
 end
 
+--- Refuse while an autosquash runs, saying why.
+--- @param s gitview.Session
+--- @return boolean refused
+local function refuses_autosquashing(s)
+  if not s.autosquash then
+    return false
+  end
+  util.info('an autosquash is running; try again once it ends')
+  return true
+end
+
 --- Whether to go on with what throws the review's checks away, asking first
 --- when the review is part way through. A finished one is not asked about: that
 --- is how a review ordinarily ends, and asking there every time would make
@@ -2402,6 +2453,11 @@ end
 --- @param leave_scope boolean? whether to stop looking into the range the
 ---        commits pane shows, which is the one reviewed
 local function begin_review(s, range, label, first, leave_scope)
+  -- Refuse while an autosquash runs: the review's commits are read from the
+  -- log, which is not read meanwhile.
+  if refuses_autosquashing(s) then
+    return
+  end
   if not may_discard(s) then
     return
   end
@@ -2585,6 +2641,86 @@ function M.switch_list(s)
     target = has_worktree_row(s) and { kind = 'worktree', index = 1 } or { kind = 'commit', index = 1 }
   end
   redraw_list(s, target)
+end
+
+--- Fold the `fixup!` and `amend!` commits from the commit under the commits
+--- pane's cursor up to HEAD into the commits they name; see `gitview.autosquash`.
+---
+--- It runs in the background, and until it ends nothing is read from the
+--- repository, whatever asks: a rebase half done is not worth drawing, and
+--- drawing it would move the lists under the cursor. Once it ends, failing
+--- included, everything is read again, and the selection moves to the commit it
+--- started from as rewritten, unless the user has moved on to something else.
+--- @param s gitview.Session
+--- @return boolean handled false when the cursor is on no commit
+function M.autosquash(s)
+  if refuses_autosquashing(s) then
+    return true
+  end
+  -- Refuse while the status is being read: `git status` may hold the index
+  -- lock, which would fail the rebase.
+  if s.reading then
+    util.info('the status is being read; try again in a moment')
+    return true
+  end
+  if s.scope then
+    util.info('back out of the commit first')
+    return true
+  end
+  local target = list.target_at(s.commits_buf, vim.api.nvim_win_get_cursor(s.commits_win)[1])
+  if target and target.kind == 'worktree' then
+    util.info('an autosquash starts from a commit')
+    return true
+  end
+  local commit = target and target.kind == 'commit' and s.commits[target.index]
+  if not commit then
+    return false
+  end
+  if s.mark then
+    util.info('clear the range first')
+    return true
+  end
+  local ends = {}
+  if s.review then
+    local range = s.review.scope.range
+    ends[#ends + 1] = range.old
+    -- Leave out a newer end that is the working tree: it is no commit to
+    -- rewrite.
+    if range.new then
+      ends[#ends + 1] = range.new
+    end
+  end
+  local from = assert(id_of(s, target))
+  s.autosquash = { from = from }
+  local root = s.root
+  git.async(function()
+    return autosquash.run(commit.full_sha, ends, root)
+  end, function(res)
+    if M.sessions[s.tab] ~= s then
+      return
+    end
+    s.autosquash = nil
+    local follow
+    if res.refused then
+      util.info('not autosquashed: ' .. res.refused)
+    elseif res.failed then
+      util.git_error({ what = 'git rebase --autosquash', stderr = res.failed })
+    elseif res.moved then
+      util.info(('autosquashed (HEAD was %s)'):format(res.was))
+    else
+      util.info('nothing to squash')
+    end
+    -- Select the rewritten commit in place of the original, which the log may
+    -- have dropped: the old list would be held open for it otherwise, hiding
+    -- where a rebase that stopped has stopped.
+    if res.start then
+      local to = { kind = 'commit', id = res.start.sha, in_review_list = from.in_review_list }
+      follow = { from = from, to = to }
+    end
+    -- Read even when nothing was run: whatever changed meanwhile went unread.
+    read_status(s, true, false, follow)
+  end)
+  return true
 end
 
 --- Where the commit being looked into sits in the list, or nothing when the
@@ -2824,10 +2960,14 @@ local function refuses_review(target)
   return true
 end
 
---- Refuse to stage from panes the session has made out of date, saying why.
+--- Refuse to stage from panes the session has made out of date, or while an
+--- autosquash is writing the index, saying why.
 --- @param s gitview.Session
 --- @return boolean refused
 local function wait_for_read(s)
+  if refuses_autosquashing(s) then
+    return true
+  end
   if not s.outdated then
     return false
   end

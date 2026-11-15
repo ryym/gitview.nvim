@@ -478,14 +478,17 @@ end
 --- rather than printing nothing, so the caller has to know whether there is a
 --- HEAD before asking.
 ---
---- @param count integer how many to ask for
+--- @param count integer? how many to ask for; nil for all of them
 --- @param cwd string
 --- @param span? {from:string?, to:string?} the log of `from..to` rather than of
 ---        HEAD: `to`, HEAD by default, without what `from` has
 --- @return gitview.Commit[]? commits
 --- @return string? err
 function M.log(count, cwd, span)
-  local cmd = { 'git', 'log', '-z', '--format=' .. LOG_FORMAT, '-n', tostring(count) }
+  local cmd = { 'git', 'log', '-z', '--format=' .. LOG_FORMAT }
+  if count then
+    vim.list_extend(cmd, { '-n', tostring(count) })
+  end
   cmd[#cmd + 1] = span and span.to or 'HEAD'
   if span and span.from then
     cmd[#cmd + 1] = '^' .. span.from
@@ -498,6 +501,33 @@ function M.log(count, cwd, span)
     return nil, res.stderr
   end
   return M.parse_log(res.stdout)
+end
+
+--- Fold the `fixup!` and `amend!` commits after `base` into the commits they
+--- name, as `git rebase -i --autosquash` does with its todo list left as it is.
+--- Nothing is asked of the user, and a dirty working tree is refused by git.
+---
+--- @param base string? the commit the rebase starts on; nil to rewrite from the
+---        root commit
+--- @param cwd string
+--- @return gitview.GitResult
+function M.autosquash(base, cwd)
+  return M.run({
+    'git',
+    'rebase',
+    -- Pass `-i` along: `--autosquash` works without it only from git 2.44.
+    '-i',
+    '--autosquash',
+    -- Refuse a dirty working tree rather than stash it, whatever
+    -- `rebase.autoStash` says: the user did not ask for their changes to move.
+    '--no-autostash',
+    base or '--root',
+  }, cwd, {
+    -- Take the todo list as autosquash ordered it. No other editor is called
+    -- for a fixup or an `amend!`, but should one be, an editor with no terminal
+    -- to draw on would hang the rebase rather than fail it.
+    env = { GIT_SEQUENCE_EDITOR = ':', GIT_EDITOR = ':' },
+  })
 end
 
 --- @class gitview.Upstream the branch the current one tracks

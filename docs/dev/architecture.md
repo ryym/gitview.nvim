@@ -29,6 +29,7 @@ everything around it is drawn or concealed.
 | `git`, `status`             | Every subprocess, and what is uncommitted              |
 | `stage`, `index`            | Writing to the index; see [staging](staging.md)        |
 | `review`                    | Which files of a review are checked off                |
+| `autosquash`                | Folding fixup commits in, by a rebase                  |
 | `util`, `perf`              | Helpers, and timing; see [performance](performance.md) |
 
 The dependencies run one way:
@@ -132,6 +133,9 @@ account for it:
 - **The files pane is allowed to drift.** A file that left the list has nothing left to show.
 - **A refresh during a visual selection is dropped**, as it would take away the lines about to be
   staged. Finishing that command re-reads anyway.
+
+While an autosquash runs, nothing is read from the repository, whatever asks, until it ends: a
+rebase half done is not worth drawing, and drawing it would move the lists under the cursor.
 
 ### Reviews and ranges
 

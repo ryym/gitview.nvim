@@ -77,6 +77,13 @@ and you review it again.
 When selecting a range, `<CR>` looks into the details; allow you to see the diff per file in the diff.
 Or `gr` to enter [review mode](#review-mode).
 
+### Folding fixup commits
+
+`A` on a commit folds the `fixup!` and `amend!` commits from that commit up to HEAD, as
+`git rebase -i --autosquash <commit>^` does. Folding `amend!` needs Git 2.32+.
+It is a non-interactive operation; stops on failure such as a conflict, and refuses to run if
+the target commits include a `squash!` commit.
+
 ## Diff window
 
 Gitview displays the diff in a unified diff format.
@@ -165,6 +172,7 @@ This table describes available actions in GitView with default key mappings.
 | `m`     | `start_range`              | Start the commit range selection             |       |    ✓    |      |
 | `<Esc>` | `clear_range`              | Cancel the commit range selection            |       |    ✓    |      |
 | `gr`    | `start_review`             | Start review mode                            |       |    ✓    |      |
+| `A`     | `autosquash`               | Fold `fixup!` commits up to HEAD             |       |    ✓    |      |
 | `s`     | `stage`                    | Stage the file(s) or line(s)                 |   ✓   |         |  ✓   |
 | `u`     | `unstage`                  | Unstage the file(s) or line(s)               |   ✓   |         |  ✓   |
 | `S`     | `stage_hunk`               | Stage the hunk                               |       |         |  ✓   |
