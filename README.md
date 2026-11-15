@@ -205,13 +205,15 @@ This table describes available actions in GitView with default key mappings.
 
 ### Actions with arguments
 
-Those actions take arguments:
+Those actions take arguments, as one table of options:
 
-| action                  | arguments           | description                                    |
-| ----------------------- | ------------------- | ---------------------------------------------- |
-| `close`                 | `{ force = false }` | `force = true` skips confirmation before close |
-| `set_shown_changes`     | `shown`             | `both` or `staged` or `unstaged`               |
-| `set_ignore_whitespace` | `ignore`            | boolean                                        |
+| action                  | options              | description                                    |
+| ----------------------- | -------------------- | ---------------------------------------------- |
+| `close`                 | `{ force = false }`  | `force = true` skips confirmation before close |
+| `set_shown_changes`     | `{ shown = 'both' }` | `both` or `staged` or `unstaged`               |
+| `set_ignore_whitespace` | `{ ignore = false }` | boolean                                        |
+
+An option the action does not take, or of another type, is an error.
 
 ### Using actions
 
@@ -221,11 +223,11 @@ Every action is a Lua function of `require('gitview.actions')`.
 local actions = require('gitview.actions')
 
 actions.next_file()
-actions.set_shown_changes('staged')
+actions.set_shown_changes({ shown = 'staged' })
 actions.close({ force = true })
 
 vim.keymap.set('n', '<Leader>gu', function()
-  a.set_shown_changes('unstaged')
+  actions.set_shown_changes({ shown = 'unstaged' })
 end)
 ```
 

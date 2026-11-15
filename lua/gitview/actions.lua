@@ -5,6 +5,14 @@
 --- cursor is in, which is told by the current buffer. One that means nothing in
 --- that pane, or is called with no session, returns false.
 ---
+--- Every public function here is an action, runnable by `:Gitview run` as
+--- well, so nothing else is to be put here.
+---
+--- An action that takes arguments takes them as one table of options, so that
+--- the command can pass them without knowing the action. An option the action
+--- does not know is an error rather than ignored, so that a mistyped one is
+--- told.
+---
 --- Every action returns whether it did anything, a message saying why it could
 --- not included; false means nothing happened and nothing was said, so a caller
 --- is free to do something else with the key. Whatever the action sets off may
@@ -104,6 +112,35 @@ local function whole()
     leave_visual()
   end
   return s
+end
+
+--- The options given to `action`, checked against the type of each it takes.
+--- Raises an error at the caller of the action if they are no table, have one
+--- it does not take, or have one of another type or missing.
+--- @param action string
+--- @param opts table?
+--- @param types table<string, type|string> the type of each option, ending in
+---        `?` if the option may be left out
+--- @return table
+local function options(action, opts, types)
+  opts = opts or {}
+  if type(opts) ~= 'table' then
+    error(('gitview: %s takes a table of options, not %s'):format(action, vim.inspect(opts)), 3)
+  end
+  for key in pairs(opts) do
+    if not types[key] then
+      error(('gitview: %s has no option %s'):format(action, vim.inspect(key)), 3)
+    end
+  end
+  for key, t in pairs(types) do
+    local optional = vim.endswith(t, '?')
+    local want = optional and t:sub(1, -2) or t
+    local value = opts[key]
+    if not (optional and value == nil) and type(value) ~= want then
+      error(('gitview: %s takes %s as a %s, not %s'):format(action, key, want, vim.inspect(value)), 3)
+    end
+  end
+  return opts
 end
 
 local LISTS = { files = true, commits = true }
@@ -433,12 +470,10 @@ function M.toggle_ignore_whitespace()
 end
 
 --- Count lines that differ only in whitespace as unchanged, or as changed.
---- @param ignore boolean
+--- @param opts {ignore: boolean}
 --- @return boolean false when they are counted so already
-function M.set_ignore_whitespace(ignore)
-  if type(ignore) ~= 'boolean' then
-    error(('gitview: ignore must be a boolean, not %s'):format(vim.inspect(ignore)), 2)
-  end
+function M.set_ignore_whitespace(opts)
+  local ignore = options('set_ignore_whitespace', opts, { ignore = 'boolean' }).ignore
   local s = whole()
   return s ~= nil and require('gitview.ui.session').set_whitespace(s, ignore)
 end
@@ -459,9 +494,10 @@ end
 local SHOWN_CHANGES = { both = true, staged = true, unstaged = true }
 
 --- Show both staged and unstaged changes, or one of them alone.
---- @param shown gitview.Layer `both`, `staged` or `unstaged`
+--- @param opts {shown: gitview.Layer} `shown` is `both`, `staged` or `unstaged`
 --- @return boolean false when those changes are shown already
-function M.set_shown_changes(shown)
+function M.set_shown_changes(opts)
+  local shown = options('set_shown_changes', opts, { shown = 'string' }).shown
   if not SHOWN_CHANGES[shown] then
     error(('gitview: no such shown changes: %s'):format(vim.inspect(shown)), 2)
   end
@@ -485,12 +521,13 @@ end
 --- @param opts? {force?: boolean}
 --- @return boolean
 function M.close(opts)
+  opts = options('close', opts, { force = 'boolean?' })
   local s = whole()
   if not s then
     return false
   end
   local session = require('gitview.ui.session')
-  if opts and opts.force then
+  if opts.force then
     session.close(s)
   else
     session.close_asked(s)

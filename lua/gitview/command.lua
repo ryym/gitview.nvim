@@ -40,7 +40,7 @@ local SUBCOMMANDS = {
     run = function(args)
       local actions = require('gitview.actions')
       if args[1] then
-        actions.set_shown_changes(args[1] --[[@as gitview.Layer]])
+        actions.set_shown_changes({ shown = args[1] --[[@as gitview.Layer]] })
       else
         actions.cycle_shown_changes()
       end
@@ -51,7 +51,7 @@ local SUBCOMMANDS = {
     run = function(args)
       local actions = require('gitview.actions')
       if args[1] then
-        actions.set_ignore_whitespace(args[1] == 'on')
+        actions.set_ignore_whitespace({ ignore = args[1] == 'on' })
       else
         actions.toggle_ignore_whitespace()
       end

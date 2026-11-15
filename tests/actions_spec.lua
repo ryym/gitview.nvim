@@ -64,7 +64,7 @@ local function goto_commit(s, index)
 end
 
 --- The arguments of the actions that need one.
-local ARGS = { set_shown_changes = 'staged', set_ignore_whitespace = true }
+local ARGS = { set_shown_changes = { shown = 'staged' }, set_ignore_whitespace = { ignore = true } }
 
 test('actions: every one does nothing outside a session', function()
   for name, fn in pairs(actions) do
@@ -73,18 +73,32 @@ test('actions: every one does nothing outside a session', function()
 end)
 
 test('actions: the setters refuse what is no value of theirs', function()
-  assert(not pcall(actions.set_shown_changes, 'all'))
-  assert(not pcall(actions.set_ignore_whitespace, 'on'))
+  assert(not pcall(actions.set_shown_changes, { shown = 'all' }))
+  assert(not pcall(actions.set_ignore_whitespace, { ignore = 'on' }))
+end)
+
+test('actions: an option not taken, missing or of another type is an error', function()
+  local ok, err = pcall(actions.close, { foce = true })
+  eq(false, ok)
+  eq('gitview: close has no option "foce"', err)
+  ok, err = pcall(actions.set_shown_changes, 'staged')
+  eq(false, ok)
+  eq('gitview: set_shown_changes takes a table of options, not "staged"', err)  ok, err = pcall(actions.close, { force = 'no' })
+  eq(false, ok)
+  eq('gitview: close takes force as a boolean, not "no"', err)
+  ok, err = pcall(actions.set_ignore_whitespace, {})
+  eq(false, ok)
+  eq('gitview: set_ignore_whitespace takes ignore as a boolean, not nil', err)
 end)
 
 test('actions: a setter says nothing changed when it is set already', function()
   with_session(history, function(s)
     vim.api.nvim_set_current_win(s.files_win)
-    eq(false, actions.set_shown_changes('both'))
-    eq(true, actions.set_shown_changes('staged'))
+    eq(false, actions.set_shown_changes({ shown = 'both' }))
+    eq(true, actions.set_shown_changes({ shown = 'staged' }))
     eq('staged', s.layer)
-    eq(false, actions.set_ignore_whitespace(false))
-    eq(true, actions.set_ignore_whitespace(true))
+    eq(false, actions.set_ignore_whitespace({ ignore = false }))
+    eq(true, actions.set_ignore_whitespace({ ignore = true }))
     eq(true, s.ignore_whitespace)
   end)
 end)
