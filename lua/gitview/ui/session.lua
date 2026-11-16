@@ -1578,8 +1578,13 @@ local function show_commit_file(s, target)
   local view = src
     and perf.measure('build', vlib.build, { src }, scope.label, config.values.diff_context, diff_opts(s))
   if not view then
-    -- a pure rename or a mode change: a real change with no lines to show
-    render.notice(s.diff_buf, ('%s   %s'):format(label, no_view_reason(s)))
+    -- A pure rename or a mode change: a real change with no lines to show. Or
+    -- an unmerged file with no conflict marked out.
+    local reason = no_view_reason(s)
+    if change.status == 'U' then
+      reason = '(unresolved conflict with no markers)'
+    end
+    render.notice(s.diff_buf, ('%s   %s'):format(label, reason))
     return
   end
   view.note = note_of(s, scope_note(s, target))
@@ -2015,6 +2020,20 @@ local function reread_scope(s, scope)
   end
 end
 
+--- Take the checks off the files under review that are unmerged now, since
+--- what was read of one is not what resolving it will leave. A conflict with
+--- no markers, as a modify/delete one, can still match what was read, and its
+--- check would otherwise hold while the conflict is open.
+--- @param s gitview.Session
+local function uncheck_conflicts(s)
+  local r = assert(s.review)
+  for _, c in ipairs(r.scope.changes) do
+    if c.status == 'U' then
+      r.checks[c.path] = nil
+    end
+  end
+end
+
 --- Note what every file checked off in a review ending at the working tree is
 --- now, whether the review still lists it or not: one put back as it was and
 --- changed again is checked once it is as it was read.
@@ -2105,6 +2124,7 @@ local function read_status(s, report, keep_unchanged, follow)
     -- is showing.
     if s.review then
       reread_scope(s, s.review.scope)
+      uncheck_conflicts(s)
       see_files(s)
     end
     -- The working-tree row comes and goes with the entries, and its mark with it.
@@ -3248,6 +3268,33 @@ local function review_paths_at(r, t)
   return c and { c.path } or {}
 end
 
+--- Say why `paths` cannot be checked off, if one of them is unmerged and the
+--- toggle would check them rather than take their checks off.
+---
+--- An unmerged file is not yet what it will be: what is read of it is its
+--- conflict markers, and resolving it is still to come. Taking a check off is
+--- always allowed. The paths go one way together, so a conflict among them
+--- refuses the rest too.
+--- @param r gitview.Review
+--- @param paths string[]
+--- @return boolean refused
+local function refuses_check(r, paths)
+  if not review.would_check(r.checks, paths) then
+    return false
+  end
+  local wanted = {}
+  for _, path in ipairs(paths) do
+    wanted[path] = true
+  end
+  for _, c in ipairs(r.scope.changes) do
+    if c.status == 'U' and wanted[c.path] then
+      util.warn(('%s has an unresolved conflict; resolve it before checking it off'):format(c.path))
+      return true
+    end
+  end
+  return false
+end
+
 --- Check off the files under the rows of the files pane from `first` to
 --- `last`, or take their checks off when every one is checked already.
 --- @param s gitview.Session
@@ -3271,6 +3318,9 @@ function M.check_rows(s, first, last)
   end
   if #paths == 0 then
     return false
+  end
+  if refuses_check(r, paths) then
+    return true
   end
   -- Read each file as it is now, as a row has no view on screen to go by.
   -- `toggle` records what was read only when it checks the files off.
@@ -3378,6 +3428,9 @@ function M.check_shown(s, first, last)
   end
   if #picked == 0 then
     util.info('no file here')
+    return
+  end
+  if refuses_check(r, picked) then
     return
   end
   local checked = review.toggle(r.checks, picked, reads)

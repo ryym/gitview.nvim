@@ -112,7 +112,8 @@ end
 ---
 --- A committed side is read from the object database, never from the working
 --- tree, which may no longer have the file at all. Only a range ending at the
---- working tree reads it, and then for the new side alone.
+--- working tree reads it, and then for the new side alone. An unmerged file
+--- there is read as its conflict, as `for_entry` reads one.
 ---
 --- @param range gitview.Range
 --- @param changes gitview.Change[] not binary; those have nothing to read
@@ -126,7 +127,7 @@ local function range_sources(range, changes, root)
   -- old side it does not have is never named.
   local specs, old_spec, new_spec = {}, {}, {}
   for i, c in ipairs(changes) do
-    if range.old and c.status ~= 'A' then
+    if range.old and c.status ~= 'A' and c.status ~= 'U' then
       specs[#specs + 1] = ('%s:%s'):format(range.old, c.old_path)
       old_spec[i] = #specs
     end
@@ -147,6 +148,9 @@ local function range_sources(range, changes, root)
       new_lines = c.status == 'D' and {} or M.working_lines(path)
     end
     local label, name_end = status.change_label(c)
+    -- Show an unmerged file as its conflict rather than compared with the old
+    -- side, where its markers would pass for lines added.
+    local conflicted = c.status == 'U' or nil
     sources[#sources + 1] = {
       path = path,
       label = label,
@@ -154,7 +158,8 @@ local function range_sources(range, changes, root)
       ft = M.filetype_of(path),
       old_lines = old_spec[i] and blobs[old_spec[i]] or {},
       new_lines = new_lines,
-      old_rev = range.old,
+      conflicted = conflicted,
+      old_rev = not conflicted and range.old or nil,
       new_rev = range.new,
     }
   end

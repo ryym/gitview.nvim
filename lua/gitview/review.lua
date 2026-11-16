@@ -44,6 +44,20 @@ function M.is_open(checks, path)
   return M.state(checks, path) ~= 'checked'
 end
 
+--- Whether `toggle` would check `paths` off rather than take their checks off:
+--- whether any of them is still to be read.
+--- @param checks table<string, gitview.Check>
+--- @param paths string[]
+--- @return boolean
+function M.would_check(checks, paths)
+  for _, path in ipairs(paths) do
+    if M.is_open(checks, path) then
+      return true
+    end
+  end
+  return false
+end
+
 --- Check every path off, or, when every one is checked already, take the
 --- checks off them all. The paths go one way together, as the files of a
 --- directory do when it is staged. A file changed since it was checked is
@@ -54,19 +68,13 @@ end
 ---        was read as; nil in a range between commits
 --- @return boolean checked whether they were checked rather than taken off
 function M.toggle(checks, paths, read)
-  local all = true
-  for _, path in ipairs(paths) do
-    if M.is_open(checks, path) then
-      all = false
-      break
-    end
-  end
+  local checking = M.would_check(checks, paths)
   for _, path in ipairs(paths) do
     local r = read and read[path]
-    checks[path] = not all and { hash = r and r.hash, now = r and r.hash, binary = r and r.binary }
+    checks[path] = checking and { hash = r and r.hash, now = r and r.hash, binary = r and r.binary }
       or nil
   end
-  return not all
+  return checking
 end
 
 --- What a version of a file comes to, read as lines.

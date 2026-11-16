@@ -1456,3 +1456,92 @@ test('review: a directory is faded once every file in it is checked', function()
     eq({ GitviewDirectory = true }, row_groups(s, 1))
   end, { tree = true })
 end)
+
+--- A branch with `fight.txt` changed on both sides and `calm.txt` on ours alone,
+--- left on ours, which a rebase onto `other` stops at a conflict on.
+--- @param repo gitview.TestRepo
+local function diverged(repo)
+  repo.write('fight.txt', { 'base' })
+  repo.write('calm.txt', { 'one' })
+  repo.commit('init')
+  repo.git('checkout', '-q', '-b', 'other')
+  repo.write('fight.txt', { 'theirs' })
+  repo.commit('theirs')
+  repo.git('checkout', '-q', '-')
+  repo.write('fight.txt', { 'ours' })
+  repo.write('calm.txt', { 'two' })
+  repo.commit('ours')
+end
+
+--- Rebase onto `other`, which stops at the conflict in `fight.txt`. The style
+--- is fixed so that a `diff3` in the user's config adds no base to the markers.
+--- @param repo gitview.TestRepo
+local function rebase_into_conflict(repo)
+  vim
+    .system(
+      { 'git', '-c', 'merge.conflictStyle=merge', 'rebase', 'other' },
+      { cwd = repo.root, text = true }
+    )
+    :wait()
+  assert(repo.git('status', '--short'):find('UU fight.txt', 1, true), 'no conflict was set up')
+end
+
+-- Rebasing during a review is common, to fold fixups or take in the latest
+-- main. `git diff` alone would list the conflict as an ordinary change, its
+-- markers as lines added and a check recording them as read.
+test('review: a conflict met during it is shown as one and not checked off', function()
+  with_session(diverged, function(s, repo)
+    session.review_refs('other')
+    settle(s)
+    eq({ 'calm.txt', 'fight.txt' }, rows(s))
+    rebase_into_conflict(repo)
+    refresh(s)
+    eq({ 'calm.txt', 'fight.txt' }, rows(s))
+    eq('  U  ', status_column(s, 2))
+    eq({ GitviewStatusUnstaged = true }, row_groups(s, 2))
+    files_row(s, 2)
+    eq({ 'fight.txt', '<<<<<<< HEAD', 'theirs', '=======', 'ours' }, vim.list_slice(diff_rows(s), 1, 5))
+    eq({ 'fight.txt has an unresolved conflict; resolve it before checking it off' }, notified(function()
+      press(s, 'x')
+    end))
+    eq({ '', '' }, marks(s))
+    vim.api.nvim_set_current_win(s.diff_win)
+    eq({ 'fight.txt has an unresolved conflict; resolve it before checking it off' }, notified(function()
+      vim.cmd.normal('x')
+    end))
+    eq({ '', '' }, marks(s))
+    -- once resolved, it is a change like any other
+    repo.write('fight.txt', { 'both' })
+    repo.git('add', 'fight.txt')
+    refresh(s)
+    eq('  M  ', status_column(s, 2))
+    press(s, '2Gx')
+    eq({ '', '✓' }, marks(s))
+  end)
+end)
+
+-- A modify/delete conflict leaves the file as one side wrote it, with no
+-- markers, so a check made before the rebase would still match it.
+test('review: a check made before a conflict is taken off by it', function()
+  with_session(function(repo)
+    repo.write('f.txt', { 'base' })
+    repo.commit('init')
+    repo.git('checkout', '-q', '-b', 'other')
+    repo.git('rm', '-q', 'f.txt')
+    repo.commit('deleted')
+    repo.git('checkout', '-q', '-')
+    repo.write('f.txt', { 'ours' })
+    repo.commit('ours')
+  end, function(s, repo)
+    session.review_refs('other')
+    settle(s)
+    eq({ 'f.txt' }, rows(s))
+    press(s, 'x')
+    eq({ '✓' }, marks(s))
+    vim.system({ 'git', 'rebase', 'other' }, { cwd = repo.root, text = true }):wait()
+    assert(repo.git('ls-files', '--unmerged') ~= '', 'no conflict was set up')
+    refresh(s)
+    eq('  U  ', status_column(s, 1))
+    eq({ '' }, marks(s))
+  end)
+end)

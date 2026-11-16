@@ -630,6 +630,44 @@ test('a range to the working tree sees a file rewritten as the index was written
   end)
 end)
 
+-- One record per merge stage, so a path both sides changed comes three times.
+test('parses the unmerged paths of the index', function()
+  local out = z(
+    '100644 aaaa 1\tboth.txt',
+    '100644 bbbb 2\tboth.txt',
+    '100644 cccc 3\tboth.txt',
+    '100644 dddd 2\tsp ace.txt'
+  )
+  eq({ ['both.txt'] = true, ['sp ace.txt'] = true }, git.parse_unmerged(out))
+  eq({}, git.parse_unmerged(''))
+end)
+
+-- `git diff <commit>` itself lists an unmerged path as `M`, its conflict
+-- markers as lines added.
+test('a range to the working tree lists an unmerged path as U', function()
+  helpers.with_repo(function(repo)
+    repo.write('fight.txt', { 'base' })
+    repo.write('calm.txt', { 'one' })
+    repo.commit('init')
+    repo.git('checkout', '-q', '-b', 'other')
+    repo.write('fight.txt', { 'theirs' })
+    repo.commit('theirs')
+    repo.git('checkout', '-q', '-')
+    repo.write('fight.txt', { 'ours' })
+    repo.commit('ours')
+    local sha = assert(git.log(1, repo.root))[1].sha
+    vim.system({ 'git', 'merge', 'other' }, { cwd = repo.root, text = true }):wait()
+    repo.write('calm.txt', { 'two' })
+
+    local changes = assert(git.changed_between({ old = sha }, repo.root, {}))
+    local status = {}
+    for _, c in ipairs(changes) do
+      status[c.path] = c.status
+    end
+    eq({ ['calm.txt'] = 'M', ['fight.txt'] = 'U' }, status)
+  end)
+end)
+
 -- Captured from `git merge-tree --write-tree -z --name-only` on a merge where
 -- `d` was deleted on one side and changed on the other, and `f` changed on both.
 test('parses a merge redone with conflicts', function()

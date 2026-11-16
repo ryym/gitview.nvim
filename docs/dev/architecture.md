@@ -150,6 +150,9 @@ rebase half done is not worth drawing, and drawing it would move the lists under
   leave unread content marked as read.
 - **A range ending at the working tree is read against a copy of the index** with the untracked files
   added, so that git treats them as any other file. The real index is never written for it.
+- **An unmerged file in a range ending at the working tree is its conflict**, as a rebase during a
+  review leaves it: listed as `U`, shown as the conflict view rather than compared with the old side,
+  and not checked off until resolved. `git diff` alone lists it as an ordinary change.
 
 ## Invariants
 
