@@ -695,6 +695,8 @@ end
 --- `diff-tree --root`. Every other range, including one whose ends are merges,
 --- is an ordinary comparison of two trees, or of a tree and the working tree.
 ---
+--- A range ending at the working tree lists an unmerged path as `U`.
+---
 --- @param range gitview.Range
 --- @param cwd string
 --- @param untracked string[]? for a range ending at the working tree, the files
@@ -713,7 +715,53 @@ function M.changed_between(range, cwd, untracked)
       return nil, err
     end
   end
-  return changed_since(range.old, untracked, cwd)
+  local changes, err = changed_since(range.old, untracked, cwd)
+  if not changes then
+    return nil, err
+  end
+  -- `git diff <commit>` lists an unmerged path as an ordinary change of the
+  -- working tree, conflict markers and all, so which paths are unmerged is
+  -- asked of the index. A failure only costs telling them apart.
+  local unmerged = M.unmerged(cwd)
+  if unmerged then
+    for _, c in ipairs(changes) do
+      if unmerged[c.path] then
+        -- Drop a rename into it, which says nothing about the conflict. Its
+        -- source goes unlisted until the conflict is resolved, too short a
+        -- time to be worth listing the deletion on its own.
+        c.status, c.old_path = 'U', c.path
+      end
+    end
+  end
+  return changes
+end
+
+--- Parse `git ls-files --unmerged -z`: a `mode sha stage<TAB>path` record per
+--- merge stage, so one to three per path.
+--- @param out string
+--- @return table<string, true> paths
+function M.parse_unmerged(out)
+  local paths = {}
+  for _, record in ipairs(vim.split(out, '\0', { plain = true, trimempty = true })) do
+    local path = record:match('^[^\t]*\t(.*)$')
+    if path then
+      paths[path] = true
+    end
+  end
+  return paths
+end
+
+--- The paths the index holds merge stages for: the conflicts left to resolve.
+--- Read from the index alone, without a walk of the working tree.
+--- @param cwd string
+--- @return table<string, true>? paths
+--- @return string? err
+function M.unmerged(cwd)
+  local res = M.run({ 'git', 'ls-files', '--unmerged', '-z' }, cwd)
+  if not res.ok then
+    return nil, res.stderr
+  end
+  return M.parse_unmerged(res.stdout)
 end
 
 --- @class gitview.CommitDetail what a commit says beyond its row in the log

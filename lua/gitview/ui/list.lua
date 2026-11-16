@@ -366,8 +366,10 @@ local function scope_rows(scope, as_tree, under)
     -- the rest of a checked row, which would otherwise still catch the eye.
     local faded = state == 'checked'
     local spans = faded and { { from = 0, to = #text, group = 'GitviewReviewed' } } or nil
-    -- One letter, in the color the list already uses for a settled change.
-    local letters = { { c.status, faded and 'GitviewReviewed' or 'GitviewStatusStaged' } }
+    -- One letter, in the color the list already uses for a settled change. A
+    -- conflict left to resolve is not settled, and takes the unstaged color.
+    local group = c.status == 'U' and 'GitviewStatusUnstaged' or 'GitviewStatusStaged'
+    local letters = { { c.status, faded and 'GitviewReviewed' or group } }
     rows[i] = {
       text = text,
       gutter = gutter_of(letters),
