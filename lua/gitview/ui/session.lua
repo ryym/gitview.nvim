@@ -52,6 +52,8 @@ local M = {}
 --- @field upstream gitview.Upstream? what the branch tracks; nil when nothing
 --- @field unpushed table<string, true>? which of `commits` the upstream does not
 ---        have, by full sha; nil when there is no upstream
+--- @field branch_point gitview.BranchPoint? where HEAD branched off the default
+---        branch; nil when that is not known
 --- @field ignore_whitespace boolean whether lines differing only in whitespace
 ---        count as changed; starts from the configuration and is toggled while
 ---        the session is open
@@ -99,8 +101,8 @@ local M = {}
 --- @field watcher uv.uv_fs_poll_t? watches the index for writes; nil when the
 ---        git directory could not be resolved
 --- @field common_dir string? the directory the worktrees share, once resolved
---- @field ref_watchers uv.uv_fs_poll_t[]? watch where the refs read with the
----        upstream are kept; nil when there are none
+--- @field ref_watchers uv.uv_fs_poll_t[]? watch where the refs of `upstream`
+---        and `branch_point` are kept; nil when there is neither
 --- @field watched_refs string[]? the full names of the refs they watch
 --- @field config_watcher uv.uv_fs_poll_t? watches the config, where what a
 ---        branch tracks is set; nil when the shared directory could not be
@@ -646,8 +648,9 @@ end
 
 local on_ref_poll
 
---- Repaint whenever a watched ref moves, which a fetch or a push does without
---- writing the index.
+--- Repaint whenever the upstream's or the default branch's ref moves, which a
+--- fetch, a push or a pull into the default branch does without writing the
+--- index.
 ---
 --- Polled for the same reason as the index: git writes a ref to a lock file and
 --- renames it over. A ref is kept in one of two places, and both are watched:
@@ -667,8 +670,10 @@ local on_ref_poll
 --- @param s gitview.Session
 local function watch_refs(s)
   local refs = {}
-  if s.upstream then
-    refs[#refs + 1] = s.upstream.ref
+  for _, r in ipairs({ s.upstream or false, s.branch_point or false }) do
+    if r then
+      refs[#refs + 1] = r.ref
+    end
   end
   if vim.deep_equal(refs, s.watched_refs or {}) then
     return
@@ -702,16 +707,18 @@ local function watch_refs(s)
   s.watched_refs = refs
 end
 
---- Paint which commits the upstream has, unless the list shown is of a review
---- off HEAD's history: what is unpushed is known of HEAD's commits alone, and
---- any other would be painted as pushed.
+--- Paint which commits the upstream has and where HEAD branched off, unless
+--- the list shown is of a review off HEAD's history: both are known of HEAD's
+--- commits alone, and any other would be painted as pushed.
 --- @param s gitview.Session
 local function paint_refs(s)
   local off_head = s.listing == 'review' and not assert(s.review).on_head
   list.paint_upstream(s.commits_buf, not off_head and s.upstream or nil, s.unpushed)
+  list.paint_branch_point(s.commits_buf, not off_head and s.branch_point or nil)
 end
 
---- Read what the branch tracks again, and follow it with the watchers.
+--- Read what the branch tracks and where it branched off again, and follow
+--- them with the watchers.
 --- Does nothing while an autosquash runs; the read when it ends covers what is
 --- skipped.
 --- @param s gitview.Session
@@ -720,6 +727,7 @@ local function reread_refs(s)
     return
   end
   s.upstream, s.unpushed = read_upstream(s)
+  s.branch_point = s.has_head and git.branch_point(s.root) or nil
   watch_refs(s)
 end
 

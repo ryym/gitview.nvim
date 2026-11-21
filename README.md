@@ -64,6 +64,9 @@ With `file_list_style = 'flat'`, the files are listed by their whole paths inste
   A merge commit is compared with its first parent.
 - `<CR>` on a commit goes into detail: displays the changed files of the commit.
   `<BS>` exists the detail.
+- A line marks where the current branch branched off the default branch: the local branch
+  named after what `origin/HEAD` points at. Without `origin/HEAD`, such as in a repository
+  not cloned, `git remote set-head origin --auto` sets it.
 
 ### Comparing two commits
 
@@ -402,7 +405,7 @@ Gitview uses the following highlight groups. Defining any of them yourself takes
 | a commit's header | `GitviewCommitSubject`, `GitviewCommitAuthor`, `GitviewStatAdd`, `GitviewStatDelete`                                                                        |
 | files left out    | `GitviewSkipped`                                                                                                                                            |
 | the sidebar       | `GitviewStatusStaged`, `GitviewStatusUnstaged`, `GitviewStatusUntracked`, `GitviewListCursor`, `GitviewRange`                                               |
-| commits           | `GitviewCommitSha`, `GitviewCommitShaPushed`, `GitviewCommitWorktree`, `GitviewUpstream`, `GitviewUpstreamRule`                                             |
+| commits           | `GitviewCommitSha`, `GitviewCommitShaPushed`, `GitviewCommitWorktree`, `GitviewUpstream`, `GitviewUpstreamRule`, `GitviewBranchPoint`                       |
 | a tree            | `GitviewDirectory`, `GitviewIndent`                                                                                                                         |
 | a review          | `GitviewReviewedMark`, `GitviewReviewed`, `GitviewReviewChanged`                                                                                            |
 | the diff's winbar | `GitviewCommitSha`, `GitviewWinBarText`                                                                                                                     |

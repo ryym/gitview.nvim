@@ -120,8 +120,8 @@ a read has drawn the result.
 ### Refreshing
 
 A session re-reads the repository on `R`, after changing the index itself, when its tab page is
-entered, and when a poll sees the index written. Polls on the upstream's ref and on the config
-re-read only the upstream.
+entered, and when a poll sees the index written. Polls on the refs of the upstream and the
+default branch, and on the config, re-read only those refs.
 
 The line none of it may cross is changing what the diff pane shows, since nothing the user did would
 account for it:
@@ -243,4 +243,4 @@ stage needs, so both are one piece of work.
 
 Two kinds of change are left to `R` while the tab page stays current: a file written by something that never
 went through git, and a command that moves HEAD without writing the index. A repository whose refs are a
-reftable has no file to watch, so moves of its upstream are also left to `R`.
+reftable has no file to watch, so moves of its refs are also left to `R`.

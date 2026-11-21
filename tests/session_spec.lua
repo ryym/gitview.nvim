@@ -1372,6 +1372,29 @@ test('session: an upstream set on the branch is seen without a refresh', functio
   end)
 end)
 
+-- Updating the default branch writes no index.
+test('session: a move of the default branch is seen without a refresh', function()
+  with_session(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.write('a.txt', { 'two' })
+    repo.commit('second')
+    repo.git('branch', 'trunk', 'HEAD~1')
+    repo.git('update-ref', 'refs/remotes/origin/trunk', 'trunk')
+    repo.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk')
+    repo.write('a.txt', { 'three' })
+    repo.commit('third')
+  end, function(s, repo)
+    eq(s.commits[3].full_sha, s.branch_point.sha)
+    eq({ 'refs/heads/trunk' }, s.watched_refs)
+    repo.git('branch', '-f', 'trunk', 'HEAD~1')
+    local seen = vim.wait(5000, function()
+      return s.branch_point and s.branch_point.sha == s.commits[2].full_sha
+    end)
+    assert(seen, 'the move was never seen')
+  end)
+end)
+
 test('session: the upstream watchers are given up with the tab page', function()
   local closed
   with_session(ahead, function(s)

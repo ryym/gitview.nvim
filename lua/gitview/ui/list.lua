@@ -497,6 +497,7 @@ local highlights = util.highlights('gitview.ui.highlights', function(set)
   -- line sits back like the borders between windows rather than outweighing
   -- them.
   set('GitviewUpstreamRule', { link = 'Whitespace' })
+  set('GitviewBranchPoint', { link = 'Function' })
   set('GitviewListCursor', { link = 'Title' })
   -- A range is a selection, and is colored as one, though no Visual mode is
   -- involved.
@@ -629,6 +630,7 @@ local ns = vim.api.nvim_create_namespace('gitview.ui.list')
 local cursor_ns = vim.api.nvim_create_namespace('gitview.ui.list.cursor')
 local range_ns = vim.api.nvim_create_namespace('gitview.ui.list.range')
 local upstream_ns = vim.api.nvim_create_namespace('gitview.ui.list.upstream')
+local branch_point_ns = vim.api.nvim_create_namespace('gitview.ui.list.branch_point')
 
 --- Above the spans a row is drawn with, so the row the diff shows stands out
 --- even where the whole row is already colored, as the working-tree row is.
@@ -742,6 +744,36 @@ function M.paint_range(buf, first, last)
   })
 end
 
+--- Hang a line naming a ref above the row of the commit it points at.
+---
+--- Hung below the row above rather than above this one: lines above the first
+--- line of a buffer are only shown once the window is scrolled up onto them.
+--- The first row has none above it, and the line is left out until a
+--- working-tree row is drawn there.
+--- @param buf integer
+--- @param ns integer
+--- @param row integer 1-based
+--- @param name string
+--- @param group string
+local function hang_rule(buf, ns, row, name, group)
+  if row == 1 then
+    return
+  end
+  local lead = '── '
+  name = name .. ' '
+  -- As wide as any window could be, since the line is cut off at its edge.
+  local fill = math.max(vim.o.columns - vim.fn.strdisplaywidth(lead .. name), 0)
+  vim.api.nvim_buf_set_extmark(buf, ns, row - 2, 0, {
+    virt_lines = {
+      {
+        { lead, 'GitviewUpstreamRule' },
+        { name, group },
+        { ('─'):rep(fill), 'GitviewUpstreamRule' },
+      },
+    },
+  })
+end
+
 --- Show which commits are pushed and where the upstream is, or nothing.
 ---
 --- A pushed sha is faded over the color `draw` gave it. Without an upstream
@@ -774,26 +806,26 @@ function M.paint_upstream(buf, upstream, unpushed)
       -- Where the upstream is rather than below the last unpushed row: a merge
       -- from it can leave pushed commits between unpushed ones. An upstream the
       -- list does not reach, being older or diverged, is not shown at all.
-      --
-      -- Hung below the row above rather than above this one: lines above the
-      -- first line of a buffer are only shown once the window is scrolled up
-      -- onto them. The first row has none above it, and the line is left out
-      -- until a working-tree row is drawn there.
-      if c.full_sha == upstream.sha and i > 1 then
-        local lead = '── '
-        local name = upstream.name .. ' '
-        -- As wide as any window could be, since the line is cut off at its edge.
-        local fill = math.max(vim.o.columns - vim.fn.strdisplaywidth(lead .. name), 0)
-        vim.api.nvim_buf_set_extmark(buf, upstream_ns, i - 2, 0, {
-          virt_lines = {
-            {
-              { lead, 'GitviewUpstreamRule' },
-              { name, 'GitviewUpstream' },
-              { ('─'):rep(fill), 'GitviewUpstreamRule' },
-            },
-          },
-        })
+      if c.full_sha == upstream.sha then
+        hang_rule(buf, upstream_ns, i, upstream.name, 'GitviewUpstream')
       end
+    end
+  end
+end
+
+--- Show where HEAD branched off the default branch, if the list reaches it.
+--- @param buf integer
+--- @param point gitview.BranchPoint?
+function M.paint_branch_point(buf, point)
+  vim.api.nvim_buf_clear_namespace(buf, branch_point_ns, 0, -1)
+  local state = states[buf]
+  if not point or not state then
+    return
+  end
+  for i, r in ipairs(state.rows) do
+    local c = r.target and r.target.kind == 'commit' and state.commits[r.target.index]
+    if c and c.full_sha == point.sha then
+      hang_rule(buf, branch_point_ns, i, '⑂ ' .. point.name, 'GitviewBranchPoint')
     end
   end
 end

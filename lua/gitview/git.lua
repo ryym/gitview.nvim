@@ -586,6 +586,40 @@ function M.unpushed(count, upstream, cwd)
   return set
 end
 
+--- @class gitview.BranchPoint where HEAD branched off the default branch
+--- @field sha string full; the merge base of HEAD and the branch
+--- @field ref string full, as `refs/heads/main`
+--- @field name string short, as `main`
+
+--- Where HEAD branched off the default branch, taken as the local branch named
+--- after what `origin/HEAD` points at.
+---
+--- Nil when there is no such branch, or HEAD is already in it.
+---
+--- @param cwd string
+--- @return gitview.BranchPoint?
+function M.branch_point(cwd)
+  local res = M.run({ 'git', 'rev-parse', 'HEAD', '--symbolic-full-name', 'refs/remotes/origin/HEAD' }, cwd)
+  if not res.ok then
+    return nil
+  end
+  local lines = vim.split(vim.trim(res.stdout), '\n', { plain = true })
+  local name = lines[2] and lines[2]:match('^refs/remotes/origin/(.+)$')
+  if not name then
+    return nil
+  end
+  local ref = 'refs/heads/' .. name
+  local base = M.run({ 'git', 'merge-base', 'HEAD', ref }, cwd)
+  if not base.ok then
+    return nil
+  end
+  local sha = vim.trim(base.stdout)
+  if sha == lines[1] then
+    return nil
+  end
+  return { sha = sha, ref = ref, name = name }
+end
+
 --- @class gitview.Range the two revisions a view compares
 --- @field old string? nil when the new side has no parent, i.e. a root commit
 --- @field new string? nil for the working tree. The two are never both nil: a

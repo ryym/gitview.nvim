@@ -288,6 +288,53 @@ test('lists no unpushed commits when everything is pushed', function()
   end)
 end)
 
+--- Make `trunk` the default branch, as a clone of a remote whose HEAD is it
+--- would.
+--- @param repo gitview.TestRepo
+local function default_trunk(repo)
+  repo.git('branch', 'trunk')
+  repo.git('update-ref', 'refs/remotes/origin/trunk', 'trunk')
+  repo.git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk')
+end
+
+-- The default branch having moved on since does not move the point.
+test('finds where HEAD branched off the default branch', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    default_trunk(repo)
+    repo.write('a.txt', { 'two' })
+    repo.commit('second')
+    repo.git('switch', '-q', 'trunk')
+    repo.write('b.txt', { 'one' })
+    repo.commit('on trunk')
+    repo.git('switch', '-q', '-')
+
+    local commits = assert(git.log(10, repo.root))
+    eq({ sha = commits[2].full_sha, ref = 'refs/heads/trunk', name = 'trunk' }, git.branch_point(repo.root))
+  end)
+end)
+
+test('finds no branch point without origin/HEAD', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    repo.git('branch', 'trunk')
+    repo.write('a.txt', { 'two' })
+    repo.commit('second')
+    eq(nil, git.branch_point(repo.root))
+  end)
+end)
+
+test('finds no branch point when HEAD is in the default branch', function()
+  helpers.with_repo(function(repo)
+    repo.write('a.txt', { 'one' })
+    repo.commit('first')
+    default_trunk(repo)
+    eq(nil, git.branch_point(repo.root))
+  end)
+end)
+
 -- A linked worktree keeps only its HEAD and index in a directory of its own,
 -- and shares the refs with every other worktree.
 test('finds the directory the worktrees share', function()
