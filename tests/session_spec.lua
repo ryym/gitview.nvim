@@ -1340,17 +1340,17 @@ end)
 -- set to track something else, has a different one of.
 test('session: the upstream watched follows the branch', function()
   with_session(ahead, function(s, repo)
-    eq('refs/heads/base', s.watched_ref)
+    eq({ 'refs/heads/base' }, s.watched_refs)
     repo.git('branch', 'other', 'HEAD')
     repo.git('branch', '--set-upstream-to=other')
     session.refresh(s)
     settle(s)
-    eq('refs/heads/other', s.watched_ref)
+    eq({ 'refs/heads/other' }, s.watched_refs)
     repo.git('branch', '--unset-upstream')
     session.refresh(s)
     settle(s)
-    eq(nil, s.watched_ref)
-    eq(nil, s.upstream_watchers)
+    eq(nil, s.watched_refs)
+    eq(nil, s.ref_watchers)
   end)
 end)
 
@@ -1368,7 +1368,7 @@ test('session: an upstream set on the branch is seen without a refresh', functio
       return s.upstream ~= nil
     end)
     assert(seen, 'the upstream was never seen')
-    eq('refs/heads/base', s.watched_ref)
+    eq({ 'refs/heads/base' }, s.watched_refs)
   end)
 end)
 
@@ -1376,10 +1376,10 @@ test('session: the upstream watchers are given up with the tab page', function()
   local closed
   with_session(ahead, function(s)
     closed = s
-    eq(2, #s.upstream_watchers)
+    eq(2, #s.ref_watchers)
     assert(s.config_watcher, 'no config watcher was started')
   end)
-  eq(nil, closed.upstream_watchers)
+  eq(nil, closed.ref_watchers)
   eq(nil, closed.config_watcher)
 end)
 
