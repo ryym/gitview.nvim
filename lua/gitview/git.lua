@@ -103,19 +103,11 @@ function M.root(cwd)
   return res.ok and vim.trim(res.stdout) or nil
 end
 
---- The repository Gitview acts on: that of the current buffer, or else that of
---- the current directory.
---- @return string? root absolute path of the repository root; nil when neither
----         is in one
+--- The repository Gitview acts on: that of the current directory, whatever
+--- the current buffer is.
+--- @return string? root absolute path of the repository root
 function M.current_root()
-  local cwd = vim.fn.getcwd()
-  -- A buffer named by a URI, such as a Gitview pane or a terminal, has no
-  -- directory, and git cannot be run in one that does not exist.
-  local buf_dir = vim.fs.dirname(vim.api.nvim_buf_get_name(0))
-  if vim.fn.isdirectory(buf_dir) == 0 then
-    return M.root(cwd)
-  end
-  return M.root(buf_dir) or M.root(cwd)
+  return M.root(vim.fn.getcwd())
 end
 
 --- @param cwd string

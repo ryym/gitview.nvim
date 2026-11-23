@@ -198,8 +198,6 @@ test(':Gitview review completes ref names', function()
       eq({ 'HEAD', 'feature', 'main', 'v1' }, command.complete('', 'Gitview review '))
       eq({ 'main' }, command.complete('m', 'Gitview review feature m'))
       eq({}, command.complete('', 'Gitview review main feature '))
-      -- a buffer outside any repository leaves the current directory's, as
-      -- the command itself does
       local outside = vim.fn.tempname()
       vim.fn.writefile({}, outside)
       vim.cmd.edit(outside)
